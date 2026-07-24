@@ -1,6 +1,8 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { Search, Bell, ChevronDown, Menu } from 'lucide-react';
 import { useCatalogue } from '../../contexts/CatalogueContext';
 
@@ -10,6 +12,42 @@ interface HeaderProps {
 
 export default function Header({ onOpenMobileMenu }: HeaderProps) {
   const { activeView, setActiveView, selectedSubCategory } = useCatalogue();
+  const pathname = usePathname();
+
+  const getBreadcrumb = () => {
+    if (pathname === '/') {
+      return <span className="text-[#C68A4C] font-semibold">Dashboard</span>;
+    }
+    if (pathname.startsWith('/catalogue')) {
+      return (
+        <>
+          <Link href="/catalogue" onClick={() => setActiveView('categories')} className="text-gray-500 hover:text-gray-800 transition-colors truncate">
+            Catalogue
+          </Link>
+          <span className="text-gray-300 font-light">&gt;</span>
+          {activeView === 'categories' ? (
+            <span className="text-[#C68A4C] font-semibold truncate">Categories</span>
+          ) : (
+            <>
+              <button
+                onClick={() => setActiveView('categories')}
+                className="text-gray-500 hover:text-gray-800 transition-colors truncate"
+              >
+                Categories
+              </button>
+              <span className="text-gray-300 font-light">&gt;</span>
+              <span className="text-[#C68A4C] font-semibold truncate max-w-[120px] sm:max-w-none">
+                {selectedSubCategory?.name || 'Service Detail'}
+              </span>
+            </>
+          )}
+        </>
+      );
+    }
+    // Fallback: capitalize pathname
+    const page = pathname.replace('/', '');
+    return <span className="text-[#C68A4C] font-semibold capitalize">{page}</span>;
+  };
 
   return (
     <header className="w-full bg-white border-b border-gray-100 px-4 md:px-8 py-3.5 flex items-center justify-between shadow-xs sticky top-0 z-30 flex-shrink-0">
@@ -27,29 +65,7 @@ export default function Header({ onOpenMobileMenu }: HeaderProps) {
 
         {/* Breadcrumb Navigation */}
         <nav className="flex items-center gap-1.5 md:gap-2 text-xs md:text-sm font-medium truncate">
-          <button 
-            onClick={() => setActiveView('categories')} 
-            className="text-gray-500 hover:text-gray-800 transition-colors truncate"
-          >
-            Catalogue
-          </button>
-          <span className="text-gray-300 font-light">&gt;</span>
-          {activeView === 'categories' ? (
-            <span className="text-[#C68A4C] font-semibold truncate">Categories</span>
-          ) : (
-            <>
-              <button 
-                onClick={() => setActiveView('categories')}
-                className="text-gray-500 hover:text-gray-800 transition-colors truncate"
-              >
-                Spa
-              </button>
-              <span className="text-gray-300 font-light">&gt;</span>
-              <span className="text-[#C68A4C] font-semibold truncate max-w-[120px] sm:max-w-none">
-                {selectedSubCategory?.name || 'Skin care scrub'}
-              </span>
-            </>
-          )}
+          {getBreadcrumb()}
         </nav>
       </div>
 

@@ -17,6 +17,18 @@ import {
   saveServiceItemServerAction,
   deleteServiceItemServerAction,
 } from '../lib/server-actions/service';
+import {
+  saveServiceDurationServerAction,
+  deleteServiceDurationServerAction,
+} from '../lib/server-actions/duration';
+import {
+  saveServicePackageServerAction,
+  deleteServicePackageServerAction,
+} from '../lib/server-actions/package';
+import {
+  saveServiceAddOnServerAction,
+  deleteServiceAddOnServerAction,
+} from '../lib/server-actions/addon';
 
 interface CatalogueContextType {
   loading: boolean;
@@ -55,10 +67,12 @@ interface CatalogueContextType {
   deleteServiceItem: (id: string) => Promise<{ ok: boolean; message?: string }>;
 
   // Timeslots & Packs management
-  addDurationToService: (serviceId: string, duration: Omit<ServiceDuration, 'id'>) => void;
-  deleteDurationFromService: (serviceId: string, durationId: string) => void;
-  addPackageToService: (serviceId: string, pkg: Omit<ServicePackage, 'id'>) => void;
-  deletePackageFromService: (serviceId: string, packageId: string) => void;
+  addDurationToService: (serviceId: string, duration: Omit<ServiceDuration, 'id'>) => Promise<{ ok: boolean; message?: string }>;
+  deleteDurationFromService: (serviceId: string, durationId: string) => Promise<{ ok: boolean; message?: string }>;
+  addPackageToService: (serviceId: string, pkg: Omit<ServicePackage, 'id'>) => Promise<{ ok: boolean; message?: string }>;
+  deletePackageFromService: (serviceId: string, packageId: string) => Promise<{ ok: boolean; message?: string }>;
+  addAddOnToService: (serviceId: string, addon: { name: string; price: number; description?: string; extraMinutes?: number; imageKey?: string; isActive?: boolean }) => Promise<{ ok: boolean; message?: string }>;
+  deleteAddOnFromService: (serviceId: string, addonId: string) => Promise<{ ok: boolean; message?: string }>;
 }
 
 const CatalogueContext = createContext<CatalogueContextType | undefined>(undefined);
@@ -172,6 +186,9 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     const res = await saveCategoryServerAction(editId, payload);
     if (res.ok) {
+      if (res.data) {
+        setSelectedCategory(res.data);
+      }
       await refreshData();
       return { ok: true };
     } else {
@@ -199,6 +216,9 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     const res = await saveSubCategoryServerAction(editId, payload);
     if (res.ok) {
+      if (res.data) {
+        setSelectedSubCategory(res.data);
+      }
       await refreshData();
       return { ok: true };
     } else {
@@ -248,6 +268,7 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       itemsUsed: data.itemsUsed !== undefined ? data.itemsUsed : prev.itemsUsed,
       skilledPros: data.skilledPros !== undefined ? data.skilledPros : prev.skilledPros,
       prePostCare: data.prePostCare !== undefined ? data.prePostCare : prev.prePostCare,
+      disclaimer: data.disclaimer !== undefined ? data.disclaimer : prev.disclaimer,
       whatsIncluded: data.whatsIncluded !== undefined ? data.whatsIncluded : prev.whatsIncluded,
       faqs: data.faqs !== undefined ? data.faqs : prev.faqs,
       trustedLoved: data.trustedLoved !== undefined ? data.trustedLoved : prev.trustedLoved,
@@ -257,6 +278,9 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     const res = await saveServiceItemServerAction(editId, payload);
     if (res.ok) {
+      if (res.data) {
+        setSelectedServiceItem(res.data);
+      }
       await refreshData();
       return { ok: true };
     } else {
@@ -274,68 +298,82 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return { ok: false, message: res.message };
   };
 
-  const addDurationToService = (serviceId: string, duration: Omit<ServiceDuration, 'id'>) => {
-    const newDur: ServiceDuration = {
-      id: `dur-${Date.now()}`,
-      ...duration,
-    };
-    setServiceItems(prev => prev.map(srv => {
-      if (srv.id === serviceId) {
-        const updatedDurations = [...(srv.durations || []), newDur];
-        const updatedSrv = { ...srv, durations: updatedDurations };
-        if (selectedServiceItem?.id === serviceId) {
-          setSelectedServiceItem(updatedSrv);
-        }
-        return updatedSrv;
-      }
-      return srv;
-    }));
+  const addDurationToService = async (serviceId: string, duration: Omit<ServiceDuration, 'id'>): Promise<{ ok: boolean; message?: string }> => {
+    const res = await saveServiceDurationServerAction(null, {
+      serviceItemId: serviceId,
+      label: duration.label,
+      durationMinutes: duration.durationMinutes,
+      price: duration.price,
+    });
+    if (res.ok) {
+      await refreshData();
+      return { ok: true };
+    }
+    return { ok: false, message: res.message };
   };
 
-  const deleteDurationFromService = (serviceId: string, durationId: string) => {
-    setServiceItems(prev => prev.map(srv => {
-      if (srv.id === serviceId) {
-        const updatedDurations = (srv.durations || []).filter(d => d.id !== durationId);
-        const updatedSrv = { ...srv, durations: updatedDurations };
-        if (selectedServiceItem?.id === serviceId) {
-          setSelectedServiceItem(updatedSrv);
-        }
-        return updatedSrv;
-      }
-      return srv;
-    }));
+  const deleteDurationFromService = async (serviceId: string, durationId: string): Promise<{ ok: boolean; message?: string }> => {
+    const res = await deleteServiceDurationServerAction(durationId);
+    if (res.ok) {
+      await refreshData();
+      return { ok: true };
+    }
+    return { ok: false, message: res.message };
   };
 
-  const addPackageToService = (serviceId: string, pkg: Omit<ServicePackage, 'id'>) => {
-    const newPkg: ServicePackage = {
-      id: `pkg-${Date.now()}`,
-      ...pkg,
-    };
-    setServiceItems(prev => prev.map(srv => {
-      if (srv.id === serviceId) {
-        const updatedPackages = [...(srv.packages || []), newPkg];
-        const updatedSrv = { ...srv, packages: updatedPackages };
-        if (selectedServiceItem?.id === serviceId) {
-          setSelectedServiceItem(updatedSrv);
-        }
-        return updatedSrv;
-      }
-      return srv;
-    }));
+  const addPackageToService = async (serviceId: string, pkg: Omit<ServicePackage, 'id'>): Promise<{ ok: boolean; message?: string }> => {
+    const res = await saveServicePackageServerAction(null, {
+      serviceItemId: serviceId,
+      sessions: pkg.sessions,
+      price: pkg.price,
+      originalPrice: pkg.originalPrice || undefined,
+      savings: pkg.savings || undefined,
+      savingsPercent: pkg.savingsPercent || undefined,
+      label: pkg.label,
+    });
+    if (res.ok) {
+      await refreshData();
+      return { ok: true };
+    }
+    return { ok: false, message: res.message };
   };
 
-  const deletePackageFromService = (serviceId: string, packageId: string) => {
-    setServiceItems(prev => prev.map(srv => {
-      if (srv.id === serviceId) {
-        const updatedPackages = (srv.packages || []).filter(p => p.id !== packageId);
-        const updatedSrv = { ...srv, packages: updatedPackages };
-        if (selectedServiceItem?.id === serviceId) {
-          setSelectedServiceItem(updatedSrv);
-        }
-        return updatedSrv;
-      }
-      return srv;
-    }));
+  const deletePackageFromService = async (serviceId: string, packageId: string): Promise<{ ok: boolean; message?: string }> => {
+    const res = await deleteServicePackageServerAction(packageId);
+    if (res.ok) {
+      await refreshData();
+      return { ok: true };
+    }
+    return { ok: false, message: res.message };
+  };
+
+  const addAddOnToService = async (
+    serviceId: string,
+    addon: { name: string; price: number; description?: string; extraMinutes?: number; imageKey?: string; isActive?: boolean }
+  ): Promise<{ ok: boolean; message?: string }> => {
+    const res = await saveServiceAddOnServerAction(null, {
+      serviceItemId: serviceId,
+      name: addon.name,
+      price: addon.price,
+      description: addon.description,
+      extraMinutes: addon.extraMinutes,
+      imageKey: addon.imageKey,
+      isActive: addon.isActive !== undefined ? addon.isActive : true,
+    });
+    if (res.ok) {
+      await refreshData();
+      return { ok: true };
+    }
+    return { ok: false, message: res.message };
+  };
+
+  const deleteAddOnFromService = async (serviceId: string, addonId: string): Promise<{ ok: boolean; message?: string }> => {
+    const res = await deleteServiceAddOnServerAction(addonId);
+    if (res.ok) {
+      await refreshData();
+      return { ok: true };
+    }
+    return { ok: false, message: res.message };
   };
 
   return (
@@ -369,6 +407,8 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       deleteDurationFromService,
       addPackageToService,
       deletePackageFromService,
+      addAddOnToService,
+      deleteAddOnFromService,
     }}>
       {children}
     </CatalogueContext.Provider>

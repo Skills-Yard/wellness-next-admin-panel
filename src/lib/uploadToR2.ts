@@ -1,4 +1,4 @@
-import { getUploadUrlServerAction } from './server-actions/media';
+import { uploadFileServerAction } from './server-actions/media';
 import { toast } from 'react-toastify';
 
 export interface UploadResult {
@@ -21,35 +21,26 @@ export async function uploadFileToR2(
   slug?: string
 ): Promise<UploadResult> {
   try {
-    const res = await getUploadUrlServerAction({
-      fileName: file.name,
-      contentType: file.type || 'image/jpeg',
-      module,
-      slug: slug || 'default',
-    });
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('module', module);
+    if (slug) {
+      formData.append('slug', slug);
+    }
+    formData.append('version', '1');
 
-    if (res.ok && res.data.uploadUrl) {
-      const { uploadUrl, r2Key, cdnUrl } = res.data;
+    const res = await uploadFileServerAction(formData);
 
-      // Direct upload to Cloudflare R2 presigned URL
-      const uploadRes = await fetch(uploadUrl, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': file.type || 'image/jpeg',
-        },
-        body: file,
-      });
-
-      if (uploadRes.ok) {
-        toast.success('File uploaded to Cloudflare R2 storage!');
-        return { url: cdnUrl || uploadUrl, r2Key };
-      }
+    if (!res.ok) {
+      throw new Error(res.message || 'Direct upload failed');
     }
 
-    // Convert file to Base64 Data URL so image persists in DB
-    const dataUrl = await fileToDataURL(file);
-    toast.success('Image loaded successfully!');
-    return { url: dataUrl, r2Key: file.name };
+    if (res.data && res.data.r2Key) {
+      toast.success('File uploaded to Cloudflare R2 storage!');
+      return { url: res.data.cdnUrl, r2Key: res.data.r2Key };
+    }
+
+    throw new Error('Response data missing r2Key');
   } catch (error: any) {
     console.warn('R2 upload failed, fallback to Data URL:', error);
     try {

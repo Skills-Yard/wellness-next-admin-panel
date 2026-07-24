@@ -3,6 +3,7 @@
 import axiosInstance from '../axios';
 import { ServiceItem } from '../../types/catalogue';
 import { ActionResult } from './category';
+import { parseServerError } from '../errorParser';
 
 export async function getServiceItemsServerAction(subCategoryId?: string): Promise<ServiceItem[]> {
   try {
@@ -51,7 +52,7 @@ export async function saveServiceItemServerAction(
     }
   } catch (error: any) {
     console.error('[saveServiceItemServerAction]', error?.response?.data || error.message);
-    return { ok: false, message: error?.response?.data?.message || error.message };
+    return { ok: false, message: parseServerError(error, 'Failed to save service item') };
   }
 }
 
@@ -66,7 +67,7 @@ export async function updateServiceItemPublishStatusServerAction(
     return { ok: true, data: response.data?.data || response.data };
   } catch (error: any) {
     console.error('[updateServiceItemPublishStatusServerAction]', error?.response?.data || error.message);
-    return { ok: false, message: error?.response?.data?.message || error.message };
+    return { ok: false, message: parseServerError(error, 'Failed to update service item publish status') };
   }
 }
 
@@ -76,6 +77,6 @@ export async function deleteServiceItemServerAction(id: string): Promise<ActionR
     return { ok: true, data: undefined };
   } catch (error: any) {
     console.error('[deleteServiceItemServerAction]', error?.response?.data || error.message);
-    return { ok: false, message: error?.response?.data?.message || error.message };
+    return { ok: false, message: parseServerError(error, 'Failed to delete service item') };
   }
 }

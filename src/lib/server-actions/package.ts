@@ -3,6 +3,7 @@
 import axiosInstance from '../axios';
 import { ServicePackage } from '../../types/catalogue';
 import { ActionResult } from './category';
+import { parseServerError } from '../errorParser';
 
 export async function getServicePackagesServerAction(serviceItemId?: string): Promise<ServicePackage[]> {
   try {
@@ -38,7 +39,7 @@ export async function saveServicePackageServerAction(
     }
   } catch (error: any) {
     console.error('[saveServicePackageServerAction]', error?.response?.data || error.message);
-    return { ok: false, message: error?.response?.data?.message || error.message };
+    return { ok: false, message: parseServerError(error, 'Failed to save service package') };
   }
 }
 
@@ -48,6 +49,6 @@ export async function deleteServicePackageServerAction(id: string): Promise<Acti
     return { ok: true, data: undefined };
   } catch (error: any) {
     console.error('[deleteServicePackageServerAction]', error?.response?.data || error.message);
-    return { ok: false, message: error?.response?.data?.message || error.message };
+    return { ok: false, message: parseServerError(error, 'Failed to delete service package') };
   }
 }

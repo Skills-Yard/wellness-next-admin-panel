@@ -27,6 +27,8 @@ export default function ServiceDetailView() {
     deleteDurationFromService,
     addPackageToService,
     deletePackageFromService,
+    addAddOnToService,
+    deleteAddOnFromService,
   } = useCatalogue();
 
   // Core Form states
@@ -152,6 +154,11 @@ export default function ServiceDetailView() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('File size cannot exceed 5MB');
+      return;
+    }
+
     setUploading(true);
     try {
       const result = await uploadFileToR2(file, 'services', slug || 'service-item');
@@ -166,6 +173,11 @@ export default function ServiceDetailView() {
   const handleReviewFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('File size cannot exceed 5MB');
+      return;
+    }
 
     setReviewUploading(true);
     try {
@@ -559,7 +571,7 @@ export default function ServiceDetailView() {
                       <Upload className="w-5 h-5" />
                     </div>
                     <span className="text-xs font-semibold text-gray-800 mb-0.5">Upload Image</span>
-                    <span className="text-[11px] text-gray-400">PNG, JPG up to 2MB</span>
+                    <span className="text-[11px] text-gray-400">PNG, JPG up to 5MB</span>
                   </>
                 )}
               </div>
@@ -715,9 +727,13 @@ export default function ServiceDetailView() {
                             <Button
                               variant="destructive"
                               size="icon"
-                              onClick={() => {
-                                deleteDurationFromService(selectedServiceItem.id, dur.id);
-                                toast.info('Timeslot removed');
+                              onClick={async () => {
+                                const res = await deleteDurationFromService(selectedServiceItem.id, dur.id);
+                                if (res.ok) {
+                                  toast.success('Timeslot removed');
+                                } else {
+                                  toast.error(`Failed to remove timeslot: ${res.message || 'Error occurred'}`);
+                                }
                               }}
                               className="w-7 h-7 bg-red-50 text-red-500 hover:bg-red-100 border-none"
                             >
@@ -790,9 +806,13 @@ export default function ServiceDetailView() {
                             <Button
                               variant="destructive"
                               size="icon"
-                              onClick={() => {
-                                deletePackageFromService(selectedServiceItem.id, pkg.id);
-                                toast.info('Pack removed');
+                              onClick={async () => {
+                                const res = await deletePackageFromService(selectedServiceItem.id, pkg.id);
+                                if (res.ok) {
+                                  toast.success('Session pack removed');
+                                } else {
+                                  toast.error(`Failed to remove session pack: ${res.message || 'Error occurred'}`);
+                                }
                               }}
                               className="w-7 h-7 bg-red-50 text-red-500 hover:bg-red-100 border-none"
                             >
@@ -857,9 +877,18 @@ export default function ServiceDetailView() {
                             <Button
                               variant="destructive"
                               size="icon"
-                              onClick={() => {
-                                setAddOns(prev => prev.filter((_, idx) => idx !== i));
-                                toast.info('Add-on removed');
+                              onClick={async () => {
+                                if (selectedServiceItem && addon.id) {
+                                  const res = await deleteAddOnFromService(selectedServiceItem.id, addon.id);
+                                  if (res.ok) {
+                                    toast.success('Add-on removed');
+                                  } else {
+                                    toast.error(`Failed to remove add-on: ${res.message || 'Error occurred'}`);
+                                  }
+                                } else {
+                                  setAddOns(prev => prev.filter((_, idx) => idx !== i));
+                                  toast.info('Add-on removed');
+                                }
                               }}
                               className="w-7 h-7 bg-red-50 text-red-500 hover:bg-red-100 border-none"
                             >
@@ -1610,7 +1639,7 @@ export default function ServiceDetailView() {
                             <Upload className="w-4 h-4" />
                           </div>
                           <span className="text-xs font-bold text-gray-800">Upload Image</span>
-                          <span className="text-[10px] text-gray-400">PNG, JPG up to 2MB</span>
+                          <span className="text-[10px] text-gray-400">PNG, JPG up to 5MB</span>
                         </>
                       )}
                     </div>
@@ -1748,27 +1777,39 @@ export default function ServiceDetailView() {
           <DurationModal
             isOpen={durationModalOpen}
             onClose={() => setDurationModalOpen(false)}
-            onAdd={(dur) => {
-              addDurationToService(selectedServiceItem.id, dur);
-              toast.success('Duration timeslot added!');
+            onAdd={async (dur) => {
+              const res = await addDurationToService(selectedServiceItem.id, dur);
+              if (res.ok) {
+                toast.success('Duration timeslot added!');
+              } else {
+                toast.error(`Failed to add timeslot: ${res.message || 'Error occurred'}`);
+              }
             }}
           />
 
           <PackModal
             isOpen={packModalOpen}
             onClose={() => setPackModalOpen(false)}
-            onAdd={(pkg) => {
-              addPackageToService(selectedServiceItem.id, pkg);
-              toast.success('Session pack added!');
+            onAdd={async (pkg) => {
+              const res = await addPackageToService(selectedServiceItem.id, pkg);
+              if (res.ok) {
+                toast.success('Session pack added!');
+              } else {
+                toast.error(`Failed to add session pack: ${res.message || 'Error occurred'}`);
+              }
             }}
           />
 
           <AddOnModal
             isOpen={addOnModalOpen}
             onClose={() => setAddOnModalOpen(false)}
-            onAdd={(addon) => {
-              setAddOns(prev => [...prev, { id: `add-${Date.now()}`, ...addon }]);
-              toast.success('Add-on added!');
+            onAdd={async (addon) => {
+              const res = await addAddOnToService(selectedServiceItem.id, addon);
+              if (res.ok) {
+                toast.success('Add-on added!');
+              } else {
+                toast.error(`Failed to add add-on: ${res.message || 'Error occurred'}`);
+              }
             }}
           />
 

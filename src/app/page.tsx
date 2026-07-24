@@ -1,17 +1,8 @@
-'use client';
-
-import { useCatalogue } from '../contexts/CatalogueContext';
-import CategoriesView from '../components/catalogue/CategoriesView';
-import ServiceDetailView from '../components/catalogue/ServiceDetailView';
-import CategoryModal from '../components/catalogue/CategoryModal';
-
-export default function Home() {
-  const { activeView } = useCatalogue();
-
+export default function DashboardPage() {
   return (
-    <>
-      {activeView === 'categories' ? <CategoriesView /> : <ServiceDetailView />}
-      <CategoryModal />
-    </>
+    <section className="p-6">
+      <h1 className="text-2xl font-semibold text-gray-800">Dashboard</h1>
+      <p className="text-gray-500 mt-1">Welcome to Vellora Admin Panel</p>
+    </section>
   );
 }

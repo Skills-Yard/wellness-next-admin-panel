@@ -1,6 +1,8 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { 
   Grid, 
   FolderKanban, 
@@ -12,31 +14,22 @@ import {
   Sparkles,
   X
 } from 'lucide-react';
-import { useCatalogue } from '../../contexts/CatalogueContext';
 
 interface SidebarProps {
   onCloseMobile?: () => void;
 }
 
-export default function Sidebar({ onCloseMobile }: SidebarProps) {
-  const { setActiveView } = useCatalogue();
+const menuItems = [
+  { label: 'Dashboard', icon: Grid, href: '/' },
+  { label: 'Catalogue', icon: FolderKanban, href: '/catalogue' },
+  { label: 'Bookings', icon: Calendar, href: '/bookings' },
+  { label: 'Partners', icon: UserCheck, href: '/partners' },
+  { label: 'Customers', icon: Users, href: '/customers' },
+  { label: 'Settings', icon: Settings, href: '/settings' },
+];
 
-  const menuItems = [
-    { label: 'Dashboard', icon: Grid, active: false },
-    { 
-      label: 'Catalogue', 
-      icon: FolderKanban, 
-      active: true, 
-      action: () => { 
-        setActiveView('categories'); 
-        if (onCloseMobile) onCloseMobile();
-      } 
-    },
-    { label: 'Bookings', icon: Calendar, active: false },
-    { label: 'Partners', icon: UserCheck, active: false },
-    { label: 'Customers', icon: Users, active: false },
-    { label: 'Settings', icon: Settings, active: false },
-  ];
+export default function Sidebar({ onCloseMobile }: SidebarProps) {
+  const pathname = usePathname();
 
   return (
     <aside className="w-64 bg-[#1C1512] text-[#E5D5C5] h-full flex flex-col justify-between p-4 flex-shrink-0 transition-all duration-300 overflow-y-auto select-none">
@@ -66,21 +59,23 @@ export default function Sidebar({ onCloseMobile }: SidebarProps) {
 
         {/* Navigation Menu */}
         <nav className="space-y-1.5">
-          {menuItems.map((item, idx) => {
+          {menuItems.map((item) => {
             const Icon = item.icon;
+            const isActive = pathname === item.href;
             return (
-              <button
-                key={idx}
-                onClick={item.action}
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={onCloseMobile}
                 className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${
-                  item.active
+                  isActive
                     ? 'bg-[#2D221C] text-[#D4A373] shadow-sm border border-[#3D3028]'
                     : 'text-[#A8988A] hover:bg-[#251D19] hover:text-white'
                 }`}
               >
-                <Icon className={`w-5 h-5 ${item.active ? 'text-[#D4A373]' : 'text-[#A8988A]'}`} />
+                <Icon className={`w-5 h-5 ${isActive ? 'text-[#D4A373]' : 'text-[#A8988A]'}`} />
                 <span>{item.label}</span>
-              </button>
+              </Link>
             );
           })}
         </nav>

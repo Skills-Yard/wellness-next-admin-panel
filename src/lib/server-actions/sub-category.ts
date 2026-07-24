@@ -3,6 +3,7 @@
 import axiosInstance from '../axios';
 import { ServiceSubCategory } from '../../types/catalogue';
 import { ActionResult } from './category';
+import { parseServerError } from '../errorParser';
 
 export async function getSubCategoriesServerAction(): Promise<ServiceSubCategory[]> {
   try {
@@ -49,7 +50,7 @@ export async function saveSubCategoryServerAction(
     }
   } catch (error: any) {
     console.error('[saveSubCategoryServerAction]', error?.response?.data || error.message);
-    return { ok: false, message: error?.response?.data?.message || error.message };
+    return { ok: false, message: parseServerError(error, 'Failed to save subcategory') };
   }
 }
 
@@ -59,6 +60,6 @@ export async function deleteSubCategoryServerAction(id: string): Promise<ActionR
     return { ok: true, data: undefined };
   } catch (error: any) {
     console.error('[deleteSubCategoryServerAction]', error?.response?.data || error.message);
-    return { ok: false, message: error?.response?.data?.message || error.message };
+    return { ok: false, message: parseServerError(error, 'Failed to delete subcategory') };
   }
 }

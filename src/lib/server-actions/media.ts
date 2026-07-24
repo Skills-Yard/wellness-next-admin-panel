@@ -1,6 +1,7 @@
 'use server';
 
 import axiosInstance from '../axios';
+import { parseServerError } from '../errorParser';
 
 export interface GetUploadUrlPayload {
   fileName: string;
@@ -26,12 +27,31 @@ export async function getUploadUrlServerAction(
       version: 1,
       ...payload,
     });
-    return { ok: true, data: response.data };
+    return { ok: true, data: response.data?.data || response.data };
   } catch (error: any) {
     console.error('[getUploadUrlServerAction]', error?.response?.data || error.message);
     return {
       ok: false,
-      message: error?.response?.data?.message || error.message || 'Failed to get upload URL',
+      message: parseServerError(error, 'Failed to get upload URL'),
+    };
+  }
+}
+
+export async function uploadFileServerAction(
+  formData: FormData
+): Promise<{ ok: true; data: any } | { ok: false; message: string }> {
+  try {
+    const response = await axiosInstance.post('/admin/catalog/media/upload', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return { ok: true, data: response.data?.data || response.data };
+  } catch (error: any) {
+    console.error('[uploadFileServerAction]', error?.response?.data || error.message);
+    return {
+      ok: false,
+      message: parseServerError(error, 'Failed to upload file'),
     };
   }
 }

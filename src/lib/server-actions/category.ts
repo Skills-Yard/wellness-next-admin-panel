@@ -2,6 +2,7 @@
 
 import axiosInstance from '../axios';
 import { ServiceCategory } from '../../types/catalogue';
+import { parseServerError } from '../errorParser';
 
 export type ActionResult<T> =
   | { ok: true; data: T }
@@ -52,7 +53,7 @@ export async function saveCategoryServerAction(
     }
   } catch (error: any) {
     console.error('[saveCategoryServerAction]', error?.response?.data || error.message);
-    return { ok: false, message: error?.response?.data?.message || error.message };
+    return { ok: false, message: parseServerError(error, 'Failed to save category') };
   }
 }
 
@@ -62,6 +63,6 @@ export async function deleteCategoryServerAction(id: string): Promise<ActionResu
     return { ok: true, data: undefined };
   } catch (error: any) {
     console.error('[deleteCategoryServerAction]', error?.response?.data || error.message);
-    return { ok: false, message: error?.response?.data?.message || error.message };
+    return { ok: false, message: parseServerError(error, 'Failed to delete category') };
   }
 }

@@ -61,6 +61,11 @@ export default function ImageCardModal({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('File size cannot exceed 5MB');
+      return;
+    }
+
     setUploading(true);
     try {
       const res = await uploadFileToR2(file, 'services', title || 'card-image');
@@ -206,7 +211,7 @@ export default function ImageCardModal({
                       <Upload className="w-4 h-4" />
                     </div>
                     <span className="text-xs font-semibold text-gray-800">Upload Image</span>
-                    <span className="text-[10px] text-gray-400">PNG, JPG up to 2MB</span>
+                    <span className="text-[10px] text-gray-400">PNG, JPG up to 5MB</span>
                   </>
                 )}
               </div>

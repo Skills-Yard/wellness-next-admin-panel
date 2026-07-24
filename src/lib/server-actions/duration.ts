@@ -3,6 +3,7 @@
 import axiosInstance from '../axios';
 import { ServiceDuration } from '../../types/catalogue';
 import { ActionResult } from './category';
+import { parseServerError } from '../errorParser';
 
 export async function getServiceDurationsServerAction(serviceItemId?: string): Promise<ServiceDuration[]> {
   try {
@@ -30,7 +31,7 @@ export async function saveServiceDurationServerAction(
     }
   } catch (error: any) {
     console.error('[saveServiceDurationServerAction]', error?.response?.data || error.message);
-    return { ok: false, message: error?.response?.data?.message || error.message };
+    return { ok: false, message: parseServerError(error, 'Failed to save service duration') };
   }
 }
 
@@ -40,6 +41,6 @@ export async function deleteServiceDurationServerAction(id: string): Promise<Act
     return { ok: true, data: undefined };
   } catch (error: any) {
     console.error('[deleteServiceDurationServerAction]', error?.response?.data || error.message);
-    return { ok: false, message: error?.response?.data?.message || error.message };
+    return { ok: false, message: parseServerError(error, 'Failed to delete service duration') };
   }
 }

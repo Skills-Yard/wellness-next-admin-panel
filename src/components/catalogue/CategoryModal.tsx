@@ -54,6 +54,11 @@ export default function CategoryModal() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('File size cannot exceed 5MB');
+      return;
+    }
+
     setUploading(true);
     try {
       const moduleType = isSubCategory ? 'subcategories' : 'categories';
@@ -169,7 +174,7 @@ export default function CategoryModal() {
                       <Upload className="w-5 h-5" />
                     </div>
                     <span className="text-xs font-semibold text-gray-800 mb-1">Upload Icon</span>
-                    <span className="text-[11px] text-gray-400">PNG, JPG up to 2MB</span>
+                    <span className="text-[11px] text-gray-400">PNG, JPG up to 5MB</span>
                   </>
                 )}
               </div>

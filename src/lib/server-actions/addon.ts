@@ -2,6 +2,7 @@
 
 import axiosInstance from '../axios';
 import { ActionResult } from './category';
+import { parseServerError } from '../errorParser';
 
 export interface ServiceAddOnItem {
   id: string;
@@ -43,7 +44,7 @@ export async function saveServiceAddOnServerAction(
     }
   } catch (error: any) {
     console.error('[saveServiceAddOnServerAction]', error?.response?.data || error.message);
-    return { ok: false, message: error?.response?.data?.message || error.message };
+    return { ok: false, message: parseServerError(error, 'Failed to save addon') };
   }
 }
 
@@ -53,6 +54,6 @@ export async function deleteServiceAddOnServerAction(id: string): Promise<Action
     return { ok: true, data: undefined };
   } catch (error: any) {
     console.error('[deleteServiceAddOnServerAction]', error?.response?.data || error.message);
-    return { ok: false, message: error?.response?.data?.message || error.message };
+    return { ok: false, message: parseServerError(error, 'Failed to delete addon') };
   }
 }
