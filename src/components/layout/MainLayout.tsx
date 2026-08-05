@@ -1,11 +1,52 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import Sidebar from './Sidebar';
 import Header from './Header';
+import { useAuth } from '../../contexts/AuthContext';
+import { Loader2, Sparkles } from 'lucide-react';
 
 export default function MainLayout({ children }: { children: React.ReactNode }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const pathname = usePathname();
+  const router = useRouter();
+  const { isAuthenticated, isLoading } = useAuth();
+
+  const isLoginPage = pathname === '/login';
+
+  useEffect(() => {
+    if (!isLoading) {
+      if (!isAuthenticated && !isLoginPage) {
+        router.replace('/login');
+      }
+    }
+  }, [isLoading, isAuthenticated, isLoginPage, router]);
+
+  // If viewing the login page, render child component directly
+  if (isLoginPage) {
+    return <>{children}</>;
+  }
+
+  // Show a smooth loading screen while validating auth state
+  if (isLoading) {
+    return (
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-[#1C1512] text-white">
+        <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[#D4A373] to-[#F4E3D3] flex items-center justify-center text-[#1C1512] shadow-xl mb-4 animate-bounce">
+          <Sparkles className="w-6 h-6 fill-current" />
+        </div>
+        <div className="flex items-center gap-2 text-sm text-[#A8988A] font-medium">
+          <Loader2 className="w-4 h-4 animate-spin text-[#D4A373]" />
+          <span>Verifying credentials...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // If not authenticated and not loading, don't render layout content (redirecting to /login)
+  if (!isAuthenticated) {
+    return null;
+  }
 
   return (
     <div className="flex h-screen w-screen max-w-full bg-[#FAF9F6] text-gray-800 font-sans antialiased overflow-hidden">

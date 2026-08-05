@@ -2,12 +2,14 @@
 
 import axiosInstance from '../axios';
 import { ServicePackage } from '../../types/catalogue';
-import { ActionResult } from './category';
+import { ActionResult, getAuthHeaders } from './category';
 import { parseServerError } from '../errorParser';
 
 export async function getServicePackagesServerAction(serviceItemId?: string): Promise<ServicePackage[]> {
   try {
+    const headers = await getAuthHeaders();
     const response = await axiosInstance.get('/admin/catalog/service-packages', {
+      headers,
       params: serviceItemId ? { serviceItemId } : undefined,
     });
     return response.data || [];
@@ -30,11 +32,12 @@ export async function saveServicePackageServerAction(
   }
 ): Promise<ActionResult<ServicePackage>> {
   try {
+    const headers = await getAuthHeaders();
     if (id) {
-      const response = await axiosInstance.patch(`/admin/catalog/service-packages/${id}`, payload);
+      const response = await axiosInstance.patch(`/admin/catalog/service-packages/${id}`, payload, { headers });
       return { ok: true, data: response.data };
     } else {
-      const response = await axiosInstance.post('/admin/catalog/service-packages', payload);
+      const response = await axiosInstance.post('/admin/catalog/service-packages', payload, { headers });
       return { ok: true, data: response.data };
     }
   } catch (error: any) {
@@ -45,7 +48,8 @@ export async function saveServicePackageServerAction(
 
 export async function deleteServicePackageServerAction(id: string): Promise<ActionResult<void>> {
   try {
-    await axiosInstance.delete(`/admin/catalog/service-packages/${id}`);
+    const headers = await getAuthHeaders();
+    await axiosInstance.delete(`/admin/catalog/service-packages/${id}`, { headers });
     return { ok: true, data: undefined };
   } catch (error: any) {
     console.error('[deleteServicePackageServerAction]', error?.response?.data || error.message);

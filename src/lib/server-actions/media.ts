@@ -2,6 +2,7 @@
 
 import axiosInstance from '../axios';
 import { parseServerError } from '../errorParser';
+import { getAuthHeaders } from './category';
 
 export interface GetUploadUrlPayload {
   fileName: string;
@@ -23,10 +24,11 @@ export async function getUploadUrlServerAction(
   payload: GetUploadUrlPayload
 ): Promise<{ ok: true; data: UploadUrlResponse } | { ok: false; message: string }> {
   try {
+    const headers = await getAuthHeaders();
     const response = await axiosInstance.post('/admin/catalog/media/upload-url', {
       version: 1,
       ...payload,
-    });
+    }, { headers });
     return { ok: true, data: response.data?.data || response.data };
   } catch (error: any) {
     console.error('[getUploadUrlServerAction]', error?.response?.data || error.message);
@@ -41,8 +43,10 @@ export async function uploadFileServerAction(
   formData: FormData
 ): Promise<{ ok: true; data: any } | { ok: false; message: string }> {
   try {
+    const headers = await getAuthHeaders();
     const response = await axiosInstance.post('/admin/catalog/media/upload', formData, {
       headers: {
+        ...headers,
         'Content-Type': 'multipart/form-data',
       },
     });

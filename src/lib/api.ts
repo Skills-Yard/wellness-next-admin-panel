@@ -1,10 +1,11 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api/v1';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://projector-flatness-grappling.ngrok-free.dev/api/v1';
 
 export async function fetchFromBackend<T>(endpoint: string, options?: RequestInit): Promise<T | null> {
   try {
     const res = await fetch(`${API_BASE}${endpoint}`, {
       headers: {
         'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true',
         ...options?.headers,
       },
       ...options,
