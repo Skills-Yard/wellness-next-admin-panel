@@ -20,6 +20,10 @@ export interface UploadUrlResponse {
   mediaType: string;
 }
 
+// The old multipart POST /admin/catalog/media/upload endpoint has been removed from the
+// backend (see git history on upload-media.controller.ts) in favor of this presigned-URL flow:
+// call this to get a signed R2 PUT URL, then PUT the file directly to R2 from the browser
+// (see uploadFileToR2 in ../uploadToR2.ts).
 export async function getUploadUrlServerAction(
   payload: GetUploadUrlPayload
 ): Promise<{ ok: true; data: UploadUrlResponse } | { ok: false; message: string }> {
@@ -29,33 +33,13 @@ export async function getUploadUrlServerAction(
       version: 1,
       ...payload,
     }, { headers });
-    return { ok: true, data: response.data?.data || response.data };
+    const body = response.data?.data ?? response.data;
+    return { ok: true, data: body };
   } catch (error: any) {
     console.error('[getUploadUrlServerAction]', error?.response?.data || error.message);
     return {
       ok: false,
       message: parseServerError(error, 'Failed to get upload URL'),
-    };
-  }
-}
-
-export async function uploadFileServerAction(
-  formData: FormData
-): Promise<{ ok: true; data: any } | { ok: false; message: string }> {
-  try {
-    const headers = await getAuthHeaders();
-    const response = await axiosInstance.post('/admin/catalog/media/upload', formData, {
-      headers: {
-        ...headers,
-        'Content-Type': 'multipart/form-data',
-      },
-    });
-    return { ok: true, data: response.data?.data || response.data };
-  } catch (error: any) {
-    console.error('[uploadFileServerAction]', error?.response?.data || error.message);
-    return {
-      ok: false,
-      message: parseServerError(error, 'Failed to upload file'),
     };
   }
 }

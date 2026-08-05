@@ -33,9 +33,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const storedUser = localStorage.getItem(AUTH_STORAGE_KEY);
       if (storedUser) {
         const parsed = JSON.parse(storedUser);
-        setUser(parsed);
-        if (parsed.accessToken) {
+        // A stored session without an access token can't authenticate against the admin API —
+        // every request would 401 and the panel would silently render empty lists. Treat it as
+        // logged out so the user is sent back to a clean login instead.
+        if (parsed?.accessToken) {
+          setUser(parsed);
           document.cookie = `wellness_admin_token=${parsed.accessToken}; path=/; max-age=604800; SameSite=Lax`;
+        } else {
+          localStorage.removeItem(AUTH_STORAGE_KEY);
+          localStorage.removeItem(TOKEN_STORAGE_KEY);
         }
       }
     } catch (err) {
@@ -48,54 +54,50 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (email: string, password: string): Promise<{ success: boolean; message?: string }> => {
     try {
-      let loggedUser: User;
-      let token: string | undefined;
+      // POST /api/v1/admin/login returns { message, tokens: { accessToken, refreshToken } },
+      // wrapped by the backend's global response interceptor as { success, data, meta }.
+      // The refresh token is stripped into an httpOnly cookie server-side; the access token
+      // comes back in the body and is what every admin endpoint expects as a Bearer token.
+      const response = await axiosInstance.post('/admin/login', { email, password });
+      const body = response.data?.data ?? response.data;
 
-      try {
-        // Try logging in via backend API (endpoint is POST /api/v1/admin/login)
-        const response = await axiosInstance.post('/admin/login', { email, password });
-        const data = response.data;
-        
-        token = data.tokens?.accessToken || data.token;
-        loggedUser = {
-          id: data.user?.id,
-          email: data.user?.email || email,
-          name: data.user?.name || email.split('@')[0],
-          role: data.user?.role || 'Administrator',
-          accessToken: token,
-        };
-      } catch (apiError: any) {
-        // Handle credential failure responses (400, 401, 403) from backend
-        if (apiError.response && (apiError.response.status === 401 || apiError.response.status === 400 || apiError.response.status === 403)) {
-          const msg = Array.isArray(apiError.response.data?.message)
-            ? apiError.response.data.message.join(', ')
-            : apiError.response.data?.message || 'Invalid email or password.';
-          return { success: false, message: msg };
-        }
-        
-        // Fallback admin user if API server is offline / ngrok connection fails
-        token = 'mock-admin-token-' + Date.now();
-        loggedUser = {
-          email,
-          name: email.split('@')[0],
-          role: 'Administrator',
-          accessToken: token,
+      const token: string | undefined =
+        body?.tokens?.accessToken ?? body?.accessToken ?? body?.token;
+
+      if (!token) {
+        console.error('[login] No access token in response:', response.data);
+        return {
+          success: false,
+          message: 'Login succeeded but no access token was returned. Please contact support.',
         };
       }
+
+      const loggedUser: User = {
+        id: body?.admin?.id ?? body?.user?.id,
+        email: body?.admin?.email ?? body?.user?.email ?? email,
+        name: body?.admin?.name ?? body?.user?.name ?? email.split('@')[0],
+        role: body?.admin?.role ?? body?.user?.role ?? 'Administrator',
+        accessToken: token,
+      };
 
       setUser(loggedUser);
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(loggedUser));
-      if (token) {
-        localStorage.setItem(TOKEN_STORAGE_KEY, token);
-        document.cookie = `wellness_admin_token=${token}; path=/; max-age=604800; SameSite=Lax`;
-      }
+      localStorage.setItem(TOKEN_STORAGE_KEY, token);
+      document.cookie = `wellness_admin_token=${token}; path=/; max-age=604800; SameSite=Lax`;
 
       return { success: true, message: 'Authenticated successfully.' };
     } catch (error: any) {
-      return { 
-        success: false, 
-        message: error?.message || 'An unexpected error occurred during login.' 
-      };
+      const status = error?.response?.status;
+      const data = error?.response?.data;
+      const message =
+        data?.error?.message ||
+        (Array.isArray(data?.message) ? data.message.join(', ') : data?.message) ||
+        (status
+          ? 'Invalid email or password.'
+          : 'Could not reach the API server. Check that the backend is running and NEXT_PUBLIC_API_URL is correct.');
+
+      console.error('[login]', status, data || error?.message);
+      return { success: false, message };
     }
   };
 

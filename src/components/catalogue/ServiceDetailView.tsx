@@ -12,6 +12,17 @@ import PackModal from './PackModal';
 import AddOnModal from './AddOnModal';
 import ImageCardModal from './ImageCardModal';
 import TextItemModal from './TextItemModal';
+import FaqModal from './FaqModal';
+import { FaqItem, ImageCardItem, MediaType, ReviewItem } from '../../types/catalogue';
+
+// Lightweight slug preview — the backend re-normalizes the slug itself on save either way.
+function slugify(input: string): string {
+  return input
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
 
 export default function ServiceDetailView() {
   const {
@@ -23,6 +34,10 @@ export default function ServiceDetailView() {
     setSelectedServiceItem,
     saveServiceItem,
     deleteServiceItem,
+    serviceDurations,
+    servicePackages,
+    serviceAddOns,
+    serviceDetailLoading,
     addDurationToService,
     deleteDurationFromService,
     addPackageToService,
@@ -34,38 +49,42 @@ export default function ServiceDetailView() {
   // Core Form states
   const [serviceName, setServiceName] = useState('');
   const [slug, setSlug] = useState('');
-  const [mainCategory, setMainCategory] = useState('Spa');
-  const [subCategoryName, setSubCategoryName] = useState('Skin care scrub');
+  const [slugTouched, setSlugTouched] = useState(false);
+  const [categoryId, setCategoryId] = useState('');
+  const [subCategoryId, setSubCategoryId] = useState('');
   const [cardSubtitle, setCardSubtitle] = useState('');
   const [displayOrder, setDisplayOrder] = useState('1');
-  const [isMainCard, setIsMainCard] = useState(true);
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
+  const [thumbnailType, setThumbnailType] = useState<MediaType>('IMAGE');
   const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const reviewFileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Dynamic Section States connected with Backend
-  const [addOns, setAddOns] = useState<any[]>([]);
+  // Dynamic sections — these map 1:1 onto real ServiceItem JSON columns (see catalog.prisma /
+  // CreateServiceItemDto). A few columns on the model have no editor here (freeGifts,
+  // includedItems, ambienceItems, hygieneEssentials, careItems, thingsToKnow, beforeYouBook) —
+  // left alone rather than guessed at.
   const [features, setFeatures] = useState<string[]>([]);
   const [overviewText, setOverviewText] = useState('');
-  const [overviewGallery, setOverviewGallery] = useState<any[]>([]);
-  const [procedureSteps, setProcedureSteps] = useState<any[]>([]);
-  const [itemsUsed, setItemsUsed] = useState<any[]>([]);
+  const [overviewGallery, setOverviewGallery] = useState<ImageCardItem[]>([]);
+  const [procedureSteps, setProcedureSteps] = useState<ImageCardItem[]>([]);
+  const [disclaimer, setDisclaimer] = useState<string[]>([]);
+  const [itemsUsed, setItemsUsed] = useState<ImageCardItem[]>([]);
   const [skilledPros, setSkilledPros] = useState<string[]>([]);
   const [prePostCare, setPrePostCare] = useState<string[]>([]);
-  const [disclaimer, setDisclaimer] = useState<string[]>([]);
-  const [whatsIncluded, setWhatsIncluded] = useState<any[]>([]);
-  const [faqs, setFaqs] = useState<string[]>([]);
+  const [whatsIncluded, setWhatsIncluded] = useState<ImageCardItem[]>([]);
+  const [faqs, setFaqs] = useState<FaqItem[]>([]);
   const [trustedLoved, setTrustedLoved] = useState<string[]>([]);
 
-  // Review Form state
+  // Review form state
   const [reviewName, setReviewName] = useState('');
   const [reviewContent, setReviewContent] = useState('');
   const [reviewOrder, setReviewOrder] = useState('1');
   const [reviewImage, setReviewImage] = useState<string | null>(null);
   const [reviewUploading, setReviewUploading] = useState(false);
-  const [reviewsList, setReviewsList] = useState<any[]>([]);
+  const [reviewsList, setReviewsList] = useState<ReviewItem[]>([]);
   const [showReviewForm, setShowReviewForm] = useState(true);
   const [editingReviewIndex, setEditingReviewIndex] = useState<number | null>(null);
 
@@ -73,6 +92,7 @@ export default function ServiceDetailView() {
   const [durationModalOpen, setDurationModalOpen] = useState(false);
   const [packModalOpen, setPackModalOpen] = useState(false);
   const [addOnModalOpen, setAddOnModalOpen] = useState(false);
+  const [faqModalOpen, setFaqModalOpen] = useState(false);
 
   // Generic Image Card Modal State
   const [imageModalConfig, setImageModalConfig] = useState<{
@@ -94,7 +114,7 @@ export default function ServiceDetailView() {
     isOpen: boolean;
     title: string;
     placeholder: string;
-    targetSection: 'features' | 'pros' | 'care' | 'faqs' | 'trusted' | 'disclaimer';
+    targetSection: 'features' | 'pros' | 'care' | 'disclaimer' | 'trusted';
     editIndex?: number;
     initialValue?: string;
   }>({
@@ -109,46 +129,48 @@ export default function ServiceDetailView() {
     s => s.subCategoryId === selectedSubCategory?.id
   );
 
+  // Sub-categories available under whichever category is currently picked in the form.
+  const subCategoryOptions = subCategories.filter(s => s.categoryId === categoryId);
+
   useEffect(() => {
     if (selectedServiceItem) {
       setServiceName(selectedServiceItem.name || '');
       setSlug(selectedServiceItem.slug || '');
+      setSlugTouched(true);
       setCardSubtitle(selectedServiceItem.cardSubtitle || '');
       setDisplayOrder(String(selectedServiceItem.displayOrder || 1));
-      setIsMainCard(selectedServiceItem.isMainCard !== false);
-      setImageUrl(selectedServiceItem.thumbnailKey || null);
+      setThumbnailUrl(selectedServiceItem.thumbnailKey || null);
+      setThumbnailType(selectedServiceItem.thumbnailType || 'IMAGE');
 
-      const raw = selectedServiceItem as any;
-      setFeatures(Array.isArray(raw.features) ? raw.features : []);
-      if (raw.overview) {
-        if (typeof raw.overview === 'string') {
-          setOverviewText(raw.overview);
-        } else {
-          setOverviewText(raw.overview.text || '');
-          setOverviewGallery(Array.isArray(raw.overview.gallery) ? raw.overview.gallery : []);
-        }
-      } else {
-        setOverviewText('');
-        setOverviewGallery([]);
-      }
-      setProcedureSteps(Array.isArray(raw.procedureSteps) ? raw.procedureSteps : []);
-      setItemsUsed(Array.isArray(raw.itemsUsed) ? raw.itemsUsed : []);
-      setSkilledPros(Array.isArray(raw.skilledPros) ? raw.skilledPros : []);
-      setPrePostCare(Array.isArray(raw.prePostCare) ? raw.prePostCare : []);
-      setDisclaimer(Array.isArray(raw.disclaimer) ? raw.disclaimer : []);
-      setWhatsIncluded(Array.isArray(raw.whatsIncluded) ? raw.whatsIncluded : []);
-      setFaqs(Array.isArray(raw.faqs) ? raw.faqs : []);
-      setTrustedLoved(Array.isArray(raw.trustedLoved) ? raw.trustedLoved : []);
-      setAddOns(Array.isArray(raw.addOns) ? raw.addOns : []);
+      const parentCategoryId = subCategories.find(s => s.id === selectedServiceItem.subCategoryId)?.categoryId || '';
+      setCategoryId(parentCategoryId);
+      setSubCategoryId(selectedServiceItem.subCategoryId || '');
+
+      setFeatures(Array.isArray(selectedServiceItem.features) ? selectedServiceItem.features : []);
+      setOverviewText(selectedServiceItem.overview?.text || '');
+      setOverviewGallery(Array.isArray(selectedServiceItem.overview?.gallery) ? selectedServiceItem.overview!.gallery! : []);
+      setProcedureSteps(Array.isArray(selectedServiceItem.procedureSteps) ? selectedServiceItem.procedureSteps : []);
+      setDisclaimer(Array.isArray(selectedServiceItem.disclaimer) ? selectedServiceItem.disclaimer : []);
+      setItemsUsed(Array.isArray(selectedServiceItem.itemsUsed) ? selectedServiceItem.itemsUsed : []);
+      setSkilledPros(Array.isArray(selectedServiceItem.skilledPros) ? selectedServiceItem.skilledPros : []);
+      setPrePostCare(Array.isArray(selectedServiceItem.prePostCare) ? selectedServiceItem.prePostCare : []);
+      setWhatsIncluded(Array.isArray(selectedServiceItem.whatsIncluded) ? selectedServiceItem.whatsIncluded : []);
+      setFaqs(Array.isArray(selectedServiceItem.faqs) ? selectedServiceItem.faqs : []);
+      setTrustedLoved(Array.isArray(selectedServiceItem.trustedLoved) ? selectedServiceItem.trustedLoved : []);
       setReviewsList(
-        Array.isArray(raw.customReviews)
-          ? raw.customReviews
-          : Array.isArray(raw.reviews)
-          ? raw.reviews
+        Array.isArray(selectedServiceItem.customReviews)
+          ? selectedServiceItem.customReviews
+          : Array.isArray(selectedServiceItem.reviews)
+          ? selectedServiceItem.reviews
           : []
       );
     }
-  }, [selectedServiceItem]);
+  }, [selectedServiceItem, subCategories]);
+
+  const handleNameChange = (value: string) => {
+    setServiceName(value);
+    if (!slugTouched) setSlug(slugify(value));
+  };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -162,7 +184,8 @@ export default function ServiceDetailView() {
     setUploading(true);
     try {
       const result = await uploadFileToR2(file, 'services', slug || 'service-item');
-      setImageUrl(result.url);
+      setThumbnailUrl(result.url);
+      setThumbnailType(file.type.startsWith('video/') ? 'VIDEO' : 'IMAGE');
     } catch (err: any) {
       toast.error(`Upload error: ${err.message}`);
     } finally {
@@ -196,15 +219,15 @@ export default function ServiceDetailView() {
       return;
     }
 
-    const newReview = {
+    const newReview: ReviewItem = {
       id: editingReviewIndex !== null && reviewsList[editingReviewIndex]?.id ? reviewsList[editingReviewIndex].id : `rev-${Date.now()}`,
       name: reviewName.trim() || 'Anonymous Reviewer',
       content: reviewContent.trim() || 'Great service!',
       displayOrder: Number(reviewOrder) || 1,
-      image: reviewImage || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
+      image: reviewImage || undefined,
     };
 
-    let updatedList: any[];
+    let updatedList: ReviewItem[];
     if (editingReviewIndex !== null && editingReviewIndex >= 0) {
       updatedList = [...reviewsList];
       updatedList[editingReviewIndex] = newReview;
@@ -219,13 +242,8 @@ export default function ServiceDetailView() {
     setReviewImage(null);
     toast.success('Review saved successfully!');
 
-    // Persist to backend
     if (selectedServiceItem) {
-      await saveServiceItem({
-        name: serviceName || selectedServiceItem.name,
-        reviews: updatedList,
-        customReviews: updatedList,
-      });
+      await saveServiceItem({ name: serviceName || selectedServiceItem.name, reviews: updatedList, customReviews: updatedList });
     }
   };
 
@@ -234,32 +252,36 @@ export default function ServiceDetailView() {
       toast.error('Please enter a service name');
       return;
     }
+    if (!subCategoryId) {
+      toast.error('Please select a sub-category');
+      return;
+    }
 
+    setSaving(true);
     try {
-      const payload: any = {
+      const res = await saveServiceItem({
         name: serviceName,
-        slug,
+        slug: slugify(slug || serviceName),
+        subCategoryId,
         cardTitle: serviceName,
         cardSubtitle,
         displayOrder: Number(displayOrder) || 1,
-        isMainCard,
         isPublished,
-        thumbnailKey: imageUrl || undefined,
+        thumbnailKey: thumbnailUrl || undefined,
+        thumbnailType,
         features,
         overview: { text: overviewText, gallery: overviewGallery },
         procedureSteps,
+        disclaimer,
         itemsUsed,
         skilledPros,
         prePostCare,
-        disclaimer,
         whatsIncluded,
         faqs,
         trustedLoved,
         reviews: reviewsList,
         customReviews: reviewsList,
-      };
-
-      const res = await saveServiceItem(payload);
+      });
 
       if (res.ok) {
         toast.success(isPublished ? 'Service published to database!' : 'Saved draft to database!');
@@ -268,13 +290,19 @@ export default function ServiceDetailView() {
       }
     } catch (err: any) {
       toast.error(`Failed to save: ${err.message || 'Error occurred'}`);
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleCreateNewService = () => {
+    if (!selectedSubCategory) {
+      toast.error('Select a sub-category first');
+      return;
+    }
     const newService = {
       id: `srv-${Date.now()}`,
-      subCategoryId: selectedSubCategory?.id || '',
+      subCategoryId: selectedSubCategory.id,
       name: 'New Service Item',
       slug: `new-service-${Date.now()}`,
       cardTitle: 'New Service Item',
@@ -282,10 +310,8 @@ export default function ServiceDetailView() {
       isActive: true,
       isPublished: false,
       displayOrder: filteredServices.length + 1,
-      durations: [],
-      packages: [],
     };
-    setSelectedServiceItem(newService);
+    setSelectedServiceItem(newService as any);
     toast.info('Created new service draft!');
   };
 
@@ -293,7 +319,7 @@ export default function ServiceDetailView() {
     try {
       const res = await deleteServiceItem(id);
       if (res.ok) {
-        toast.success('Service item deleted from database!');
+        toast.success('Service item deleted!');
       } else {
         toast.error(`Failed to delete: ${res.message || 'Error occurred'}`);
       }
@@ -304,34 +330,29 @@ export default function ServiceDetailView() {
 
   const handleImageCardAdd = async (item: { title: string; subtitle?: string; description?: string; image: string }) => {
     const section = imageModalConfig.targetSection;
+    const editIndex = imageModalConfig.editIndex;
+    const card: ImageCardItem = { id: `${section}-${Date.now()}`, title: item.title, subtitle: item.subtitle, image: item.image };
+
     if (section === 'overview') {
-      const updated = [...overviewGallery, { id: `ov-${Date.now()}`, title: item.title, image: item.image }];
+      const updated = editIndex !== undefined ? overviewGallery.map((s, i) => (i === editIndex ? { ...s, ...card } : s)) : [...overviewGallery, card];
       setOverviewGallery(updated);
-      toast.success('Overview step added!');
-      if (selectedServiceItem) {
-        await saveServiceItem({ name: serviceName || selectedServiceItem.name, overview: { text: overviewText, gallery: updated } });
-      }
+      toast.success(editIndex !== undefined ? 'Overview item updated!' : 'Overview item added!');
+      if (selectedServiceItem) await saveServiceItem({ name: serviceName || selectedServiceItem.name, overview: { text: overviewText, gallery: updated } });
     } else if (section === 'procedure') {
-      const updated = [...procedureSteps, { id: `pr-${Date.now()}`, title: item.title, description: item.subtitle || '', image: item.image }];
+      const updated = editIndex !== undefined ? procedureSteps.map((s, i) => (i === editIndex ? { ...s, ...card } : s)) : [...procedureSteps, card];
       setProcedureSteps(updated);
-      toast.success('Procedure step added!');
-      if (selectedServiceItem) {
-        await saveServiceItem({ name: serviceName || selectedServiceItem.name, procedureSteps: updated });
-      }
+      toast.success(editIndex !== undefined ? 'Procedure step updated!' : 'Procedure step added!');
+      if (selectedServiceItem) await saveServiceItem({ name: serviceName || selectedServiceItem.name, procedureSteps: updated });
     } else if (section === 'items') {
-      const updated = [...itemsUsed, { id: `iu-${Date.now()}`, title: item.title, image: item.image }];
+      const updated = editIndex !== undefined ? itemsUsed.map((s, i) => (i === editIndex ? { ...s, ...card } : s)) : [...itemsUsed, card];
       setItemsUsed(updated);
-      toast.success('Item added!');
-      if (selectedServiceItem) {
-        await saveServiceItem({ name: serviceName || selectedServiceItem.name, itemsUsed: updated });
-      }
+      toast.success(editIndex !== undefined ? 'Item updated!' : 'Item added!');
+      if (selectedServiceItem) await saveServiceItem({ name: serviceName || selectedServiceItem.name, itemsUsed: updated });
     } else if (section === 'included') {
-      const updated = [...whatsIncluded, { id: `inc-${Date.now()}`, title: item.title, subtitle: item.subtitle || '', image: item.image }];
+      const updated = editIndex !== undefined ? whatsIncluded.map((s, i) => (i === editIndex ? { ...s, ...card } : s)) : [...whatsIncluded, card];
       setWhatsIncluded(updated);
-      toast.success('Included item added!');
-      if (selectedServiceItem) {
-        await saveServiceItem({ name: serviceName || selectedServiceItem.name, whatsIncluded: updated });
-      }
+      toast.success(editIndex !== undefined ? 'Included item updated!' : 'Included item added!');
+      if (selectedServiceItem) await saveServiceItem({ name: serviceName || selectedServiceItem.name, whatsIncluded: updated });
     }
   };
 
@@ -340,90 +361,48 @@ export default function ServiceDetailView() {
     const editIdx = textModalConfig.editIndex;
 
     if (section === 'features') {
-      let updated: string[];
-      if (editIdx !== undefined && editIdx >= 0) {
-        updated = [...features];
-        updated[editIdx] = text;
-      } else {
-        updated = [...features, text];
-      }
+      const updated = editIdx !== undefined ? features.map((f, i) => (i === editIdx ? text : f)) : [...features, text];
       setFeatures(updated);
       toast.success(editIdx !== undefined ? 'Feature updated!' : 'Feature added!');
-      if (selectedServiceItem) {
-        await saveServiceItem({ name: serviceName || selectedServiceItem.name, features: updated });
-      }
+      if (selectedServiceItem) await saveServiceItem({ name: serviceName || selectedServiceItem.name, features: updated });
     } else if (section === 'pros') {
-      let updated: string[];
-      if (editIdx !== undefined && editIdx >= 0) {
-        updated = [...skilledPros];
-        updated[editIdx] = text;
-      } else {
-        updated = [...skilledPros, text];
-      }
+      const updated = editIdx !== undefined ? skilledPros.map((p, i) => (i === editIdx ? text : p)) : [...skilledPros, text];
       setSkilledPros(updated);
-      toast.success(editIdx !== undefined ? 'Skilled professional highlight updated!' : 'Skilled professional highlight added!');
-      if (selectedServiceItem) {
-        await saveServiceItem({ name: serviceName || selectedServiceItem.name, skilledPros: updated });
-      }
+      toast.success(editIdx !== undefined ? 'Highlight updated!' : 'Highlight added!');
+      if (selectedServiceItem) await saveServiceItem({ name: serviceName || selectedServiceItem.name, skilledPros: updated });
     } else if (section === 'care') {
-      let updated: string[];
-      if (editIdx !== undefined && editIdx >= 0) {
-        updated = [...prePostCare];
-        updated[editIdx] = text;
-      } else {
-        updated = [...prePostCare, text];
-      }
+      const updated = editIdx !== undefined ? prePostCare.map((c, i) => (i === editIdx ? text : c)) : [...prePostCare, text];
       setPrePostCare(updated);
-      toast.success(editIdx !== undefined ? 'Pre & Post care instruction updated!' : 'Pre & Post care instruction added!');
-      if (selectedServiceItem) {
-        await saveServiceItem({ name: serviceName || selectedServiceItem.name, prePostCare: updated });
-      }
+      toast.success(editIdx !== undefined ? 'Care instruction updated!' : 'Care instruction added!');
+      if (selectedServiceItem) await saveServiceItem({ name: serviceName || selectedServiceItem.name, prePostCare: updated });
     } else if (section === 'disclaimer') {
-      let updated: string[];
-      if (editIdx !== undefined && editIdx >= 0) {
-        updated = [...disclaimer];
-        updated[editIdx] = text;
-      } else {
-        updated = [...disclaimer, text];
-      }
+      const updated = editIdx !== undefined ? disclaimer.map((d, i) => (i === editIdx ? text : d)) : [...disclaimer, text];
       setDisclaimer(updated);
-      toast.success(editIdx !== undefined ? 'Disclaimer instruction updated!' : 'Disclaimer instruction added!');
-      if (selectedServiceItem) {
-        await saveServiceItem({ name: serviceName || selectedServiceItem.name, disclaimer: updated });
-      }
-    } else if (section === 'faqs') {
-      let updated: string[];
-      if (editIdx !== undefined && editIdx >= 0) {
-        updated = [...faqs];
-        updated[editIdx] = text;
-      } else {
-        updated = [...faqs, text];
-      }
-      setFaqs(updated);
-      toast.success(editIdx !== undefined ? 'FAQ question updated!' : 'FAQ question added!');
-      if (selectedServiceItem) {
-        await saveServiceItem({ name: serviceName || selectedServiceItem.name, faqs: updated });
-      }
+      toast.success(editIdx !== undefined ? 'Disclaimer point updated!' : 'Disclaimer point added!');
+      if (selectedServiceItem) await saveServiceItem({ name: serviceName || selectedServiceItem.name, disclaimer: updated });
     } else if (section === 'trusted') {
-      let updated: string[];
-      if (editIdx !== undefined && editIdx >= 0) {
-        updated = [...trustedLoved];
-        updated[editIdx] = text;
-      } else {
-        updated = [...trustedLoved, text];
-      }
+      const updated = editIdx !== undefined ? trustedLoved.map((t, i) => (i === editIdx ? text : t)) : [...trustedLoved, text];
       setTrustedLoved(updated);
       toast.success(editIdx !== undefined ? 'Highlight point updated!' : 'Highlight point added!');
-      if (selectedServiceItem) {
-        await saveServiceItem({ name: serviceName || selectedServiceItem.name, trustedLoved: updated });
-      }
+      if (selectedServiceItem) await saveServiceItem({ name: serviceName || selectedServiceItem.name, trustedLoved: updated });
     }
+  };
+
+  const handleFaqAdd = async (faq: FaqItem) => {
+    const updated = [...faqs, faq];
+    setFaqs(updated);
+    toast.success('FAQ added!');
+    if (selectedServiceItem) await saveServiceItem({ name: serviceName || selectedServiceItem.name, faqs: updated });
+  };
+
+  const handleFaqFieldBlur = async () => {
+    if (selectedServiceItem) await saveServiceItem({ name: serviceName || selectedServiceItem.name, faqs });
   };
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-16 animate-in fade-in duration-300 w-full">
 
-      {/* Hidden file input */}
+      {/* Hidden file inputs */}
       <input
         type="file"
         ref={fileInputRef}
@@ -431,7 +410,6 @@ export default function ServiceDetailView() {
         className="hidden"
         onChange={handleFileChange}
       />
-
       <input
         type="file"
         ref={reviewFileInputRef}
@@ -531,20 +509,22 @@ export default function ServiceDetailView() {
             <div className="flex items-center gap-3">
               <Button
                 variant="outline"
+                disabled={saving}
                 onClick={() => handleSave(false)}
               >
                 Save as Draft
               </Button>
               <Button
+                disabled={saving}
                 onClick={() => handleSave(true)}
                 className="bg-[#221812] text-white hover:bg-black"
               >
-                Publish
+                {saving ? 'Saving...' : 'Publish'}
               </Button>
             </div>
           </div>
 
-          {/* Service Name, Slug, Upload & Toggle Row */}
+          {/* Service Name, Slug, Upload Row */}
           <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
 
             {/* Upload Box */}
@@ -558,9 +538,13 @@ export default function ServiceDetailView() {
                     <Loader2 className="w-6 h-6 animate-spin" />
                     <span className="text-xs font-semibold">Uploading to R2...</span>
                   </div>
-                ) : imageUrl ? (
+                ) : thumbnailUrl ? (
                   <div className="w-full h-full relative flex items-center justify-center">
-                    <img src={imageUrl} alt="Service Preview" className="max-h-32 object-contain" />
+                    {thumbnailType === 'VIDEO' ? (
+                      <video src={thumbnailUrl} className="max-h-32 object-contain" muted />
+                    ) : (
+                      <img src={thumbnailUrl} alt="Service Preview" className="max-h-32 object-contain" />
+                    )}
                     <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity rounded-xl">
                       <span className="text-xs text-white bg-black/60 px-3 py-1.5 rounded-md">Change Image</span>
                     </div>
@@ -577,7 +561,7 @@ export default function ServiceDetailView() {
               </div>
             </div>
 
-            {/* Inputs: Service Name, Slug + Main Card toggle */}
+            {/* Inputs: Service Name, Slug */}
             <div className="md:col-span-8 space-y-4">
               <div>
                 <label className="text-xs font-semibold text-gray-700 mb-1.5 block">
@@ -587,38 +571,25 @@ export default function ServiceDetailView() {
                   type="text"
                   placeholder="Enter service name"
                   value={serviceName}
-                  onChange={(e) => setServiceName(e.target.value)}
+                  onChange={(e) => handleNameChange(e.target.value)}
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C]"
                 />
               </div>
 
-              <div className="flex items-center gap-4">
-                <div className="flex-1">
-                  <label className="text-xs font-semibold text-gray-700 mb-1.5 block">
-                    Slug<span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Enter slug"
-                    value={slug}
-                    onChange={(e) => setSlug(e.target.value)}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C]"
-                  />
-                </div>
-
-                {/* Main Card Toggle */}
-                <div className="flex flex-col items-center justify-center pt-5">
-                  <span className="text-xs font-semibold text-gray-700 mb-1">Main Card</span>
-                  <button
-                    type="button"
-                    onClick={() => setIsMainCard(!isMainCard)}
-                    className={`w-12 h-6 rounded-full p-1 transition-colors duration-200 ease-in-out ${isMainCard ? 'bg-[#9C8271]' : 'bg-gray-300'
-                      }`}
-                  >
-                    <div className={`w-4 h-4 rounded-full bg-white shadow-md transform transition-transform duration-200 ease-in-out ${isMainCard ? 'translate-x-6' : 'translate-x-0'
-                      }`} />
-                  </button>
-                </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-700 mb-1.5 block">
+                  Slug
+                </label>
+                <input
+                  type="text"
+                  placeholder="auto-generated-from-name"
+                  value={slug}
+                  onChange={(e) => {
+                    setSlugTouched(true);
+                    setSlug(e.target.value);
+                  }}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C]"
+                />
               </div>
             </div>
 
@@ -632,12 +603,18 @@ export default function ServiceDetailView() {
               </label>
               <div className="relative">
                 <select
-                  value={mainCategory}
-                  onChange={(e) => setMainCategory(e.target.value)}
+                  value={categoryId}
+                  onChange={(e) => {
+                    const newCategoryId = e.target.value;
+                    setCategoryId(newCategoryId);
+                    const firstSub = subCategories.find(s => s.categoryId === newCategoryId);
+                    setSubCategoryId(firstSub?.id || '');
+                  }}
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C] bg-white cursor-pointer"
                 >
+                  <option value="" disabled>Select a category</option>
                   {categories.map((cat) => (
-                    <option key={cat.id} value={cat.name}>{cat.name}</option>
+                    <option key={cat.id} value={cat.id}>{cat.name}</option>
                   ))}
                 </select>
                 <ChevronDown className="w-4 h-4 text-gray-400 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -650,12 +627,13 @@ export default function ServiceDetailView() {
               </label>
               <div className="relative">
                 <select
-                  value={subCategoryName}
-                  onChange={(e) => setSubCategoryName(e.target.value)}
+                  value={subCategoryId}
+                  onChange={(e) => setSubCategoryId(e.target.value)}
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C] bg-white cursor-pointer"
                 >
-                  {subCategories.map((sub) => (
-                    <option key={sub.id} value={sub.name}>{sub.name}</option>
+                  <option value="" disabled>Select a sub-category</option>
+                  {subCategoryOptions.map((sub) => (
+                    <option key={sub.id} value={sub.id}>{sub.name}</option>
                   ))}
                 </select>
                 <ChevronDown className="w-4 h-4 text-gray-400 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -694,6 +672,7 @@ export default function ServiceDetailView() {
               <h3 className="text-sm font-bold text-gray-900">Select Duration (timeslots)</h3>
               <Button
                 size="sm"
+                disabled={!selectedServiceItem}
                 onClick={() => setDurationModalOpen(true)}
                 className="bg-[#1C1512] text-white hover:bg-black h-8 px-3"
               >
@@ -712,8 +691,12 @@ export default function ServiceDetailView() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 text-sm text-gray-700">
-                  {selectedServiceItem?.durations && selectedServiceItem.durations.length > 0 ? (
-                    selectedServiceItem.durations.map((dur) => (
+                  {serviceDetailLoading ? (
+                    <tr>
+                      <td colSpan={3} className="py-6 text-center text-xs text-gray-400">Loading...</td>
+                    </tr>
+                  ) : serviceDurations.length > 0 ? (
+                    serviceDurations.map((dur) => (
                       <tr key={dur.id} className="hover:bg-gray-50/50">
                         <td className="py-3 px-4 sm:px-6 font-medium">{dur.label}</td>
                         <td className="py-3 px-4 sm:px-6 text-center font-semibold text-gray-900">
@@ -721,13 +704,11 @@ export default function ServiceDetailView() {
                         </td>
                         <td className="py-3 px-4 sm:px-6 text-right">
                           <div className="flex items-center justify-end gap-2">
-                            <Button variant="outline" size="icon" className="w-7 h-7">
-                              <Edit3 className="w-3.5 h-3.5" />
-                            </Button>
                             <Button
                               variant="destructive"
                               size="icon"
                               onClick={async () => {
+                                if (!selectedServiceItem) return;
                                 const res = await deleteDurationFromService(selectedServiceItem.id, dur.id);
                                 if (res.ok) {
                                   toast.success('Timeslot removed');
@@ -761,6 +742,7 @@ export default function ServiceDetailView() {
               <h3 className="text-sm font-bold text-gray-900">Select a pack</h3>
               <Button
                 size="sm"
+                disabled={!selectedServiceItem}
                 onClick={() => setPackModalOpen(true)}
                 className="bg-[#1C1512] text-white hover:bg-black h-8 px-3"
               >
@@ -782,10 +764,14 @@ export default function ServiceDetailView() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 text-sm text-gray-700">
-                  {selectedServiceItem?.packages && selectedServiceItem.packages.length > 0 ? (
-                    selectedServiceItem.packages.map((pkg) => (
+                  {serviceDetailLoading ? (
+                    <tr>
+                      <td colSpan={6} className="py-6 text-center text-xs text-gray-400">Loading...</td>
+                    </tr>
+                  ) : servicePackages.length > 0 ? (
+                    servicePackages.map((pkg) => (
                       <tr key={pkg.id} className="hover:bg-[#FAF9F6]/50">
-                        <td className="py-3 px-4 sm:px-6 font-semibold text-gray-900">{pkg.sessions}</td>
+                        <td className="py-3 px-4 sm:px-6 font-semibold text-gray-900">{pkg.label} ({pkg.sessions})</td>
                         <td className="py-3 px-4 sm:px-6 text-center font-semibold text-gray-900">
                           {pkg.price.toLocaleString()}
                         </td>
@@ -800,13 +786,11 @@ export default function ServiceDetailView() {
                         </td>
                         <td className="py-3 px-4 sm:px-6 text-right">
                           <div className="flex items-center justify-end gap-2">
-                            <Button variant="outline" size="icon" className="w-7 h-7">
-                              <Edit3 className="w-3.5 h-3.5" />
-                            </Button>
                             <Button
                               variant="destructive"
                               size="icon"
                               onClick={async () => {
+                                if (!selectedServiceItem) return;
                                 const res = await deletePackageFromService(selectedServiceItem.id, pkg.id);
                                 if (res.ok) {
                                   toast.success('Session pack removed');
@@ -840,6 +824,7 @@ export default function ServiceDetailView() {
               <h3 className="text-sm font-bold text-gray-900">Add-ons</h3>
               <Button
                 size="sm"
+                disabled={!selectedServiceItem}
                 onClick={() => setAddOnModalOpen(true)}
                 className="bg-[#1C1512] text-white hover:bg-black h-8 px-3"
               >
@@ -858,36 +843,38 @@ export default function ServiceDetailView() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 text-sm text-gray-700">
-                  {addOns.length === 0 ? (
+                  {serviceDetailLoading ? (
+                    <tr>
+                      <td colSpan={3} className="py-6 text-center text-xs text-gray-400">Loading...</td>
+                    </tr>
+                  ) : serviceAddOns.length === 0 ? (
                     <tr>
                       <td colSpan={3} className="py-6 text-center text-xs text-gray-400">
                         No add-ons created yet. Click "+ Add" to create one.
                       </td>
                     </tr>
                   ) : (
-                    addOns.map((addon, i) => (
-                      <tr key={addon.id || i} className="hover:bg-gray-50/50">
-                        <td className="py-3.5 px-4 sm:px-6 font-semibold text-gray-900">{addon.name}</td>
+                    serviceAddOns.map((addon) => (
+                      <tr key={addon.id} className="hover:bg-gray-50/50">
+                        <td className="py-3.5 px-4 sm:px-6 font-semibold text-gray-900 flex items-center gap-2.5">
+                          {addon.imageKey && (
+                            <img src={addon.imageKey} alt={addon.name} className="w-8 h-8 rounded-lg object-cover flex-shrink-0" />
+                          )}
+                          {addon.name}
+                        </td>
                         <td className="py-3.5 px-4 sm:px-6 text-center font-bold text-gray-900">{addon.price}</td>
                         <td className="py-3.5 px-4 sm:px-6 text-right">
                           <div className="flex items-center justify-end gap-2">
-                            <Button variant="outline" size="icon" className="w-7 h-7">
-                              <Edit3 className="w-3.5 h-3.5" />
-                            </Button>
                             <Button
                               variant="destructive"
                               size="icon"
                               onClick={async () => {
-                                if (selectedServiceItem && addon.id) {
-                                  const res = await deleteAddOnFromService(selectedServiceItem.id, addon.id);
-                                  if (res.ok) {
-                                    toast.success('Add-on removed');
-                                  } else {
-                                    toast.error(`Failed to remove add-on: ${res.message || 'Error occurred'}`);
-                                  }
+                                if (!selectedServiceItem) return;
+                                const res = await deleteAddOnFromService(selectedServiceItem.id, addon.id);
+                                if (res.ok) {
+                                  toast.success('Add-on removed');
                                 } else {
-                                  setAddOns(prev => prev.filter((_, idx) => idx !== i));
-                                  toast.info('Add-on removed');
+                                  toast.error(`Failed to remove add-on: ${res.message || 'Error occurred'}`);
                                 }
                               }}
                               className="w-7 h-7 bg-red-50 text-red-500 hover:bg-red-100 border-none"
@@ -944,14 +931,6 @@ export default function ServiceDetailView() {
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                       <button
                         type="button"
-                        onClick={() => setTextModalConfig({ isOpen: true, title: 'Edit Feature', placeholder: 'Enter feature content...', targetSection: 'features', editIndex: index, initialValue: feat })}
-                        className="w-8 h-8 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-center text-gray-400 hover:text-gray-900 transition-colors shadow-2xs cursor-pointer"
-                        title="Edit"
-                      >
-                        <Pencil className="w-3.5 h-3.5 text-gray-500" />
-                      </button>
-                      <button
-                        type="button"
                         onClick={async () => {
                           const updated = features.filter((_, i) => i !== index);
                           setFeatures(updated);
@@ -986,7 +965,6 @@ export default function ServiceDetailView() {
               </Button>
             </div>
 
-            {/* Main Overview Text Box */}
             <div className="flex items-start gap-3">
               <textarea
                 rows={3}
@@ -1001,17 +979,6 @@ export default function ServiceDetailView() {
                 className="flex-1 p-4 border border-gray-200 rounded-2xl bg-white text-sm text-gray-700 leading-relaxed focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C]"
               />
               <div className="flex items-center gap-1.5 flex-shrink-0 pt-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const textarea = document.querySelector('textarea[placeholder="Enter overview description..."]') as HTMLTextAreaElement;
-                    textarea?.focus();
-                  }}
-                  className="w-8 h-8 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-center text-gray-400 hover:text-gray-900 transition-colors shadow-2xs cursor-pointer"
-                  title="Edit Overview Text"
-                >
-                  <Pencil className="w-3.5 h-3.5 text-gray-500" />
-                </button>
                 <button
                   type="button"
                   onClick={async () => {
@@ -1029,7 +996,6 @@ export default function ServiceDetailView() {
               </div>
             </div>
 
-            {/* Overview Steps Image Cards Grid */}
             {overviewGallery.length > 0 && (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-2">
                 {overviewGallery.map((item, idx) => (
@@ -1095,11 +1061,11 @@ export default function ServiceDetailView() {
                       <img src={step.image} alt={step.title} className="w-full h-full object-cover rounded-lg" />
                     </div>
                     <div className="font-semibold text-xs text-gray-900">{step.title}</div>
-                    <div className="text-[11px] text-gray-500 line-clamp-2">{step.description}</div>
+                    <div className="text-[11px] text-gray-500 line-clamp-2">{step.subtitle}</div>
                     <div className="flex items-center justify-end gap-1.5 pt-0.5">
                       <button
                         type="button"
-                        onClick={() => setImageModalConfig({ isOpen: true, title: 'Edit Procedure Step', hasSubtitle: true, targetSection: 'procedure', editIndex: idx, initialData: { title: step.title, subtitle: step.description, image: step.image } })}
+                        onClick={() => setImageModalConfig({ isOpen: true, title: 'Edit Procedure Step', hasSubtitle: true, targetSection: 'procedure', editIndex: idx, initialData: { title: step.title, subtitle: step.subtitle, image: step.image } })}
                         className="w-8 h-8 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-center text-gray-400 hover:text-gray-900 transition-colors shadow-2xs cursor-pointer"
                         title="Edit"
                       >
@@ -1165,14 +1131,6 @@ export default function ServiceDetailView() {
                       className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C] bg-white text-gray-900"
                     />
                     <div className="flex items-center gap-1.5 flex-shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => setTextModalConfig({ isOpen: true, title: 'Edit Disclaimer Point', placeholder: 'Enter disclaimer point...', targetSection: 'disclaimer', editIndex: index, initialValue: item })}
-                        className="w-8 h-8 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-center text-gray-400 hover:text-gray-900 transition-colors shadow-2xs cursor-pointer"
-                        title="Edit"
-                      >
-                        <Pencil className="w-3.5 h-3.5 text-gray-500" />
-                      </button>
                       <button
                         type="button"
                         onClick={async () => {
@@ -1292,14 +1250,6 @@ export default function ServiceDetailView() {
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                       <button
                         type="button"
-                        onClick={() => setTextModalConfig({ isOpen: true, title: 'Edit Professional Highlight', placeholder: 'Enter professional highlight...', targetSection: 'pros', editIndex: index, initialValue: pro })}
-                        className="w-8 h-8 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-center text-gray-400 hover:text-gray-900 transition-colors shadow-2xs cursor-pointer"
-                        title="Edit"
-                      >
-                        <Pencil className="w-3.5 h-3.5 text-gray-500" />
-                      </button>
-                      <button
-                        type="button"
                         onClick={async () => {
                           const updated = skilledPros.filter((_, i) => i !== index);
                           setSkilledPros(updated);
@@ -1358,14 +1308,6 @@ export default function ServiceDetailView() {
                       className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C] bg-white text-gray-900"
                     />
                     <div className="flex items-center gap-1.5 flex-shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => setTextModalConfig({ isOpen: true, title: 'Edit Care Instruction', placeholder: 'Enter care instruction...', targetSection: 'care', editIndex: index, initialValue: care })}
-                        className="w-8 h-8 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-center text-gray-400 hover:text-gray-900 transition-colors shadow-2xs cursor-pointer"
-                        title="Edit"
-                      >
-                        <Pencil className="w-3.5 h-3.5 text-gray-500" />
-                      </button>
                       <button
                         type="button"
                         onClick={async () => {
@@ -1454,7 +1396,7 @@ export default function ServiceDetailView() {
               <h3 className="text-sm font-bold text-gray-900">FAQs</h3>
               <Button
                 size="sm"
-                onClick={() => setTextModalConfig({ isOpen: true, title: 'Add FAQ Question', placeholder: 'Enter FAQ question...', targetSection: 'faqs' })}
+                onClick={() => setFaqModalOpen(true)}
                 className="bg-[#1C1512] text-white hover:bg-black h-8 px-3"
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -1469,31 +1411,20 @@ export default function ServiceDetailView() {
                 </div>
               ) : (
                 faqs.map((faq, index) => (
-                  <div key={index} className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={faq}
-                      onChange={(e) => {
-                        const updated = [...faqs];
-                        updated[index] = e.target.value;
-                        setFaqs(updated);
-                      }}
-                      onBlur={async () => {
-                        if (selectedServiceItem) {
-                          await saveServiceItem({ name: serviceName || selectedServiceItem.name, faqs });
-                        }
-                      }}
-                      className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C] bg-white text-gray-900"
-                    />
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => setTextModalConfig({ isOpen: true, title: 'Edit FAQ Question', placeholder: 'Enter FAQ question...', targetSection: 'faqs', editIndex: index, initialValue: faq })}
-                        className="w-8 h-8 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-center text-gray-400 hover:text-gray-900 transition-colors shadow-2xs cursor-pointer"
-                        title="Edit"
-                      >
-                        <Pencil className="w-3.5 h-3.5 text-gray-500" />
-                      </button>
+                  <div key={index} className="p-4 border border-gray-100 rounded-2xl bg-white shadow-2xs space-y-2">
+                    <div className="flex items-start gap-2">
+                      <input
+                        type="text"
+                        placeholder="Question"
+                        value={faq.question}
+                        onChange={(e) => {
+                          const updated = [...faqs];
+                          updated[index] = { ...updated[index], question: e.target.value };
+                          setFaqs(updated);
+                        }}
+                        onBlur={handleFaqFieldBlur}
+                        className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C] bg-white text-gray-900"
+                      />
                       <button
                         type="button"
                         onClick={async () => {
@@ -1504,12 +1435,24 @@ export default function ServiceDetailView() {
                             await saveServiceItem({ name: serviceName || selectedServiceItem.name, faqs: updated });
                           }
                         }}
-                        className="w-8 h-8 rounded-lg border border-red-100 bg-white hover:bg-red-50 flex items-center justify-center text-red-400 transition-colors shadow-2xs cursor-pointer"
+                        className="w-8 h-8 rounded-lg border border-red-100 bg-white hover:bg-red-50 flex items-center justify-center text-red-400 transition-colors shadow-2xs cursor-pointer flex-shrink-0"
                         title="Delete"
                       >
                         <Trash2 className="w-3.5 h-3.5 text-red-400" />
                       </button>
                     </div>
+                    <textarea
+                      rows={2}
+                      placeholder="Answer"
+                      value={faq.answer}
+                      onChange={(e) => {
+                        const updated = [...faqs];
+                        updated[index] = { ...updated[index], answer: e.target.value };
+                        setFaqs(updated);
+                      }}
+                      onBlur={handleFaqFieldBlur}
+                      className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm resize-none focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C] bg-white text-gray-700"
+                    />
                   </div>
                 ))
               )}
@@ -1556,14 +1499,6 @@ export default function ServiceDetailView() {
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                       <button
                         type="button"
-                        onClick={() => setTextModalConfig({ isOpen: true, title: 'Edit Point', placeholder: 'Enter point...', targetSection: 'trusted', editIndex: index, initialValue: item })}
-                        className="w-8 h-8 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-center text-gray-400 hover:text-gray-900 transition-colors shadow-2xs cursor-pointer"
-                        title="Edit"
-                      >
-                        <Pencil className="w-3.5 h-3.5 text-gray-500" />
-                      </button>
-                      <button
-                        type="button"
                         onClick={async () => {
                           const updated = trustedLoved.filter((_, i) => i !== index);
                           setTrustedLoved(updated);
@@ -1584,7 +1519,7 @@ export default function ServiceDetailView() {
             </div>
           </div>
 
-          {/* SECTION 13: Reviews Form (Matching Figma Screenshot Exactly) */}
+          {/* SECTION 13: Reviews */}
           <div className="space-y-4 pt-4 border-t border-gray-100 w-full">
             <div className="flex items-center justify-between">
               <h3 className="text-[20px] font-bold text-gray-900 tracking-tight">Reviews</h3>
@@ -1594,15 +1529,13 @@ export default function ServiceDetailView() {
                 className="bg-[#1C1512] text-white hover:bg-black h-8 px-3.5 rounded-xl text-xs"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>Add FAQ</span>
+                <span>Add Review</span>
               </Button>
             </div>
 
-            {/* Figma Review Form Layout */}
             {showReviewForm && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start bg-white p-5 rounded-2xl border border-gray-100 shadow-2xs">
 
-                {/* Left Column: Name & Image Upload & Display Order */}
                 <div className="space-y-4">
                   <div>
                     <label className="text-xs font-semibold text-gray-800 mb-1.5 block">Name</label>
@@ -1616,7 +1549,6 @@ export default function ServiceDetailView() {
                   </div>
 
                   <div className="grid grid-cols-2 gap-4 items-center">
-                    {/* Image Upload Box */}
                     <div
                       onClick={() => reviewFileInputRef.current?.click()}
                       className="h-32 bg-[#FAF5F0] rounded-2xl border border-[#F2E5D9] flex flex-col items-center justify-center text-center p-2 cursor-pointer hover:border-[#D4A373] transition-colors relative overflow-hidden group"
@@ -1644,7 +1576,6 @@ export default function ServiceDetailView() {
                       )}
                     </div>
 
-                    {/* Display Order & Cancel/Save Buttons */}
                     <div className="space-y-4">
                       <div>
                         <label className="text-xs font-semibold text-gray-800 mb-1.5 block">Display Order</label>
@@ -1667,6 +1598,7 @@ export default function ServiceDetailView() {
                             setReviewContent('');
                             setReviewOrder('1');
                             setReviewImage(null);
+                            setEditingReviewIndex(null);
                           }}
                           className="flex-1 text-xs rounded-xl border-gray-300"
                         >
@@ -1685,7 +1617,6 @@ export default function ServiceDetailView() {
                   </div>
                 </div>
 
-                {/* Right Column: Content Textarea */}
                 <div>
                   <label className="text-xs font-semibold text-gray-800 mb-1.5 block">Content</label>
                   <div className="relative">
@@ -1706,7 +1637,6 @@ export default function ServiceDetailView() {
               </div>
             )}
 
-            {/* List of Saved Reviews */}
             {reviewsList.length > 0 && (
               <div className="space-y-3 pt-2">
                 <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Saved Reviews ({reviewsList.length})</span>
@@ -1746,11 +1676,7 @@ export default function ServiceDetailView() {
                             setReviewsList(updated);
                             toast.info('Review removed');
                             if (selectedServiceItem) {
-                              await saveServiceItem({
-                                name: serviceName || selectedServiceItem.name,
-                                reviews: updated,
-                                customReviews: updated,
-                              });
+                              await saveServiceItem({ name: serviceName || selectedServiceItem.name, reviews: updated, customReviews: updated });
                             }
                           }}
                           className="w-8 h-8 rounded-lg border border-red-100 bg-white hover:bg-red-50 flex items-center justify-center text-red-400 transition-colors shadow-2xs cursor-pointer"
@@ -1829,6 +1755,12 @@ export default function ServiceDetailView() {
             initialValue={textModalConfig.initialValue}
             onClose={() => setTextModalConfig(prev => ({ ...prev, isOpen: false, editIndex: undefined, initialValue: undefined }))}
             onAdd={handleTextItemAdd}
+          />
+
+          <FaqModal
+            isOpen={faqModalOpen}
+            onClose={() => setFaqModalOpen(false)}
+            onAdd={handleFaqAdd}
           />
         </>
       )}

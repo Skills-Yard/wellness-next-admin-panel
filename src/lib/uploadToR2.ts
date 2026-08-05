@@ -1,55 +1,53 @@
-import { uploadFileServerAction } from './server-actions/media';
-import { toast } from 'react-toastify';
+import { getUploadUrlServerAction } from './server-actions/media';
 
 export interface UploadResult {
   url: string;
   r2Key?: string;
 }
 
-function fileToDataURL(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = (err) => reject(err);
-    reader.readAsDataURL(file);
-  });
-}
-
+/**
+ * Uploads a file directly to Cloudflare R2 using a short-lived presigned URL:
+ * 1. Ask the backend for a signed PUT URL scoped to this module/slug (POST /media/upload-url).
+ * 2. PUT the file straight to R2 from the browser, bypassing our backend for the file bytes.
+ *
+ * The Content-Type and Cache-Control headers below must match what the backend signed
+ * (R2StorageService.getUploadUrl sets both on the command before signing) — sending different
+ * values here makes R2 reject the request with a signature mismatch.
+ *
+ * Throws on failure rather than silently falling back to a local blob/data URL: a swallowed
+ * failure here previously looked like a successful save while nothing actually persisted.
+ */
 export async function uploadFileToR2(
   file: File,
   module: 'categories' | 'subcategories' | 'services' | 'addons' | 'professional-banners' | 'app-content',
   slug?: string
 ): Promise<UploadResult> {
-  try {
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('module', module);
-    if (slug) {
-      formData.append('slug', slug);
-    }
-    formData.append('version', '1');
+  const signed = await getUploadUrlServerAction({
+    fileName: file.name,
+    contentType: file.type,
+    module,
+    slug,
+  });
 
-    const res = await uploadFileServerAction(formData);
-
-    if (!res.ok) {
-      throw new Error(res.message || 'Direct upload failed');
-    }
-
-    if (res.data && res.data.r2Key) {
-      toast.success('File uploaded to Cloudflare R2 storage!');
-      return { url: res.data.cdnUrl, r2Key: res.data.r2Key };
-    }
-
-    throw new Error('Response data missing r2Key');
-  } catch (error: any) {
-    console.warn('R2 upload failed, fallback to Data URL:', error);
-    try {
-      const dataUrl = await fileToDataURL(file);
-      toast.success('Image loaded!');
-      return { url: dataUrl };
-    } catch {
-      const localUrl = URL.createObjectURL(file);
-      return { url: localUrl };
-    }
+  if (!signed.ok) {
+    throw new Error(signed.message || 'Could not get an upload URL');
   }
+
+  const { uploadUrl, cdnUrl, r2Key } = signed.data;
+  const CACHE_CONTROL = 'public, max-age=31536000, immutable';
+
+  const putResponse = await fetch(uploadUrl, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': file.type,
+      'Cache-Control': CACHE_CONTROL,
+    },
+    body: file,
+  });
+
+  if (!putResponse.ok) {
+    throw new Error(`Upload to storage failed (HTTP ${putResponse.status})`);
+  }
+
+  return { url: cdnUrl, r2Key };
 }

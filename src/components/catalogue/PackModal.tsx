@@ -11,6 +11,7 @@ interface PackModalProps {
 }
 
 export default function PackModal({ isOpen, onClose, onAdd }: PackModalProps) {
+  const [label, setLabel] = useState('4 Sessions');
   const [sessions, setSessions] = useState('4');
   const [price, setPrice] = useState('4319');
   const [originalPrice, setOriginalPrice] = useState('4319');
@@ -19,11 +20,17 @@ export default function PackModal({ isOpen, onClose, onAdd }: PackModalProps) {
 
   if (!isOpen) return null;
 
+  const sessionsNum = Number(sessions) || 1;
+  const priceNum = Number(price) || 0;
+  const pricePerSession = Math.round(priceNum / sessionsNum);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onAdd({
-      sessions: Number(sessions) || 1,
-      price: Number(price) || 0,
+      label: label.trim() || `${sessionsNum} Sessions`,
+      sessions: sessionsNum,
+      price: priceNum,
+      pricePerSession,
       originalPrice: originalPrice ? Number(originalPrice) : undefined,
       savings: savings ? Number(savings) : undefined,
       savingsPercent: savingsPercent ? Number(savingsPercent) : undefined,
@@ -44,6 +51,18 @@ export default function PackModal({ isOpen, onClose, onAdd }: PackModalProps) {
         <h3 className="text-xl font-bold text-gray-900 mb-6">Add Session Pack</h3>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="text-sm font-medium text-gray-700 mb-1 block">Label</label>
+            <input
+              type="text"
+              required
+              placeholder="e.g. 4 Sessions"
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C]"
+            />
+          </div>
+
           <div>
             <label className="text-sm font-medium text-gray-700 mb-1 block">Sessions Count</label>
             <input
@@ -66,6 +85,9 @@ export default function PackModal({ isOpen, onClose, onAdd }: PackModalProps) {
               onChange={(e) => setPrice(e.target.value)}
               className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C]"
             />
+            <p className="text-xs text-gray-400 mt-1">
+              ₹{Number.isFinite(pricePerSession) ? pricePerSession : 0} per session
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-4">

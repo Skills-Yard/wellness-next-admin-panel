@@ -11,9 +11,10 @@ import { toast } from 'react-toastify';
 export default function CategoriesView() {
   const { 
     loading,
-    categories, 
-    subCategories, 
-    selectedCategory, 
+    categories,
+    subCategories,
+    serviceItems,
+    selectedCategory,
     setSelectedCategory, 
     openCategoryModal, 
     navigateToServiceDetail,
@@ -27,6 +28,16 @@ export default function CategoriesView() {
   const currentSubCategories = subCategories.filter(
     s => s.categoryId === selectedCategory?.id
   );
+
+  // The backend doesn't return subCategoriesCount/servicesCount on category/sub-category
+  // responses — compute them client-side from the already-loaded lists.
+  const servicesCountBySubCategory = (subCategoryId: string) =>
+    serviceItems.filter(s => s.subCategoryId === subCategoryId).length;
+
+  const servicesCountByCategory = (categoryId: string) =>
+    subCategories
+      .filter(s => s.categoryId === categoryId)
+      .reduce((total, sub) => total + servicesCountBySubCategory(sub.id), 0);
 
   const handleDeleteCategory = async (id: string) => {
     try {
@@ -125,7 +136,7 @@ export default function CategoriesView() {
                           <div className="flex items-center gap-3 sm:gap-4">
                             <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-[#FAF5F0] border border-[#F2E5D9] flex items-center justify-center overflow-hidden flex-shrink-0 p-1">
                               <img
-                                src={category.iconKey || 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=120&q=80'}
+                                src={category.iconKey || category.homeBannerKey || 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=120&q=80'}
                                 alt={category.name}
                                 className="w-full h-full object-contain"
                               />
@@ -139,12 +150,12 @@ export default function CategoriesView() {
 
                         {/* Sub-Categories count */}
                         <td className="py-4 px-4 sm:px-6 text-center font-medium text-gray-600">
-                          {category.subCategoriesCount || subCategories.filter(s => s.categoryId === category.id).length}
+                          {subCategories.filter(s => s.categoryId === category.id).length}
                         </td>
 
                         {/* Services count */}
                         <td className="py-4 px-4 sm:px-6 text-center font-medium text-gray-600">
-                          {category.servicesCount || 0}
+                          {servicesCountByCategory(category.id)}
                         </td>
 
                         {/* Status Badge */}
@@ -307,7 +318,7 @@ export default function CategoriesView() {
 
                         {/* Services count */}
                         <td className="py-4 px-4 sm:px-6 text-center font-medium text-gray-600">
-                          {sub.servicesCount || 0}
+                          {servicesCountBySubCategory(sub.id)}
                         </td>
 
                         {/* Status Badge */}

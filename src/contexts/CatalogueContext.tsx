@@ -1,34 +1,50 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { ServiceCategory, ServiceSubCategory, ServiceItem, ServiceDuration, ServicePackage } from '../types/catalogue';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { ServiceCategory, ServiceSubCategory, ServiceItem, ServiceDuration, ServicePackage, ServiceAddOn } from '../types/catalogue';
+import { useAuth } from './AuthContext';
 import {
   getCategoriesServerAction,
   saveCategoryServerAction,
+  updateCategoryStatusServerAction,
+  updateCategorySlugServerAction,
   deleteCategoryServerAction,
+  CategoryPayload,
 } from '../lib/server-actions/category';
 import {
   getSubCategoriesServerAction,
   saveSubCategoryServerAction,
+  updateSubCategoryStatusServerAction,
+  updateSubCategorySlugServerAction,
   deleteSubCategoryServerAction,
+  SubCategoryPayload,
 } from '../lib/server-actions/sub-category';
 import {
   getServiceItemsServerAction,
   saveServiceItemServerAction,
+  updateServiceItemStatusServerAction,
+  updateServiceItemSlugServerAction,
+  updateServiceItemPublishStatusServerAction,
   deleteServiceItemServerAction,
+  ServiceItemPayload,
 } from '../lib/server-actions/service';
 import {
+  getServiceDurationsServerAction,
   saveServiceDurationServerAction,
   deleteServiceDurationServerAction,
 } from '../lib/server-actions/duration';
 import {
+  getServicePackagesServerAction,
   saveServicePackageServerAction,
   deleteServicePackageServerAction,
 } from '../lib/server-actions/package';
 import {
+  getServiceAddOnsServerAction,
   saveServiceAddOnServerAction,
   deleteServiceAddOnServerAction,
 } from '../lib/server-actions/addon';
+
+type ActionResponse = { ok: boolean; message?: string };
 
 interface CatalogueContextType {
   loading: boolean;
@@ -47,6 +63,14 @@ interface CatalogueContextType {
   selectedServiceItem: ServiceItem | null;
   setSelectedServiceItem: (item: ServiceItem | null) => void;
 
+  // Durations/packages/add-ons are NOT embedded in the service-item list/detail response —
+  // the backend requires a dedicated GET with serviceItemId for each. These track whichever
+  // service is currently selected, and refetch whenever selectedServiceItem changes.
+  serviceDurations: ServiceDuration[];
+  servicePackages: ServicePackage[];
+  serviceAddOns: ServiceAddOn[];
+  serviceDetailLoading: boolean;
+
   // Modals state
   categoryModalOpen: boolean;
   setCategoryModalOpen: (open: boolean) => void;
@@ -59,23 +83,31 @@ interface CatalogueContextType {
 
   // Server Actions CRUD returning { ok: boolean, message?: string }
   refreshData: () => Promise<void>;
-  saveCategory: (data: Partial<ServiceCategory>) => Promise<{ ok: boolean; message?: string }>;
-  saveSubCategory: (data: Partial<ServiceSubCategory>) => Promise<{ ok: boolean; message?: string }>;
-  saveServiceItem: (data: Partial<ServiceItem>) => Promise<{ ok: boolean; message?: string }>;
-  deleteCategory: (id: string) => Promise<{ ok: boolean; message?: string }>;
-  deleteSubCategory: (id: string) => Promise<{ ok: boolean; message?: string }>;
-  deleteServiceItem: (id: string) => Promise<{ ok: boolean; message?: string }>;
+  saveCategory: (data: Partial<ServiceCategory>) => Promise<ActionResponse>;
+  updateCategoryStatus: (id: string, isActive: boolean) => Promise<ActionResponse>;
+  deleteCategory: (id: string) => Promise<ActionResponse>;
 
-  // Timeslots & Packs management
-  addDurationToService: (serviceId: string, duration: Omit<ServiceDuration, 'id'>) => Promise<{ ok: boolean; message?: string }>;
-  deleteDurationFromService: (serviceId: string, durationId: string) => Promise<{ ok: boolean; message?: string }>;
-  addPackageToService: (serviceId: string, pkg: Omit<ServicePackage, 'id'>) => Promise<{ ok: boolean; message?: string }>;
-  deletePackageFromService: (serviceId: string, packageId: string) => Promise<{ ok: boolean; message?: string }>;
-  addAddOnToService: (serviceId: string, addon: { name: string; price: number; description?: string; extraMinutes?: number; imageKey?: string; isActive?: boolean }) => Promise<{ ok: boolean; message?: string }>;
-  deleteAddOnFromService: (serviceId: string, addonId: string) => Promise<{ ok: boolean; message?: string }>;
+  saveSubCategory: (data: Partial<ServiceSubCategory>) => Promise<ActionResponse>;
+  updateSubCategoryStatus: (id: string, isActive: boolean) => Promise<ActionResponse>;
+  deleteSubCategory: (id: string) => Promise<ActionResponse>;
+
+  saveServiceItem: (data: Partial<ServiceItem>) => Promise<ActionResponse>;
+  updateServiceItemStatus: (id: string, isActive: boolean) => Promise<ActionResponse>;
+  updateServiceItemPublishStatus: (id: string, isPublished: boolean) => Promise<ActionResponse>;
+  deleteServiceItem: (id: string) => Promise<ActionResponse>;
+
+  // Timeslots & Packs & Add-ons management
+  addDurationToService: (serviceId: string, duration: Omit<ServiceDuration, 'id'>) => Promise<ActionResponse>;
+  deleteDurationFromService: (serviceId: string, durationId: string) => Promise<ActionResponse>;
+  addPackageToService: (serviceId: string, pkg: Omit<ServicePackage, 'id'>) => Promise<ActionResponse>;
+  deletePackageFromService: (serviceId: string, packageId: string) => Promise<ActionResponse>;
+  addAddOnToService: (serviceId: string, addon: Omit<ServiceAddOn, 'id' | 'serviceItemId'>) => Promise<ActionResponse>;
+  deleteAddOnFromService: (serviceId: string, addonId: string) => Promise<ActionResponse>;
 }
 
 const CatalogueContext = createContext<CatalogueContextType | undefined>(undefined);
+
+const isDraftId = (id?: string | null, prefix?: string) => !!id && !!prefix && id.startsWith(prefix);
 
 export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [loading, setLoading] = useState(true);
@@ -90,62 +122,49 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [serviceItems, setServiceItems] = useState<ServiceItem[]>([]);
   const [selectedServiceItem, setSelectedServiceItem] = useState<ServiceItem | null>(null);
 
+  const [serviceDurations, setServiceDurations] = useState<ServiceDuration[]>([]);
+  const [servicePackages, setServicePackages] = useState<ServicePackage[]>([]);
+  const [serviceAddOns, setServiceAddOns] = useState<ServiceAddOn[]>([]);
+  const [serviceDetailLoading, setServiceDetailLoading] = useState(false);
+
   // Modals state
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
   const [categoryModalMode, setCategoryModalMode] = useState<'category' | 'subcategory'>('category');
   const [modalEditData, setModalEditData] = useState<ServiceCategory | ServiceSubCategory | null>(null);
 
-  // Fetch real data from NestJS Backend via Server Actions
+  // Fetch real data from the backend
   const refreshData = async () => {
     setLoading(true);
     try {
       const backendCategories = await getCategoriesServerAction();
-      if (backendCategories && Array.isArray(backendCategories)) {
-        setCategories(backendCategories);
-        if (backendCategories.length > 0) {
-          setSelectedCategory(prev => {
-            if (prev) {
-              const matched = backendCategories.find(c => c.id === prev.id);
-              if (matched) return matched;
-            }
-            return backendCategories[0];
-          });
-        } else {
-          setSelectedCategory(null);
+      setCategories(backendCategories);
+      setSelectedCategory(prev => {
+        if (prev) {
+          const matched = backendCategories.find(c => c.id === prev.id);
+          if (matched) return matched;
         }
-      }
+        return backendCategories[0] || null;
+      });
 
       const backendSubCats = await getSubCategoriesServerAction();
-      if (backendSubCats && Array.isArray(backendSubCats)) {
-        setSubCategories(backendSubCats);
-        if (backendSubCats.length > 0) {
-          setSelectedSubCategory(prev => {
-            if (prev) {
-              const matched = backendSubCats.find(s => s.id === prev.id);
-              if (matched) return matched;
-            }
-            return backendSubCats[0];
-          });
-        } else {
-          setSelectedSubCategory(null);
+      setSubCategories(backendSubCats);
+      setSelectedSubCategory(prev => {
+        if (prev) {
+          const matched = backendSubCats.find(s => s.id === prev.id);
+          if (matched) return matched;
         }
-      }
+        return backendSubCats[0] || null;
+      });
 
       const backendServices = await getServiceItemsServerAction();
-      if (backendServices && Array.isArray(backendServices)) {
-        setServiceItems(backendServices);
-        if (backendServices.length > 0) {
-          setSelectedServiceItem(prev => {
-            if (prev) {
-              const matched = backendServices.find(s => s.id === prev.id);
-              if (matched) return matched;
-            }
-            return backendServices[0];
-          });
-        } else {
-          setSelectedServiceItem(null);
+      setServiceItems(backendServices);
+      setSelectedServiceItem(prev => {
+        if (prev) {
+          const matched = backendServices.find(s => s.id === prev.id);
+          if (matched) return matched;
         }
-      }
+        return backendServices[0] || null;
+      });
     } catch (err) {
       console.error('Error fetching backend catalogue data:', err);
     } finally {
@@ -153,9 +172,57 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   };
 
+  // CatalogueProvider is mounted once at the root layout, above MainLayout's auth gate — it
+  // exists (and this effect can fire) before login ever completes. Fetching unconditionally on
+  // mount means that first, unauthenticated call is the ONLY automatic fetch that ever happens;
+  // logging in afterward never re-triggers it, leaving every list empty. Key the fetch off auth
+  // state instead, so it (re)runs once a valid session actually exists.
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
+
   useEffect(() => {
-    refreshData();
+    if (authLoading) return;
+    if (isAuthenticated) {
+      refreshData();
+    } else {
+      setCategories([]);
+      setSubCategories([]);
+      setServiceItems([]);
+      setSelectedCategory(null);
+      setSelectedSubCategory(null);
+      setSelectedServiceItem(null);
+      setLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, authLoading]);
+
+  // Durations/packages/add-ons live on their own endpoints keyed by serviceItemId — refetch
+  // whenever the selected service changes. Unsaved local drafts (id starting with "srv-") have
+  // nothing to fetch yet.
+  const loadServiceDetail = useCallback(async (serviceItemId: string) => {
+    setServiceDetailLoading(true);
+    try {
+      const [durations, packages, addOns] = await Promise.all([
+        getServiceDurationsServerAction(serviceItemId),
+        getServicePackagesServerAction(serviceItemId),
+        getServiceAddOnsServerAction(serviceItemId),
+      ]);
+      setServiceDurations(durations);
+      setServicePackages(packages);
+      setServiceAddOns(addOns);
+    } finally {
+      setServiceDetailLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    if (selectedServiceItem && !isDraftId(selectedServiceItem.id, 'srv-')) {
+      loadServiceDetail(selectedServiceItem.id);
+    } else {
+      setServiceDurations([]);
+      setServicePackages([]);
+      setServiceAddOns([]);
+    }
+  }, [selectedServiceItem?.id, loadServiceDetail]);
 
   const openCategoryModal = (mode: 'category' | 'subcategory', data?: ServiceCategory | ServiceSubCategory | null) => {
     setCategoryModalMode(mode);
@@ -170,64 +237,56 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setActiveView('service-detail');
   };
 
-  // Category CRUD
-  const saveCategory = async (data: Partial<ServiceCategory>): Promise<{ ok: boolean; message?: string }> => {
+  // ---- Category CRUD ----
+  // Status and slug changes on an existing category go through their own dedicated endpoints
+  // (PATCH .../status, PATCH .../slug) rather than being bundled into the general update PATCH.
+  const saveCategory = async (data: Partial<ServiceCategory>): Promise<ActionResponse> => {
     const isNew = !modalEditData?.id || modalEditData.id.startsWith('cat-');
-    const editId = isNew ? null : modalEditData.id;
+    const editId = isNew ? null : modalEditData!.id;
 
-    const payload = {
+    const payload: CategoryPayload = {
       name: data.name || '',
       title: data.title || data.name || '',
-      slug: data.slug || undefined,
-      subtitle: data.subtitle || data.shortDescription || undefined,
-      displayOrder: Number(data.displayOrder) || 0,
+      subtitle: data.subtitle || undefined,
+      displayOrder: data.displayOrder !== undefined ? Number(data.displayOrder) : undefined,
       iconKey: data.iconKey || undefined,
+      homeBannerKey: data.homeBannerKey || undefined,
+      homeBannerType: data.homeBannerType || undefined,
+      // Category creation has no isActive field (Prisma defaults new categories to active);
+      // slug is only sent on create — edits rename slug via the dedicated endpoint below.
+      ...(isNew ? { slug: data.slug || undefined } : {}),
     };
 
     const res = await saveCategoryServerAction(editId, payload);
-    if (res.ok) {
-      if (res.data) {
-        setSelectedCategory(res.data);
-      }
-      await refreshData();
-      return { ok: true };
-    } else {
+    if (!res.ok) {
       console.error('Failed to save category:', res.message);
       return { ok: false, message: res.message };
     }
+
+    if (!isNew && data.slug && data.slug !== modalEditData?.slug) {
+      const slugRes = await updateCategorySlugServerAction(editId!, data.slug);
+      if (!slugRes.ok) return { ok: false, message: slugRes.message };
+    }
+    if (!isNew && data.isActive !== undefined && data.isActive !== modalEditData?.isActive) {
+      const statusRes = await updateCategoryStatusServerAction(editId!, data.isActive);
+      if (!statusRes.ok) return { ok: false, message: statusRes.message };
+    }
+
+    if (res.data) setSelectedCategory(res.data);
+    await refreshData();
+    return { ok: true };
   };
 
-  // SubCategory CRUD
-  const saveSubCategory = async (data: Partial<ServiceSubCategory>): Promise<{ ok: boolean; message?: string }> => {
-    const isNew = !modalEditData?.id || modalEditData.id.startsWith('sub-');
-    const editId = isNew ? null : modalEditData.id;
-
-    const payload = {
-      categoryId: selectedCategory?.id || categories[0]?.id || '',
-      name: data.name || '',
-      title: data.title || data.name || '',
-      slug: data.slug || undefined,
-      subtitle: data.subtitle || data.shortDescription || undefined,
-      displayOrder: Number(data.displayOrder) || 0,
-      isActive: data.isActive !== undefined ? data.isActive : true,
-      homeBannerKey: data.iconKey || undefined,
-      iconKey: data.iconKey || undefined,
-    };
-
-    const res = await saveSubCategoryServerAction(editId, payload);
+  const updateCategoryStatus = async (id: string, isActive: boolean): Promise<ActionResponse> => {
+    const res = await updateCategoryStatusServerAction(id, isActive);
     if (res.ok) {
-      if (res.data) {
-        setSelectedSubCategory(res.data);
-      }
       await refreshData();
       return { ok: true };
-    } else {
-      console.error('Failed to save subcategory:', res.message);
-      return { ok: false, message: res.message };
     }
+    return { ok: false, message: res.message };
   };
 
-  const deleteCategory = async (id: string): Promise<{ ok: boolean; message?: string }> => {
+  const deleteCategory = async (id: string): Promise<ActionResponse> => {
     const res = await deleteCategoryServerAction(id);
     if (res.ok) {
       await refreshData();
@@ -236,7 +295,55 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return { ok: false, message: res.message };
   };
 
-  const deleteSubCategory = async (id: string): Promise<{ ok: boolean; message?: string }> => {
+  // ---- SubCategory CRUD ----
+  // Status and slug changes on an existing sub-category go through their own dedicated
+  // endpoints rather than being bundled into the general update PATCH.
+  const saveSubCategory = async (data: Partial<ServiceSubCategory>): Promise<ActionResponse> => {
+    const isNew = !modalEditData?.id || modalEditData.id.startsWith('sub-');
+    const editId = isNew ? null : modalEditData!.id;
+
+    const payload: SubCategoryPayload = {
+      categoryId: selectedCategory?.id || categories[0]?.id || '',
+      name: data.name || '',
+      title: data.title || data.name || '',
+      subtitle: data.subtitle || undefined,
+      iconKey: data.iconKey || undefined,
+      homeBannerKey: data.homeBannerKey || undefined,
+      homeBannerType: data.homeBannerType || undefined,
+      displayOrder: data.displayOrder !== undefined ? Number(data.displayOrder) : undefined,
+      ...(isNew ? { slug: data.slug || undefined, isActive: data.isActive } : {}),
+    };
+
+    const res = await saveSubCategoryServerAction(editId, payload);
+    if (!res.ok) {
+      console.error('Failed to save subcategory:', res.message);
+      return { ok: false, message: res.message };
+    }
+
+    if (!isNew && data.slug && data.slug !== modalEditData?.slug) {
+      const slugRes = await updateSubCategorySlugServerAction(editId!, data.slug);
+      if (!slugRes.ok) return { ok: false, message: slugRes.message };
+    }
+    if (!isNew && data.isActive !== undefined && data.isActive !== modalEditData?.isActive) {
+      const statusRes = await updateSubCategoryStatusServerAction(editId!, data.isActive);
+      if (!statusRes.ok) return { ok: false, message: statusRes.message };
+    }
+
+    if (res.data) setSelectedSubCategory(res.data);
+    await refreshData();
+    return { ok: true };
+  };
+
+  const updateSubCategoryStatus = async (id: string, isActive: boolean): Promise<ActionResponse> => {
+    const res = await updateSubCategoryStatusServerAction(id, isActive);
+    if (res.ok) {
+      await refreshData();
+      return { ok: true };
+    }
+    return { ok: false, message: res.message };
+  };
+
+  const deleteSubCategory = async (id: string): Promise<ActionResponse> => {
     const res = await deleteSubCategoryServerAction(id);
     if (res.ok) {
       await refreshData();
@@ -245,23 +352,24 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return { ok: false, message: res.message };
   };
 
-  // Service Item CRUD
-  const saveServiceItem = async (data: Partial<ServiceItem>): Promise<{ ok: boolean; message?: string }> => {
-    const isNew = !selectedServiceItem?.id || selectedServiceItem.id.startsWith('srv-');
-    const editId = isNew ? null : selectedServiceItem.id;
-    const prev = (selectedServiceItem as any) || {};
+  // ---- Service Item CRUD ----
+  // Status and slug changes on an existing service item go through their own dedicated
+  // endpoints rather than being bundled into the general update PATCH. Publish/draft state
+  // goes through updateServiceItemPublishStatus (see below) once the item exists.
+  const saveServiceItem = async (data: Partial<ServiceItem>): Promise<ActionResponse> => {
+    const isNew = !selectedServiceItem?.id || isDraftId(selectedServiceItem.id, 'srv-');
+    const editId = isNew ? null : selectedServiceItem!.id;
+    const prev = (selectedServiceItem as ServiceItem) || ({} as ServiceItem);
 
-    const payload = {
+    const payload: ServiceItemPayload = {
       subCategoryId: data.subCategoryId || prev.subCategoryId || selectedSubCategory?.id || subCategories[0]?.id || '',
       name: data.name !== undefined ? data.name : prev.name || '',
-      cardTitle: data.cardTitle !== undefined ? data.cardTitle : prev.cardTitle || data.name || prev.name || '',
-      slug: data.slug !== undefined ? data.slug : prev.slug,
+      thumbnailKey: data.thumbnailKey !== undefined ? data.thumbnailKey : prev.thumbnailKey,
+      thumbnailType: (data.thumbnailType || prev.thumbnailType) as ServiceItemPayload['thumbnailType'],
+      cardTitle: (data.cardTitle !== undefined ? data.cardTitle : prev.cardTitle || data.name || prev.name) || '',
       cardSubtitle: data.cardSubtitle !== undefined ? data.cardSubtitle : prev.cardSubtitle,
       shortDescription: data.shortDescription !== undefined ? data.shortDescription : prev.shortDescription,
       displayOrder: data.displayOrder !== undefined ? Number(data.displayOrder) : Number(prev.displayOrder) || 0,
-      isActive: data.isActive !== undefined ? data.isActive : prev.isActive !== undefined ? prev.isActive : true,
-      isPublished: data.isPublished !== undefined ? data.isPublished : prev.isPublished !== undefined ? prev.isPublished : false,
-      thumbnailKey: data.thumbnailKey !== undefined ? data.thumbnailKey : prev.thumbnailKey,
       features: data.features !== undefined ? data.features : prev.features,
       overview: data.overview !== undefined ? data.overview : prev.overview,
       procedureSteps: data.procedureSteps !== undefined ? data.procedureSteps : prev.procedureSteps,
@@ -272,24 +380,71 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       whatsIncluded: data.whatsIncluded !== undefined ? data.whatsIncluded : prev.whatsIncluded,
       faqs: data.faqs !== undefined ? data.faqs : prev.faqs,
       trustedLoved: data.trustedLoved !== undefined ? data.trustedLoved : prev.trustedLoved,
-      reviews: data.reviews !== undefined ? data.reviews : prev.customReviews || prev.reviews,
-      customReviews: data.reviews !== undefined ? data.reviews : (data as any).customReviews || prev.customReviews || prev.reviews,
+      // reviews and customReviews are kept in sync — the backend has both columns and nothing
+      // in this codebase distinguishes their meaning, so every write updates both.
+      reviews: data.reviews !== undefined ? data.reviews : data.customReviews !== undefined ? data.customReviews : prev.reviews ?? prev.customReviews,
+      customReviews: data.customReviews !== undefined ? data.customReviews : data.reviews !== undefined ? data.reviews : prev.customReviews ?? prev.reviews,
+      // New items set isActive/isPublished/slug directly at creation (the DTO supports it there);
+      // edits change these via the dedicated slug/status/publish-status endpoints instead.
+      ...(isNew
+        ? {
+            slug: data.slug !== undefined ? data.slug : prev.slug,
+            isActive: data.isActive !== undefined ? data.isActive : true,
+            isPublished: data.isPublished !== undefined ? data.isPublished : false,
+          }
+        : {}),
     };
 
     const res = await saveServiceItemServerAction(editId, payload);
-    if (res.ok) {
-      if (res.data) {
-        setSelectedServiceItem(res.data);
-      }
-      await refreshData();
-      return { ok: true };
-    } else {
+    if (!res.ok) {
       console.error('Failed to save service item:', res.message);
       return { ok: false, message: res.message };
     }
+
+    if (!isNew && data.slug && data.slug !== prev.slug) {
+      const slugRes = await updateServiceItemSlugServerAction(editId!, data.slug);
+      if (!slugRes.ok) return { ok: false, message: slugRes.message };
+    }
+    if (!isNew && data.isActive !== undefined && data.isActive !== prev.isActive) {
+      const statusRes = await updateServiceItemStatusServerAction(editId!, data.isActive);
+      if (!statusRes.ok) return { ok: false, message: statusRes.message };
+    }
+    if (!isNew && data.isPublished !== undefined && data.isPublished !== prev.isPublished) {
+      const pubRes = await updateServiceItemPublishStatusServerAction(editId!, data.isPublished);
+      if (!pubRes.ok) return { ok: false, message: pubRes.message };
+    }
+
+    if (res.data) setSelectedServiceItem(res.data);
+    await refreshData();
+    return { ok: true };
   };
 
-  const deleteServiceItem = async (id: string): Promise<{ ok: boolean; message?: string }> => {
+  const updateServiceItemStatus = async (id: string, isActive: boolean): Promise<ActionResponse> => {
+    const res = await updateServiceItemStatusServerAction(id, isActive);
+    if (res.ok) {
+      await refreshData();
+      return { ok: true };
+    }
+    return { ok: false, message: res.message };
+  };
+
+  const updateServiceItemPublishStatus = async (id: string, isPublished: boolean): Promise<ActionResponse> => {
+    const res = await updateServiceItemPublishStatusServerAction(id, isPublished);
+    if (res.ok) {
+      if (res.data) setSelectedServiceItem(res.data);
+      await refreshData();
+      return { ok: true };
+    }
+    return { ok: false, message: res.message };
+  };
+
+  const deleteServiceItem = async (id: string): Promise<ActionResponse> => {
+    // Unsaved local draft — nothing exists on the backend to delete yet.
+    if (isDraftId(id, 'srv-')) {
+      setServiceItems(prev => prev.filter(s => s.id !== id));
+      setSelectedServiceItem(null);
+      return { ok: true };
+    }
     const res = await deleteServiceItemServerAction(id);
     if (res.ok) {
       await refreshData();
@@ -298,79 +453,90 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return { ok: false, message: res.message };
   };
 
-  const addDurationToService = async (serviceId: string, duration: Omit<ServiceDuration, 'id'>): Promise<{ ok: boolean; message?: string }> => {
+  // ---- Durations ----
+  const addDurationToService = async (serviceId: string, duration: Omit<ServiceDuration, 'id'>): Promise<ActionResponse> => {
     const res = await saveServiceDurationServerAction(null, {
       serviceItemId: serviceId,
       label: duration.label,
       durationMinutes: duration.durationMinutes,
       price: duration.price,
+      discountedPrice: duration.discountedPrice ?? undefined,
+      isDefault: duration.isDefault,
+      displayOrder: duration.displayOrder,
     });
     if (res.ok) {
-      await refreshData();
+      await loadServiceDetail(serviceId);
       return { ok: true };
     }
     return { ok: false, message: res.message };
   };
 
-  const deleteDurationFromService = async (serviceId: string, durationId: string): Promise<{ ok: boolean; message?: string }> => {
+  const deleteDurationFromService = async (serviceId: string, durationId: string): Promise<ActionResponse> => {
     const res = await deleteServiceDurationServerAction(durationId);
     if (res.ok) {
-      await refreshData();
+      await loadServiceDetail(serviceId);
       return { ok: true };
     }
     return { ok: false, message: res.message };
   };
 
-  const addPackageToService = async (serviceId: string, pkg: Omit<ServicePackage, 'id'>): Promise<{ ok: boolean; message?: string }> => {
+  // ---- Packages ----
+  const addPackageToService = async (serviceId: string, pkg: Omit<ServicePackage, 'id'>): Promise<ActionResponse> => {
     const res = await saveServicePackageServerAction(null, {
       serviceItemId: serviceId,
+      label: pkg.label,
       sessions: pkg.sessions,
       price: pkg.price,
-      originalPrice: pkg.originalPrice || undefined,
-      savings: pkg.savings || undefined,
-      savingsPercent: pkg.savingsPercent || undefined,
-      label: pkg.label,
+      pricePerSession: pkg.pricePerSession,
+      originalPrice: pkg.originalPrice ?? undefined,
+      savings: pkg.savings ?? undefined,
+      savingsPercent: pkg.savingsPercent ?? undefined,
+      badgeText: pkg.badgeText ?? undefined,
+      isPopular: pkg.isPopular,
+      displayOrder: pkg.displayOrder,
     });
     if (res.ok) {
-      await refreshData();
+      await loadServiceDetail(serviceId);
       return { ok: true };
     }
     return { ok: false, message: res.message };
   };
 
-  const deletePackageFromService = async (serviceId: string, packageId: string): Promise<{ ok: boolean; message?: string }> => {
+  const deletePackageFromService = async (serviceId: string, packageId: string): Promise<ActionResponse> => {
     const res = await deleteServicePackageServerAction(packageId);
     if (res.ok) {
-      await refreshData();
+      await loadServiceDetail(serviceId);
       return { ok: true };
     }
     return { ok: false, message: res.message };
   };
 
+  // ---- Add-ons ----
   const addAddOnToService = async (
     serviceId: string,
-    addon: { name: string; price: number; description?: string; extraMinutes?: number; imageKey?: string; isActive?: boolean }
-  ): Promise<{ ok: boolean; message?: string }> => {
+    addon: Omit<ServiceAddOn, 'id' | 'serviceItemId'>
+  ): Promise<ActionResponse> => {
     const res = await saveServiceAddOnServerAction(null, {
       serviceItemId: serviceId,
       name: addon.name,
       price: addon.price,
+      imageKey: addon.imageKey,
       description: addon.description,
       extraMinutes: addon.extraMinutes,
-      imageKey: addon.imageKey,
       isActive: addon.isActive !== undefined ? addon.isActive : true,
+      displayOrder: addon.displayOrder,
     });
     if (res.ok) {
-      await refreshData();
+      await loadServiceDetail(serviceId);
       return { ok: true };
     }
     return { ok: false, message: res.message };
   };
 
-  const deleteAddOnFromService = async (serviceId: string, addonId: string): Promise<{ ok: boolean; message?: string }> => {
+  const deleteAddOnFromService = async (serviceId: string, addonId: string): Promise<ActionResponse> => {
     const res = await deleteServiceAddOnServerAction(addonId);
     if (res.ok) {
-      await refreshData();
+      await loadServiceDetail(serviceId);
       return { ok: true };
     }
     return { ok: false, message: res.message };
@@ -390,6 +556,10 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       serviceItems,
       selectedServiceItem,
       setSelectedServiceItem,
+      serviceDurations,
+      servicePackages,
+      serviceAddOns,
+      serviceDetailLoading,
       categoryModalOpen,
       setCategoryModalOpen,
       categoryModalMode,
@@ -398,10 +568,14 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       navigateToServiceDetail,
       refreshData,
       saveCategory,
-      saveSubCategory,
-      saveServiceItem,
+      updateCategoryStatus,
       deleteCategory,
+      saveSubCategory,
+      updateSubCategoryStatus,
       deleteSubCategory,
+      saveServiceItem,
+      updateServiceItemStatus,
+      updateServiceItemPublishStatus,
       deleteServiceItem,
       addDurationToService,
       deleteDurationFromService,

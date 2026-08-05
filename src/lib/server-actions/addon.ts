@@ -1,49 +1,55 @@
 'use server';
 
 import axiosInstance from '../axios';
+import { ServiceAddOn } from '../../types/catalogue';
 import { ActionResult, getAuthHeaders } from './category';
 import { parseServerError } from '../errorParser';
 
-export interface ServiceAddOnItem {
-  id: string;
-  serviceItemId: string;
-  name: string;
-  description?: string;
-  price: number;
-  extraMinutes?: number;
-  imageKey?: string;
-  isActive?: boolean;
+function unwrap<T>(resData: any, fallback: T): T {
+  if (resData && typeof resData === 'object' && 'data' in resData) return resData.data;
+  return (resData ?? fallback) as T;
 }
 
-export async function getServiceAddOnsServerAction(serviceItemId?: string): Promise<ServiceAddOnItem[]> {
+// serviceItemId is required by the backend when fetching add-ons for a specific service.
+export async function getServiceAddOnsServerAction(serviceItemId: string): Promise<ServiceAddOn[]> {
   try {
     const headers = await getAuthHeaders();
     const response = await axiosInstance.get('/admin/catalog/service-add-ons', {
       headers,
-      params: serviceItemId ? { serviceItemId } : undefined,
+      params: { serviceItemId },
     });
-    const resData = response.data;
-    if (Array.isArray(resData)) return resData;
-    if (resData && Array.isArray(resData.data)) return resData.data;
-    return [];
+    const data = unwrap<ServiceAddOn[]>(response.data, []);
+    return Array.isArray(data) ? data : [];
   } catch (error: any) {
     console.error('[getServiceAddOnsServerAction]', error?.response?.data || error.message);
     return [];
   }
 }
 
+// Matches CreateServiceAddOnDto/UpdateServiceAddOnDto. imageKey is required by the backend.
+export interface ServiceAddOnPayload {
+  serviceItemId: string;
+  name: string;
+  description?: string;
+  price: number;
+  imageKey: string;
+  extraMinutes?: number;
+  isActive?: boolean;
+  displayOrder?: number;
+}
+
 export async function saveServiceAddOnServerAction(
   id: string | null,
-  payload: Partial<ServiceAddOnItem>
-): Promise<ActionResult<ServiceAddOnItem>> {
+  payload: ServiceAddOnPayload
+): Promise<ActionResult<ServiceAddOn>> {
   try {
     const headers = await getAuthHeaders();
     if (id) {
       const response = await axiosInstance.patch(`/admin/catalog/service-add-ons/${id}`, payload, { headers });
-      return { ok: true, data: response.data?.data || response.data };
+      return { ok: true, data: unwrap(response.data, response.data) };
     } else {
       const response = await axiosInstance.post('/admin/catalog/service-add-ons', payload, { headers });
-      return { ok: true, data: response.data?.data || response.data };
+      return { ok: true, data: unwrap(response.data, response.data) };
     }
   } catch (error: any) {
     console.error('[saveServiceAddOnServerAction]', error?.response?.data || error.message);
