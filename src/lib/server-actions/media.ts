@@ -7,7 +7,7 @@ import { getAuthHeaders } from './category';
 export interface GetUploadUrlPayload {
   fileName: string;
   contentType: string;
-  module: 'categories' | 'subcategories' | 'services' | 'addons' | 'professional-banners' | 'app-content';
+  module: 'categories' | 'subcategories' | 'services' | 'addons' | 'professional-banners' | 'app-content' | 'campaigns';
   version?: number;
   slug?: string;
   zoneSlug?: string;

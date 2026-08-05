@@ -140,3 +140,88 @@ export interface ServiceCategory {
   subCategoriesCount?: number;
   servicesCount?: number;
 }
+
+// ---- Zones (see wellness-backend/prisma/schema/zone.prisma) ----
+// Zones themselves are created/managed outside this admin panel — these types only cover
+// reading the zone list and configuring per-zone availability/pricing overrides on catalogue
+// entities that already exist.
+
+export interface OperationalZone {
+  id: string;
+  name: string;
+  city: string;
+  country?: string;
+  countryCode?: string;
+  currency?: string;
+  isActive: boolean;
+}
+
+export interface ZoneServiceItemConfig {
+  id: string;
+  zoneId: string;
+  serviceItemId: string;
+  isAvailable: boolean;
+  surgeMultiplier: number;
+  zone?: OperationalZone;
+}
+
+export interface ZoneDurationConfig {
+  id: string;
+  zoneId: string;
+  serviceDurationId: string;
+  price: number; // minor units
+  discountedPrice?: number | null;
+  zone?: OperationalZone;
+}
+
+export interface ZonePackageConfig {
+  id: string;
+  zoneId: string;
+  servicePackageId: string;
+  price: number; // minor units
+  originalPrice?: number | null;
+  savings?: number | null;
+  savingsPercent?: number | null;
+  zone?: OperationalZone;
+}
+
+export interface ZoneAddOnConfig {
+  id: string;
+  zoneId: string;
+  serviceAddOnId: string;
+  price: number;
+  zone?: OperationalZone;
+}
+
+// ---- Promotional Campaigns (see wellness-backend/prisma/schema/catalog.prisma) ----
+
+export type CampaignType = 'SPOTLIGHT' | 'HIGHLIGHT_VIDEO' | 'HIGHLIGHT_BANNER' | 'CAROUSEL';
+export type CampaignTargetType = 'GLOBAL' | 'CATEGORY' | 'SUBCATEGORY';
+
+export interface PromotionalCampaign {
+  id: string;
+  type: CampaignType;
+  targetType: CampaignTargetType;
+  categoryId?: string | null;
+  subCategoryId?: string | null;
+  serviceItemId?: string | null;
+  zoneId?: string | null;
+  title?: string | null;
+  subtitle?: string | null;
+  mediaType: MediaType;
+  s3Key: string;
+  cdnUrl?: string | null;
+  ctaText?: string | null;
+  ctaDeeplink?: string | null;
+  displayOrder: number;
+  isActive: boolean;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+
+  category?: ServiceCategory | null;
+  subCategory?: ServiceSubCategory | null;
+  serviceItem?: ServiceItem | null;
+  zone?: OperationalZone | null;
+}

@@ -10,10 +10,11 @@ import { Card } from '../ui/card';
 import DurationModal from './DurationModal';
 import PackModal from './PackModal';
 import AddOnModal from './AddOnModal';
+import ZoneOverrideModal from './ZoneOverrideModal';
 import ImageCardModal from './ImageCardModal';
 import TextItemModal from './TextItemModal';
 import FaqModal from './FaqModal';
-import { FaqItem, ImageCardItem, MediaType, ReviewItem } from '../../types/catalogue';
+import { FaqItem, ImageCardItem, MediaType, ReviewItem, OperationalZone } from '../../types/catalogue';
 
 // Lightweight slug preview — the backend re-normalizes the slug itself on save either way.
 function slugify(input: string): string {
@@ -44,6 +45,9 @@ export default function ServiceDetailView() {
     deletePackageFromService,
     addAddOnToService,
     deleteAddOnFromService,
+    zones,
+    zoneServiceItemConfigs,
+    deleteZoneServiceItemConfig,
   } = useCatalogue();
 
   // Core Form states
@@ -92,6 +96,9 @@ export default function ServiceDetailView() {
   const [durationModalOpen, setDurationModalOpen] = useState(false);
   const [packModalOpen, setPackModalOpen] = useState(false);
   const [addOnModalOpen, setAddOnModalOpen] = useState(false);
+  const [zoneModalOpen, setZoneModalOpen] = useState(false);
+  const [zoneForModal, setZoneForModal] = useState<OperationalZone | null>(null);
+  const [zonePickerId, setZonePickerId] = useState('');
   const [faqModalOpen, setFaqModalOpen] = useState(false);
 
   // Generic Image Card Modal State
@@ -885,6 +892,115 @@ export default function ServiceDetailView() {
                         </td>
                       </tr>
                     ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* SECTION 3.5: Zone Availability & Pricing */}
+          <div className="space-y-3 pt-4 border-t border-gray-100 w-full">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <h3 className="text-sm font-bold text-gray-900">Zone Availability & Pricing</h3>
+                <p className="text-xs text-gray-400 mt-0.5">Zones are managed outside this panel — pick one to control availability and price overrides for this service here.</p>
+              </div>
+              {selectedServiceItem && (() => {
+                const configuredZoneIds = new Set(
+                  zoneServiceItemConfigs.filter(c => c.serviceItemId === selectedServiceItem.id).map(c => c.zoneId)
+                );
+                const availableZones = zones.filter(z => !configuredZoneIds.has(z.id));
+                return (
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={zonePickerId}
+                      onChange={(e) => setZonePickerId(e.target.value)}
+                      className="px-3 py-2 border border-gray-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C] bg-white"
+                    >
+                      <option value="">Select a zone...</option>
+                      {availableZones.map(z => (
+                        <option key={z.id} value={z.id}>{z.name} ({z.city})</option>
+                      ))}
+                    </select>
+                    <Button
+                      size="sm"
+                      disabled={!zonePickerId}
+                      onClick={() => {
+                        const z = zones.find(zone => zone.id === zonePickerId);
+                        if (!z) return;
+                        setZoneForModal(z);
+                        setZoneModalOpen(true);
+                        setZonePickerId('');
+                      }}
+                      className="bg-[#1C1512] text-white hover:bg-black h-8 px-3"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Add Zone</span>
+                    </Button>
+                  </div>
+                );
+              })()}
+            </div>
+
+            <div className="border border-gray-100 rounded-2xl overflow-x-auto w-full">
+              <table className="w-full text-left border-collapse min-w-[500px]">
+                <thead>
+                  <tr className="bg-[#FAF5F0] text-gray-700 text-xs font-semibold uppercase tracking-wider border-b border-[#F2E5D9]">
+                    <th className="py-3 px-4 sm:px-6">Zone</th>
+                    <th className="py-3 px-4 sm:px-6 text-center">Available</th>
+                    <th className="py-3 px-4 sm:px-6 text-center">Surge</th>
+                    <th className="py-3 px-4 sm:px-6 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 text-sm text-gray-700">
+                  {!selectedServiceItem || zoneServiceItemConfigs.filter(c => c.serviceItemId === selectedServiceItem.id).length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="py-6 text-center text-xs text-gray-400">
+                        No zone overrides yet. Pick a zone above to configure availability and pricing.
+                      </td>
+                    </tr>
+                  ) : (
+                    zoneServiceItemConfigs
+                      .filter(c => c.serviceItemId === selectedServiceItem.id)
+                      .map(cfg => {
+                        const z = zones.find(zone => zone.id === cfg.zoneId);
+                        if (!z) return null;
+                        return (
+                          <tr key={cfg.id} className="hover:bg-gray-50/50">
+                            <td className="py-3 px-4 sm:px-6 font-medium">{z.name} <span className="text-gray-400">({z.city})</span></td>
+                            <td className="py-3 px-4 sm:px-6 text-center">
+                              <span className={`inline-flex px-2.5 py-1 rounded-full text-[11px] font-semibold ${cfg.isAvailable ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                                {cfg.isAvailable ? 'Available' : 'Unavailable'}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 sm:px-6 text-center font-semibold text-gray-900">{cfg.surgeMultiplier}x</td>
+                            <td className="py-3 px-4 sm:px-6 text-right">
+                              <div className="flex items-center justify-end gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => { setZoneForModal(z); setZoneModalOpen(true); }}
+                                  className="h-7 px-3 text-xs"
+                                >
+                                  Edit
+                                </Button>
+                                <Button
+                                  variant="destructive"
+                                  size="icon"
+                                  onClick={async () => {
+                                    const res = await deleteZoneServiceItemConfig(cfg.id);
+                                    if (res.ok) toast.success('Zone override removed');
+                                    else toast.error(`Failed to remove zone override: ${res.message || 'Error occurred'}`);
+                                  }}
+                                  className="w-7 h-7 bg-red-50 text-red-500 hover:bg-red-100 border-none"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
                   )}
                 </tbody>
               </table>
@@ -1737,6 +1853,13 @@ export default function ServiceDetailView() {
                 toast.error(`Failed to add add-on: ${res.message || 'Error occurred'}`);
               }
             }}
+          />
+
+          <ZoneOverrideModal
+            isOpen={zoneModalOpen}
+            onClose={() => { setZoneModalOpen(false); setZoneForModal(null); }}
+            zone={zoneForModal}
+            serviceItem={selectedServiceItem}
           />
 
           <ImageCardModal

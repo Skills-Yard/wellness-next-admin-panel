@@ -3,15 +3,16 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { 
-  Grid, 
-  FolderKanban, 
-  Calendar, 
-  Users, 
-  UserCheck, 
-  Settings, 
+import {
+  Grid,
+  FolderKanban,
+  Calendar,
+  Users,
+  UserCheck,
+  Settings,
   LogOut,
   Sparkles,
+  Megaphone,
   X
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
@@ -24,6 +25,7 @@ interface SidebarProps {
 const menuItems = [
   { label: 'Dashboard', icon: Grid, href: '/' },
   { label: 'Catalogue', icon: FolderKanban, href: '/catalogue' },
+  { label: 'Campaigns', icon: Megaphone, href: '/campaigns' },
   { label: 'Bookings', icon: Calendar, href: '/bookings' },
   { label: 'Partners', icon: UserCheck, href: '/partners' },
   { label: 'Customers', icon: Users, href: '/customers' },

@@ -1,7 +1,19 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { ServiceCategory, ServiceSubCategory, ServiceItem, ServiceDuration, ServicePackage, ServiceAddOn } from '../types/catalogue';
+import {
+  ServiceCategory,
+  ServiceSubCategory,
+  ServiceItem,
+  ServiceDuration,
+  ServicePackage,
+  ServiceAddOn,
+  OperationalZone,
+  ZoneServiceItemConfig,
+  ZoneDurationConfig,
+  ZonePackageConfig,
+  ZoneAddOnConfig,
+} from '../types/catalogue';
 import { useAuth } from './AuthContext';
 import {
   getCategoriesServerAction,
@@ -43,6 +55,25 @@ import {
   saveServiceAddOnServerAction,
   deleteServiceAddOnServerAction,
 } from '../lib/server-actions/addon';
+import {
+  getZonesServerAction,
+  getZoneServiceItemConfigsServerAction,
+  saveZoneServiceItemConfigServerAction,
+  deleteZoneServiceItemConfigServerAction,
+  ZoneServiceItemConfigPayload,
+  getZoneDurationConfigsServerAction,
+  saveZoneDurationConfigServerAction,
+  deleteZoneDurationConfigServerAction,
+  ZoneDurationConfigPayload,
+  getZonePackageConfigsServerAction,
+  saveZonePackageConfigServerAction,
+  deleteZonePackageConfigServerAction,
+  ZonePackageConfigPayload,
+  getZoneAddOnConfigsServerAction,
+  saveZoneAddOnConfigServerAction,
+  deleteZoneAddOnConfigServerAction,
+  ZoneAddOnConfigPayload,
+} from '../lib/server-actions/zone';
 
 type ActionResponse = { ok: boolean; message?: string };
 
@@ -62,6 +93,15 @@ interface CatalogueContextType {
   serviceItems: ServiceItem[];
   selectedServiceItem: ServiceItem | null;
   setSelectedServiceItem: (item: ServiceItem | null) => void;
+
+  // Zones are managed outside this admin panel — this is a read-only list for zone pickers.
+  // The four config lists hold every row across every zone (the backend has no
+  // serviceItemId/durationId filter) — callers filter client-side by the entity they need.
+  zones: OperationalZone[];
+  zoneServiceItemConfigs: ZoneServiceItemConfig[];
+  zoneDurationConfigs: ZoneDurationConfig[];
+  zonePackageConfigs: ZonePackageConfig[];
+  zoneAddOnConfigs: ZoneAddOnConfig[];
 
   // Durations/packages/add-ons are NOT embedded in the service-item list/detail response —
   // the backend requires a dedicated GET with serviceItemId for each. These track whichever
@@ -103,6 +143,16 @@ interface CatalogueContextType {
   deletePackageFromService: (serviceId: string, packageId: string) => Promise<ActionResponse>;
   addAddOnToService: (serviceId: string, addon: Omit<ServiceAddOn, 'id' | 'serviceItemId'>) => Promise<ActionResponse>;
   deleteAddOnFromService: (serviceId: string, addonId: string) => Promise<ActionResponse>;
+
+  // Zone availability & pricing overrides
+  saveZoneServiceItemConfig: (id: string | null, data: ZoneServiceItemConfigPayload) => Promise<ActionResponse>;
+  deleteZoneServiceItemConfig: (id: string) => Promise<ActionResponse>;
+  saveZoneDurationConfig: (id: string | null, data: ZoneDurationConfigPayload) => Promise<ActionResponse>;
+  deleteZoneDurationConfig: (id: string) => Promise<ActionResponse>;
+  saveZonePackageConfig: (id: string | null, data: ZonePackageConfigPayload) => Promise<ActionResponse>;
+  deleteZonePackageConfig: (id: string) => Promise<ActionResponse>;
+  saveZoneAddOnConfig: (id: string | null, data: ZoneAddOnConfigPayload) => Promise<ActionResponse>;
+  deleteZoneAddOnConfig: (id: string) => Promise<ActionResponse>;
 }
 
 const CatalogueContext = createContext<CatalogueContextType | undefined>(undefined);
@@ -121,6 +171,12 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const [serviceItems, setServiceItems] = useState<ServiceItem[]>([]);
   const [selectedServiceItem, setSelectedServiceItem] = useState<ServiceItem | null>(null);
+
+  const [zones, setZones] = useState<OperationalZone[]>([]);
+  const [zoneServiceItemConfigs, setZoneServiceItemConfigs] = useState<ZoneServiceItemConfig[]>([]);
+  const [zoneDurationConfigs, setZoneDurationConfigs] = useState<ZoneDurationConfig[]>([]);
+  const [zonePackageConfigs, setZonePackageConfigs] = useState<ZonePackageConfig[]>([]);
+  const [zoneAddOnConfigs, setZoneAddOnConfigs] = useState<ZoneAddOnConfig[]>([]);
 
   const [serviceDurations, setServiceDurations] = useState<ServiceDuration[]>([]);
   const [servicePackages, setServicePackages] = useState<ServicePackage[]>([]);
@@ -165,6 +221,25 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         }
         return backendServices[0] || null;
       });
+
+      const [
+        backendZones,
+        backendZoneItemConfigs,
+        backendZoneDurationConfigs,
+        backendZonePackageConfigs,
+        backendZoneAddOnConfigs,
+      ] = await Promise.all([
+        getZonesServerAction(),
+        getZoneServiceItemConfigsServerAction(),
+        getZoneDurationConfigsServerAction(),
+        getZonePackageConfigsServerAction(),
+        getZoneAddOnConfigsServerAction(),
+      ]);
+      setZones(backendZones);
+      setZoneServiceItemConfigs(backendZoneItemConfigs);
+      setZoneDurationConfigs(backendZoneDurationConfigs);
+      setZonePackageConfigs(backendZonePackageConfigs);
+      setZoneAddOnConfigs(backendZoneAddOnConfigs);
     } catch (err) {
       console.error('Error fetching backend catalogue data:', err);
     } finally {
@@ -190,6 +265,11 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       setSelectedCategory(null);
       setSelectedSubCategory(null);
       setSelectedServiceItem(null);
+      setZones([]);
+      setZoneServiceItemConfigs([]);
+      setZoneDurationConfigs([]);
+      setZonePackageConfigs([]);
+      setZoneAddOnConfigs([]);
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -542,6 +622,81 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return { ok: false, message: res.message };
   };
 
+  // ---- Zone availability & pricing overrides ----
+  // All four config lists are refetched in full after every write (same cost as the rest of
+  // refreshData) since the backend has no per-entity filter to refetch just one slice.
+  const saveZoneServiceItemConfig = async (id: string | null, data: ZoneServiceItemConfigPayload): Promise<ActionResponse> => {
+    const res = await saveZoneServiceItemConfigServerAction(id, data);
+    if (res.ok) {
+      await refreshData();
+      return { ok: true };
+    }
+    return { ok: false, message: res.message };
+  };
+
+  const deleteZoneServiceItemConfig = async (id: string): Promise<ActionResponse> => {
+    const res = await deleteZoneServiceItemConfigServerAction(id);
+    if (res.ok) {
+      await refreshData();
+      return { ok: true };
+    }
+    return { ok: false, message: res.message };
+  };
+
+  const saveZoneDurationConfig = async (id: string | null, data: ZoneDurationConfigPayload): Promise<ActionResponse> => {
+    const res = await saveZoneDurationConfigServerAction(id, data);
+    if (res.ok) {
+      await refreshData();
+      return { ok: true };
+    }
+    return { ok: false, message: res.message };
+  };
+
+  const deleteZoneDurationConfig = async (id: string): Promise<ActionResponse> => {
+    const res = await deleteZoneDurationConfigServerAction(id);
+    if (res.ok) {
+      await refreshData();
+      return { ok: true };
+    }
+    return { ok: false, message: res.message };
+  };
+
+  const saveZonePackageConfig = async (id: string | null, data: ZonePackageConfigPayload): Promise<ActionResponse> => {
+    const res = await saveZonePackageConfigServerAction(id, data);
+    if (res.ok) {
+      await refreshData();
+      return { ok: true };
+    }
+    return { ok: false, message: res.message };
+  };
+
+  const deleteZonePackageConfig = async (id: string): Promise<ActionResponse> => {
+    const res = await deleteZonePackageConfigServerAction(id);
+    if (res.ok) {
+      await refreshData();
+      return { ok: true };
+    }
+    return { ok: false, message: res.message };
+  };
+
+  const saveZoneAddOnConfig = async (id: string | null, data: ZoneAddOnConfigPayload): Promise<ActionResponse> => {
+    const res = await saveZoneAddOnConfigServerAction(id, data);
+    if (res.ok) {
+      await refreshData();
+      return { ok: true };
+    }
+    return { ok: false, message: res.message };
+  };
+
+  const deleteZoneAddOnConfig = async (id: string): Promise<ActionResponse> => {
+    const res = await deleteZoneAddOnConfigServerAction(id);
+    if (res.ok) {
+      await refreshData();
+      return { ok: true };
+    }
+    return { ok: false, message: res.message };
+  };
+
   return (
     <CatalogueContext.Provider value={{
       loading,
@@ -556,6 +711,11 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       serviceItems,
       selectedServiceItem,
       setSelectedServiceItem,
+      zones,
+      zoneServiceItemConfigs,
+      zoneDurationConfigs,
+      zonePackageConfigs,
+      zoneAddOnConfigs,
       serviceDurations,
       servicePackages,
       serviceAddOns,
@@ -583,6 +743,14 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       deletePackageFromService,
       addAddOnToService,
       deleteAddOnFromService,
+      saveZoneServiceItemConfig,
+      deleteZoneServiceItemConfig,
+      saveZoneDurationConfig,
+      deleteZoneDurationConfig,
+      saveZonePackageConfig,
+      deleteZonePackageConfig,
+      saveZoneAddOnConfig,
+      deleteZoneAddOnConfig,
     }}>
       {children}
     </CatalogueContext.Provider>
