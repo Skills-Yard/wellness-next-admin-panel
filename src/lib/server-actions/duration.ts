@@ -2,12 +2,14 @@
 
 import axiosInstance from '../axios';
 import { ServiceDuration } from '../../types/catalogue';
-import { ActionResult } from './category';
+import { ActionResult, getAuthHeaders } from './category';
 import { parseServerError } from '../errorParser';
 
 export async function getServiceDurationsServerAction(serviceItemId?: string): Promise<ServiceDuration[]> {
   try {
+    const headers = await getAuthHeaders();
     const response = await axiosInstance.get('/admin/catalog/service-durations', {
+      headers,
       params: serviceItemId ? { serviceItemId } : undefined,
     });
     return response.data || [];
@@ -22,11 +24,12 @@ export async function saveServiceDurationServerAction(
   payload: { serviceItemId: string; label: string; durationMinutes: number; price: number; displayOrder?: number }
 ): Promise<ActionResult<ServiceDuration>> {
   try {
+    const headers = await getAuthHeaders();
     if (id) {
-      const response = await axiosInstance.patch(`/admin/catalog/service-durations/${id}`, payload);
+      const response = await axiosInstance.patch(`/admin/catalog/service-durations/${id}`, payload, { headers });
       return { ok: true, data: response.data };
     } else {
-      const response = await axiosInstance.post('/admin/catalog/service-durations', payload);
+      const response = await axiosInstance.post('/admin/catalog/service-durations', payload, { headers });
       return { ok: true, data: response.data };
     }
   } catch (error: any) {
@@ -37,7 +40,8 @@ export async function saveServiceDurationServerAction(
 
 export async function deleteServiceDurationServerAction(id: string): Promise<ActionResult<void>> {
   try {
-    await axiosInstance.delete(`/admin/catalog/service-durations/${id}`);
+    const headers = await getAuthHeaders();
+    await axiosInstance.delete(`/admin/catalog/service-durations/${id}`, { headers });
     return { ok: true, data: undefined };
   } catch (error: any) {
     console.error('[deleteServiceDurationServerAction]', error?.response?.data || error.message);

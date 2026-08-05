@@ -1,7 +1,7 @@
 'use server';
 
 import axiosInstance from '../axios';
-import { ActionResult } from './category';
+import { ActionResult, getAuthHeaders } from './category';
 import { parseServerError } from '../errorParser';
 
 export interface ServiceAddOnItem {
@@ -17,7 +17,9 @@ export interface ServiceAddOnItem {
 
 export async function getServiceAddOnsServerAction(serviceItemId?: string): Promise<ServiceAddOnItem[]> {
   try {
+    const headers = await getAuthHeaders();
     const response = await axiosInstance.get('/admin/catalog/service-add-ons', {
+      headers,
       params: serviceItemId ? { serviceItemId } : undefined,
     });
     const resData = response.data;
@@ -35,11 +37,12 @@ export async function saveServiceAddOnServerAction(
   payload: Partial<ServiceAddOnItem>
 ): Promise<ActionResult<ServiceAddOnItem>> {
   try {
+    const headers = await getAuthHeaders();
     if (id) {
-      const response = await axiosInstance.patch(`/admin/catalog/service-add-ons/${id}`, payload);
+      const response = await axiosInstance.patch(`/admin/catalog/service-add-ons/${id}`, payload, { headers });
       return { ok: true, data: response.data?.data || response.data };
     } else {
-      const response = await axiosInstance.post('/admin/catalog/service-add-ons', payload);
+      const response = await axiosInstance.post('/admin/catalog/service-add-ons', payload, { headers });
       return { ok: true, data: response.data?.data || response.data };
     }
   } catch (error: any) {
@@ -50,7 +53,8 @@ export async function saveServiceAddOnServerAction(
 
 export async function deleteServiceAddOnServerAction(id: string): Promise<ActionResult<void>> {
   try {
-    await axiosInstance.delete(`/admin/catalog/service-add-ons/${id}`);
+    const headers = await getAuthHeaders();
+    await axiosInstance.delete(`/admin/catalog/service-add-ons/${id}`, { headers });
     return { ok: true, data: undefined };
   } catch (error: any) {
     console.error('[deleteServiceAddOnServerAction]', error?.response?.data || error.message);
