@@ -13,6 +13,7 @@ import {
   LogOut,
   Sparkles,
   Megaphone,
+  MapPinned,
   X
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
@@ -26,6 +27,7 @@ const menuItems = [
   { label: 'Dashboard', icon: Grid, href: '/' },
   { label: 'Catalogue', icon: FolderKanban, href: '/catalogue' },
   { label: 'Campaigns', icon: Megaphone, href: '/campaigns' },
+  { label: 'Zones', icon: MapPinned, href: '/zones' },
   { label: 'Bookings', icon: Calendar, href: '/bookings' },
   { label: 'Partners', icon: UserCheck, href: '/partners' },
   { label: 'Customers', icon: Users, href: '/customers' },

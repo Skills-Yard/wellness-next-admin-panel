@@ -3,6 +3,7 @@
 import axiosInstance from '../axios';
 import {
   OperationalZone,
+  Coordinate,
   ZoneServiceItemConfig,
   ZoneDurationConfig,
   ZonePackageConfig,
@@ -16,17 +17,91 @@ function unwrap<T>(resData: any, fallback: T): T {
   return (resData ?? fallback) as T;
 }
 
-// Zones themselves are created/managed outside this admin panel (see AdminOperationalZoneController) —
-// this is a read-only list used to populate zone pickers elsewhere in the catalogue.
-export async function getZonesServerAction(): Promise<OperationalZone[]> {
+// AdminOperationalZoneController — list/detail/metadata-edit/delete for zone entities.
+export async function getZonesServerAction(filters?: { city?: string; isActive?: boolean }): Promise<OperationalZone[]> {
   try {
     const headers = await getAuthHeaders();
-    const response = await axiosInstance.get('/admin/zones', { headers });
+    const response = await axiosInstance.get('/admin/zones', {
+      headers,
+      params: {
+        city: filters?.city || undefined,
+        isActive: filters?.isActive === undefined ? undefined : String(filters.isActive),
+      },
+    });
     const data = unwrap<OperationalZone[]>(response.data, []);
     return Array.isArray(data) ? data : [];
   } catch (error: any) {
     console.error('[getZonesServerAction]', error?.response?.data || error.message);
     return [];
+  }
+}
+
+export async function getZoneByIdServerAction(id: string): Promise<OperationalZone | null> {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await axiosInstance.get(`/admin/zones/detail/${id}`, { headers });
+    return unwrap<OperationalZone | null>(response.data, null);
+  } catch (error: any) {
+    console.error('[getZoneByIdServerAction]', error?.response?.data || error.message);
+    return null;
+  }
+}
+
+// ZoneController (not AdminOperationalZoneController) — computes and stores full H3 hex
+// coverage from a drawn polygon in one atomic transaction. Matches CreateZoneDto. Note the
+// doubled path: AdminZoneModule mounts at admin/zones and this controller additionally
+// declares @Controller('admin/zones'), so the real route is /admin/zones/admin/zones.
+export interface CreateZoneWithPolygonPayload {
+  name: string;
+  city: string;
+  coordinates: Coordinate[];
+}
+
+export async function createZoneWithPolygonServerAction(
+  payload: CreateZoneWithPolygonPayload
+): Promise<ActionResult<OperationalZone>> {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await axiosInstance.post('/admin/zones/admin/zones', payload, { headers });
+    return { ok: true, data: unwrap(response.data, response.data) };
+  } catch (error: any) {
+    console.error('[createZoneWithPolygonServerAction]', error?.response?.data || error.message);
+    return { ok: false, message: parseServerError(error, 'Failed to create zone') };
+  }
+}
+
+// Matches UpdateOperationalZoneDto. Deliberately excludes h3Index: it has no matching column
+// on OperationalZone (boundary lives on OperationalZoneHex instead) and the backend 500s if
+// it's ever sent. There is no endpoint to redraw a zone's boundary after creation — only
+// name/city/isActive can be changed here; a new boundary means creating a new zone.
+export interface UpdateZonePayload {
+  name?: string;
+  city?: string;
+  isActive?: boolean;
+}
+
+export async function updateZoneServerAction(
+  id: string,
+  payload: UpdateZonePayload
+): Promise<ActionResult<OperationalZone>> {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await axiosInstance.patch(`/admin/zones/detail/${id}`, payload, { headers });
+    return { ok: true, data: unwrap(response.data, response.data) };
+  } catch (error: any) {
+    console.error('[updateZoneServerAction]', error?.response?.data || error.message);
+    return { ok: false, message: parseServerError(error, 'Failed to update zone') };
+  }
+}
+
+export async function deleteZoneServerAction(id: string): Promise<ActionResult<void>> {
+  try {
+    const headers = await getAuthHeaders();
+    await axiosInstance.delete(`/admin/zones/detail/${id}`, { headers });
+    return { ok: true, data: undefined };
+  } catch (error: any) {
+    console.error('[deleteZoneServerAction]', error?.response?.data || error.message);
+    return { ok: false, message: parseServerError(error, 'Failed to delete zone') };
   }
 }
 

@@ -142,9 +142,17 @@ export interface ServiceCategory {
 }
 
 // ---- Zones (see wellness-backend/prisma/schema/zone.prisma) ----
-// Zones themselves are created/managed outside this admin panel — these types only cover
-// reading the zone list and configuring per-zone availability/pricing overrides on catalogue
-// entities that already exist.
+
+export interface Coordinate {
+  latitude: number;
+  longitude: number;
+}
+
+export interface OperationalZoneHex {
+  id: string;
+  zoneId: string;
+  h3Index: string;
+}
 
 export interface OperationalZone {
   id: string;
@@ -154,6 +162,11 @@ export interface OperationalZone {
   countryCode?: string;
   currency?: string;
   isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  // Only present once fetched via the read endpoints — added server-side in zone.repository.ts
+  // so the admin panel can actually show what a zone covers after it's created.
+  hexes?: OperationalZoneHex[];
 }
 
 export interface ZoneServiceItemConfig {
@@ -163,6 +176,8 @@ export interface ZoneServiceItemConfig {
   isAvailable: boolean;
   surgeMultiplier: number;
   zone?: OperationalZone;
+  // Joined by the backend (findZoneServiceItemConfigs includes serviceItem: true).
+  serviceItem?: { id: string; name: string };
 }
 
 export interface ZoneDurationConfig {
@@ -172,6 +187,8 @@ export interface ZoneDurationConfig {
   price: number; // minor units
   discountedPrice?: number | null;
   zone?: OperationalZone;
+  // Joined by the backend (findZoneDurationConfigs includes serviceDuration: true).
+  serviceDuration?: { id: string; label: string; serviceItemId: string };
 }
 
 export interface ZonePackageConfig {
@@ -183,6 +200,8 @@ export interface ZonePackageConfig {
   savings?: number | null;
   savingsPercent?: number | null;
   zone?: OperationalZone;
+  // Joined by the backend (findZonePackageConfigs includes servicePackage: true).
+  servicePackage?: { id: string; label: string; sessions: number; serviceItemId: string };
 }
 
 export interface ZoneAddOnConfig {
@@ -191,6 +210,8 @@ export interface ZoneAddOnConfig {
   serviceAddOnId: string;
   price: number;
   zone?: OperationalZone;
+  // Joined by the backend (findZoneAddOnConfigs includes serviceAddOn: true).
+  serviceAddOn?: { id: string; name: string; serviceItemId: string };
 }
 
 // ---- Promotional Campaigns (see wellness-backend/prisma/schema/catalog.prisma) ----
