@@ -54,8 +54,13 @@ export default function AdminLoginPage() {
       const res = await login(email, password);
 
       if (res.success) {
+        // Don't navigate here — the useEffect above already redirects as soon as
+        // `isAuthenticated` flips true from setUser() inside login(). Firing a second,
+        // independent router.push('/') in the same tick raced that effect's router.replace('/'),
+        // which could interrupt/abort the in-flight transition and leave the UI stuck on the
+        // login page (or the catalogue page mid-fetch, needing a hard reload) even though the
+        // session was actually established. One redirect path only.
         toast.success(res.message || 'Authenticated successfully! Redirecting...');
-        router.push('/');
       } else {
         setErrorMessage(res.message || 'Invalid credentials or connection error.');
       }
