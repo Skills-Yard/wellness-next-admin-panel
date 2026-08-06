@@ -131,7 +131,7 @@ export default function Header({ onOpenMobileMenu }: HeaderProps) {
             <DropdownMenuLabel className="font-normal">
               <div className="flex flex-col space-y-1">
                 <p className="text-sm font-semibold leading-none text-gray-900 capitalize">{displayName}</p>
-                <p className="text-xs leading-none text-gray-500 truncate">{user?.email || 'admin@vellora.com'}</p>
+                <p className="text-xs leading-none text-gray-500 truncate">{user?.email || 'admin@eezit.com'}</p>
               </div>
             </DropdownMenuLabel>
             

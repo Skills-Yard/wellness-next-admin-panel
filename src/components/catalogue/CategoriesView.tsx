@@ -73,7 +73,7 @@ export default function CategoriesView() {
         {/* Section Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight">Vellora</h1>
+            <h1 className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight">Eezit</h1>
             <p className="text-xs md:text-sm text-gray-500 mt-0.5">Manage your main categories</p>
           </div>
           <Button

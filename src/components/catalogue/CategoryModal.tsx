@@ -69,7 +69,7 @@ export default function CategoryModal() {
   if (!categoryModalOpen) return null;
 
   const isSubCategory = categoryModalMode === 'subcategory';
-  const modalTitle = isSubCategory ? 'Spa Services' : 'Vellora Services';
+  const modalTitle = isSubCategory ? 'Spa Services' : 'Eezit Services';
   const moduleType = isSubCategory ? 'subcategories' : 'categories';
 
   const handleNameChange = (value: string) => {

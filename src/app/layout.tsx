@@ -18,8 +18,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Vellora - Wellness Admin Panel",
-  description: "Wellness Admin Panel Catalogue & Services Management",
+  title: "Eezit - Eezit Admin Panel",
+  description: "Eezit Admin Panel Catalogue & Services Management",
 };
 
 export default function RootLayout({

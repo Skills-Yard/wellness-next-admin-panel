@@ -214,7 +214,7 @@ export default function AdminLoginPage() {
 
         {/* Footer info */}
         <div className="mt-6 text-center text-xs text-gray-400 font-medium">
-          <p>&copy; {new Date().getFullYear()} Vellora Wellness Inc. All rights reserved.</p>
+          <p>&copy; {new Date().getFullYear()} Eezit Wellness Inc. All rights reserved.</p>
         </div>
 
       </div>
