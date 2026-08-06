@@ -5,6 +5,12 @@ import { X, Check, Trash2, Loader2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useCatalogue } from '../../contexts/CatalogueContext';
 import { OperationalZone, ServiceItem } from '../../types/catalogue';
+import {
+  saveZoneServiceItemConfigServerAction,
+  saveZoneDurationConfigServerAction,
+  saveZonePackageConfigServerAction,
+  saveZoneAddOnConfigServerAction,
+} from '../../lib/server-actions/zone';
 
 interface ZoneOverrideModalProps {
   isOpen: boolean;
@@ -16,8 +22,38 @@ interface ZoneOverrideModalProps {
 const inputCls =
   'w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C]';
 
+// Shared by every "Apply to all zones" save below — writes one row per zone that doesn't
+// already have this exact entity configured (skips ones that do), then refreshes once. A
+// snapshot fan-out, not a live rule: zoneId is required on these config models (unlike
+// PromotionalCampaign.zoneId, which is nullable), so a zone created later needs a re-run.
+async function fanOutToAllZones<T extends { zoneId: string }>(
+  zones: OperationalZone[],
+  existingConfigs: T[],
+  matches: (c: T) => boolean,
+  createForZone: (zoneId: string) => Promise<{ ok: boolean; message?: string }>,
+  refreshData: () => Promise<void>,
+): Promise<void> {
+  const already = new Set(existingConfigs.filter(matches).map((c) => c.zoneId));
+  const targets = zones.filter((z) => !already.has(z.id));
+  if (targets.length === 0) {
+    toast.info('Every zone already has this configured.');
+    return;
+  }
+  const results = await Promise.all(targets.map((z) => createForZone(z.id)));
+  await refreshData();
+  const failed = results.filter((r) => !r.ok).length;
+  if (failed === 0) {
+    toast.success(
+      `Applied to all ${targets.length} zone${targets.length === 1 ? '' : 's'}${already.size > 0 ? ` (${already.size} already had it)` : ''}!`
+    );
+  } else {
+    toast.error(`Applied to ${targets.length - failed} of ${targets.length} zones — ${failed} failed.`);
+  }
+}
+
 export default function ZoneOverrideModal({ isOpen, onClose, zone, serviceItem }: ZoneOverrideModalProps) {
   const {
+    zones,
     zoneServiceItemConfigs,
     zoneDurationConfigs,
     zonePackageConfigs,
@@ -32,6 +68,7 @@ export default function ZoneOverrideModal({ isOpen, onClose, zone, serviceItem }
     deleteZonePackageConfig,
     saveZoneAddOnConfig,
     deleteZoneAddOnConfig,
+    refreshData,
   } = useCatalogue();
 
   const itemConfig = zone && serviceItem
@@ -41,10 +78,12 @@ export default function ZoneOverrideModal({ isOpen, onClose, zone, serviceItem }
   const [isAvailable, setIsAvailable] = useState(true);
   const [surgeMultiplier, setSurgeMultiplier] = useState('1');
   const [savingAvailability, setSavingAvailability] = useState(false);
+  const [applyToAllZones, setApplyToAllZones] = useState(false);
 
   useEffect(() => {
     setIsAvailable(itemConfig?.isAvailable ?? true);
     setSurgeMultiplier(String(itemConfig?.surgeMultiplier ?? 1));
+    setApplyToAllZones(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemConfig?.id, isOpen, zone?.id, serviceItem?.id]);
 
@@ -52,6 +91,22 @@ export default function ZoneOverrideModal({ isOpen, onClose, zone, serviceItem }
 
   const handleSaveAvailability = async () => {
     setSavingAvailability(true);
+    if (applyToAllZones) {
+      await fanOutToAllZones(
+        zones,
+        zoneServiceItemConfigs,
+        (c) => c.serviceItemId === serviceItem.id,
+        (zoneId) => saveZoneServiceItemConfigServerAction(null, {
+          zoneId,
+          serviceItemId: serviceItem.id,
+          isAvailable,
+          surgeMultiplier: Number(surgeMultiplier) || 1,
+        }),
+        refreshData,
+      );
+      setSavingAvailability(false);
+      return;
+    }
     const res = await saveZoneServiceItemConfig(itemConfig?.id || null, {
       zoneId: zone.id,
       serviceItemId: serviceItem.id,
@@ -78,7 +133,23 @@ export default function ZoneOverrideModal({ isOpen, onClose, zone, serviceItem }
         </button>
 
         <h3 className="text-xl font-bold text-gray-900 mb-1">{zone.name}</h3>
-        <p className="text-xs text-gray-400 mb-6">{zone.city} &middot; {serviceItem.name}</p>
+        <p className="text-xs text-gray-400 mb-4">{zone.city} &middot; {serviceItem.name}</p>
+
+        <div className="mb-6 p-3 rounded-xl bg-[#FAF5F0] border border-[#F2E5D9]">
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              checked={applyToAllZones}
+              onChange={(e) => setApplyToAllZones(e.target.checked)}
+              className="w-4 h-4 accent-[#C68A4C]"
+            />
+            Apply every save below to all zones
+          </label>
+          <p className="text-xs text-gray-400 mt-1 ml-6">
+            Instead of just {zone.name}, writes to every zone that doesn&apos;t already have that entry.
+            Zones created later won&apos;t inherit it automatically.
+          </p>
+        </div>
 
         {/* Availability & surge */}
         <div className="space-y-3 pb-6 border-b border-gray-100">
@@ -109,7 +180,7 @@ export default function ZoneOverrideModal({ isOpen, onClose, zone, serviceItem }
               disabled={savingAvailability}
               className="px-4 py-2 rounded-xl bg-[#221812] text-white text-sm font-medium hover:bg-black disabled:opacity-60"
             >
-              {savingAvailability ? 'Saving...' : 'Save'}
+              {savingAvailability ? 'Saving...' : applyToAllZones ? 'Apply to All' : 'Save'}
             </button>
           </div>
         </div>
@@ -124,6 +195,16 @@ export default function ZoneOverrideModal({ isOpen, onClose, zone, serviceItem }
           })}
           showDiscounted
           onSave={async (durationId, price, discountedPrice, existingId) => {
+            if (applyToAllZones) {
+              await fanOutToAllZones(
+                zones,
+                zoneDurationConfigs,
+                (c) => c.serviceDurationId === durationId,
+                (zoneId) => saveZoneDurationConfigServerAction(null, { zoneId, serviceDurationId: durationId, price, discountedPrice }),
+                refreshData,
+              );
+              return;
+            }
             const res = await saveZoneDurationConfig(existingId || null, {
               zoneId: zone.id,
               serviceDurationId: durationId,
@@ -149,6 +230,16 @@ export default function ZoneOverrideModal({ isOpen, onClose, zone, serviceItem }
             return { key: pkg.id, label: `${pkg.label} (${pkg.sessions})`, basePrice: pkg.price, baseDiscounted: null, cfg };
           })}
           onSave={async (packageId, price, _discounted, existingId) => {
+            if (applyToAllZones) {
+              await fanOutToAllZones(
+                zones,
+                zonePackageConfigs,
+                (c) => c.servicePackageId === packageId,
+                (zoneId) => saveZonePackageConfigServerAction(null, { zoneId, servicePackageId: packageId, price }),
+                refreshData,
+              );
+              return;
+            }
             const res = await saveZonePackageConfig(existingId || null, {
               zoneId: zone.id,
               servicePackageId: packageId,
@@ -173,6 +264,16 @@ export default function ZoneOverrideModal({ isOpen, onClose, zone, serviceItem }
             return { key: addon.id, label: addon.name, basePrice: addon.price, baseDiscounted: null, cfg };
           })}
           onSave={async (addOnId, price, _discounted, existingId) => {
+            if (applyToAllZones) {
+              await fanOutToAllZones(
+                zones,
+                zoneAddOnConfigs,
+                (c) => c.serviceAddOnId === addOnId,
+                (zoneId) => saveZoneAddOnConfigServerAction(null, { zoneId, serviceAddOnId: addOnId, price }),
+                refreshData,
+              );
+              return;
+            }
             const res = await saveZoneAddOnConfig(existingId || null, {
               zoneId: zone.id,
               serviceAddOnId: addOnId,

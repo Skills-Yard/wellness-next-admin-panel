@@ -7,6 +7,12 @@ import { useCatalogue } from '../../contexts/CatalogueContext';
 import { getServiceDurationsServerAction } from '../../lib/server-actions/duration';
 import { getServicePackagesServerAction } from '../../lib/server-actions/package';
 import { getServiceAddOnsServerAction } from '../../lib/server-actions/addon';
+import {
+  saveZoneServiceItemConfigServerAction,
+  saveZoneDurationConfigServerAction,
+  saveZonePackageConfigServerAction,
+  saveZoneAddOnConfigServerAction,
+} from '../../lib/server-actions/zone';
 import { ServiceDuration, ServicePackage, ServiceAddOn, ServiceItem } from '../../types/catalogue';
 
 type ConfigType = 'service' | 'duration' | 'package' | 'addon';
@@ -47,11 +53,16 @@ export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }:
     categories,
     subCategories,
     serviceItems,
+    zones,
     zoneServiceItemConfigs,
+    zoneDurationConfigs,
+    zonePackageConfigs,
+    zoneAddOnConfigs,
     saveZoneServiceItemConfig,
     saveZoneDurationConfig,
     saveZonePackageConfig,
     saveZoneAddOnConfig,
+    refreshData,
   } = useCatalogue();
 
   const needsSub = configType !== 'service';
@@ -96,6 +107,7 @@ export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }:
   const [originalPrice, setOriginalPrice] = useState('');
   const [savings, setSavings] = useState('');
   const [savingsPercent, setSavingsPercent] = useState('');
+  const [applyToAllZones, setApplyToAllZones] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -110,6 +122,7 @@ export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }:
       setOriginalPrice('');
       setSavings('');
       setSavingsPercent('');
+      setApplyToAllZones(false);
     }
   }, [isOpen, configType]);
 
@@ -155,6 +168,11 @@ export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }:
 
     setSaving(true);
     try {
+      if (applyToAllZones) {
+        await handleApplyToAllZones();
+        return;
+      }
+
       let res;
       if (configType === 'service') {
         res = await saveZoneServiceItemConfig(null, {
@@ -191,6 +209,79 @@ export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }:
       }
     } finally {
       setSaving(false);
+    }
+  };
+
+  // "Apply to all zones" writes one row per zone that doesn't already have this exact
+  // service/duration/package/add-on configured — a snapshot fan-out, not a live "applies to
+  // every zone forever" rule (zoneId is required on these 4 models, unlike PromotionalCampaign,
+  // so there's no null-means-everywhere option here). A zone created later needs this re-run.
+  // Calls the raw server actions directly (not the context-wrapped ones) so N zones only cost
+  // one refreshData() at the end instead of N.
+  const handleApplyToAllZones = async () => {
+    let alreadyConfiguredZoneIds: Set<string>;
+    let results: { ok: boolean; message?: string }[];
+    let targets = zones;
+
+    if (configType === 'service') {
+      alreadyConfiguredZoneIds = new Set(
+        zoneServiceItemConfigs.filter((c) => c.serviceItemId === serviceItemId).map((c) => c.zoneId)
+      );
+      targets = zones.filter((z) => !alreadyConfiguredZoneIds.has(z.id));
+      results = await Promise.all(targets.map((z) => saveZoneServiceItemConfigServerAction(null, {
+        zoneId: z.id, serviceItemId, isAvailable, surgeMultiplier: Number(surgeMultiplier) || 1,
+      })));
+    } else if (configType === 'duration') {
+      alreadyConfiguredZoneIds = new Set(
+        zoneDurationConfigs.filter((c) => c.serviceDurationId === subId).map((c) => c.zoneId)
+      );
+      targets = zones.filter((z) => !alreadyConfiguredZoneIds.has(z.id));
+      results = await Promise.all(targets.map((z) => saveZoneDurationConfigServerAction(null, {
+        zoneId: z.id,
+        serviceDurationId: subId,
+        price: Number(price),
+        discountedPrice: discountedPrice.trim() ? Number(discountedPrice) : undefined,
+      })));
+    } else if (configType === 'package') {
+      alreadyConfiguredZoneIds = new Set(
+        zonePackageConfigs.filter((c) => c.servicePackageId === subId).map((c) => c.zoneId)
+      );
+      targets = zones.filter((z) => !alreadyConfiguredZoneIds.has(z.id));
+      results = await Promise.all(targets.map((z) => saveZonePackageConfigServerAction(null, {
+        zoneId: z.id,
+        servicePackageId: subId,
+        price: Number(price),
+        originalPrice: originalPrice.trim() ? Number(originalPrice) : undefined,
+        savings: savings.trim() ? Number(savings) : undefined,
+        savingsPercent: savingsPercent.trim() ? Number(savingsPercent) : undefined,
+      })));
+    } else {
+      alreadyConfiguredZoneIds = new Set(
+        zoneAddOnConfigs.filter((c) => c.serviceAddOnId === subId).map((c) => c.zoneId)
+      );
+      targets = zones.filter((z) => !alreadyConfiguredZoneIds.has(z.id));
+      results = await Promise.all(targets.map((z) => saveZoneAddOnConfigServerAction(null, {
+        zoneId: z.id, serviceAddOnId: subId, price: Number(price),
+      })));
+    }
+
+    if (targets.length === 0) {
+      toast.info('Every zone already has this configured.');
+      onClose();
+      return;
+    }
+
+    const failed = results.filter((r) => !r.ok).length;
+    await refreshData();
+
+    if (failed === 0) {
+      const skipped = alreadyConfiguredZoneIds.size;
+      toast.success(
+        `Applied to all ${targets.length} zone${targets.length === 1 ? '' : 's'}${skipped > 0 ? ` (${skipped} already had it)` : ''}!`
+      );
+      onClose();
+    } else {
+      toast.error(`Applied to ${targets.length - failed} of ${targets.length} zones — ${failed} failed.`);
     }
   };
 
@@ -337,6 +428,22 @@ export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }:
             </div>
           )}
 
+          <div className="pt-2 border-t border-gray-100">
+            <label className="flex items-center gap-2 text-sm text-gray-700 pt-4">
+              <input
+                type="checkbox"
+                checked={applyToAllZones}
+                onChange={(e) => setApplyToAllZones(e.target.checked)}
+                className="w-4 h-4 accent-[#C68A4C]"
+              />
+              Apply to all zones
+            </label>
+            <p className="text-xs text-gray-400 mt-1 ml-6">
+              Writes this to every zone that doesn&apos;t already have it configured, instead of just this one.
+              Zones created later won&apos;t inherit it automatically — re-run this if that happens.
+            </p>
+          </div>
+
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
             <button
               type="button"
@@ -350,7 +457,7 @@ export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }:
               disabled={saving}
               className="px-5 py-2 rounded-xl bg-[#221812] text-white text-sm font-medium hover:bg-black disabled:opacity-60"
             >
-              {saving ? 'Saving...' : 'Save'}
+              {saving ? 'Saving...' : applyToAllZones ? 'Apply to All Zones' : 'Save'}
             </button>
           </div>
         </form>

@@ -42,23 +42,28 @@ export async function getCampaignByIdServerAction(id: string): Promise<Promotion
   }
 }
 
-// Matches CreatePromotionalCampaignDto/UpdatePromotionalCampaignDto.
+// Matches CreatePromotionalCampaignDto/UpdatePromotionalCampaignDto. The nullable fields below
+// must be sent as explicit `null` to clear them on an existing campaign, not omitted — Prisma's
+// update() treats an absent key as "leave this column alone", not "clear it", so `undefined`
+// silently no-ops instead of clearing (e.g. switching an existing campaign back to "All zones").
 export interface CampaignPayload {
   type: CampaignType;
   targetType?: CampaignTargetType;
-  categoryId?: string;
-  subCategoryId?: string;
-  serviceItemId?: string;
-  zoneId?: string;
-  title?: string;
-  subtitle?: string;
+  categoryId?: string | null;
+  subCategoryId?: string | null;
+  serviceItemId?: string | null;
+  zoneId?: string | null;
+  title?: string | null;
+  subtitle?: string | null;
   mediaType: MediaType;
   s3Key: string;
-  cdnUrl?: string;
-  ctaText?: string;
-  ctaDeeplink?: string;
+  cdnUrl?: string | null;
+  ctaText?: string | null;
+  ctaDeeplink?: string | null;
   displayOrder?: number;
   isActive?: boolean;
+  // Not widened to `| null` like the fields above — see the comment in CampaignModal.tsx's
+  // handleSubmit on why clearing these two isn't safe to fix the same way yet.
   startsAt?: string;
   endsAt?: string;
 }

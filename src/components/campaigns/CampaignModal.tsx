@@ -150,19 +150,25 @@ export default function CampaignModal() {
       const res = await saveCampaign(editingCampaign?.id || null, {
         type,
         targetType,
-        categoryId: categoryId || undefined,
-        subCategoryId: subCategoryId || undefined,
-        serviceItemId: serviceItemId || undefined,
-        zoneId: zoneId || undefined,
-        title: title || undefined,
-        subtitle: subtitle || undefined,
+        // Explicit null (not undefined) so clearing one of these on an existing campaign
+        // actually clears it — Prisma's update() ignores omitted keys instead of nulling them.
+        categoryId: categoryId || null,
+        subCategoryId: subCategoryId || null,
+        serviceItemId: serviceItemId || null,
+        zoneId: zoneId || null,
+        title: title || null,
+        subtitle: subtitle || null,
         mediaType,
         s3Key: mediaKey,
-        cdnUrl: mediaUrl || undefined,
-        ctaText: ctaText || undefined,
-        ctaDeeplink: ctaDeeplink || undefined,
+        cdnUrl: mediaUrl || null,
+        ctaText: ctaText || null,
+        ctaDeeplink: ctaDeeplink || null,
         displayOrder: Number(displayOrder) || 0,
         isActive,
+        // Left as `undefined` (not null) deliberately: the backend applies @Type(() => Date) to
+        // these two, and class-transformer's Date coercion has inconsistent handling of a literal
+        // null across versions (some produce `new Date(null)` = 1970-01-01 instead of clearing
+        // it) — worse than the original bug. Clearing a schedule date isn't fixed by this pass.
         startsAt: startsAt ? new Date(startsAt).toISOString() : undefined,
         endsAt: endsAt ? new Date(endsAt).toISOString() : undefined,
       });
