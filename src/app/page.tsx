@@ -2,7 +2,7 @@ export default function DashboardPage() {
   return (
     <section className="p-6">
       <h1 className="text-2xl font-semibold text-gray-800">Dashboard</h1>
-      <p className="text-gray-500 mt-1">Welcome to Vellora Admin Panel</p>
+      <p className="text-gray-500 mt-1">Welcome to Eezit Admin Panel</p>
     </section>
   );
 }

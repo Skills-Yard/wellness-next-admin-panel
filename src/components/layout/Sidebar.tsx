@@ -50,8 +50,8 @@ export default function Sidebar({ onCloseMobile }: SidebarProps) {
               <Sparkles className="w-5 h-5 fill-current" />
             </div>
             <div>
-              <h1 className="font-bold text-lg text-white tracking-wide">Vellora Admin</h1>
-              <p className="text-xs text-[#A8988A]">Wellness Management</p>
+              <h1 className="font-bold text-lg text-white tracking-wide">Eezit Admin</h1>
+                   <p className="text-xs text-[#A8988A]">Eezit Management</p>
             </div>
           </div>
 

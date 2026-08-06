@@ -84,7 +84,7 @@ export default function AdminLoginPage() {
             <Sparkles className="w-7 h-7 fill-current" />
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">
-            Vellora Admin
+            Eezit Admin
           </h1>
           <p className="text-xs sm:text-sm text-gray-500 mt-1 flex items-center gap-1.5 justify-center font-medium">
             <ShieldCheck className="w-4 h-4 text-[#C68A4C]" />
