@@ -57,6 +57,9 @@ export default function ServiceDetailView() {
   const [categoryId, setCategoryId] = useState('');
   const [subCategoryId, setSubCategoryId] = useState('');
   const [cardSubtitle, setCardSubtitle] = useState('');
+  // "Main Card" toggle — reuses the existing cardTemplate column (no dedicated isMainCard field
+  // on ServiceItem): ON maps to 'PREMIUM', OFF maps to 'REGULAR'.
+  const [isMainCard, setIsMainCard] = useState(false);
   const [displayOrder, setDisplayOrder] = useState('1');
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
   const [thumbnailType, setThumbnailType] = useState<MediaType>('IMAGE');
@@ -145,6 +148,7 @@ export default function ServiceDetailView() {
       setSlug(selectedServiceItem.slug || '');
       setSlugTouched(true);
       setCardSubtitle(selectedServiceItem.cardSubtitle || '');
+      setIsMainCard(selectedServiceItem.cardTemplate === 'PREMIUM');
       setDisplayOrder(String(selectedServiceItem.displayOrder || 1));
       setThumbnailUrl(selectedServiceItem.thumbnailKey || null);
       setThumbnailType(selectedServiceItem.thumbnailType || 'IMAGE');
@@ -272,6 +276,7 @@ export default function ServiceDetailView() {
         subCategoryId,
         cardTitle: serviceName,
         cardSubtitle,
+        cardTemplate: isMainCard ? 'PREMIUM' : 'REGULAR',
         displayOrder: Number(displayOrder) || 1,
         isPublished,
         thumbnailKey: thumbnailUrl || undefined,
@@ -583,20 +588,38 @@ export default function ServiceDetailView() {
                 />
               </div>
 
-              <div>
-                <label className="text-xs font-semibold text-gray-700 mb-1.5 block">
-                  Slug
-                </label>
-                <input
-                  type="text"
-                  placeholder="auto-generated-from-name"
-                  value={slug}
-                  onChange={(e) => {
-                    setSlugTouched(true);
-                    setSlug(e.target.value);
-                  }}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C]"
-                />
+              <div className="flex items-end gap-4">
+                <div className="flex-1">
+                  <label className="text-xs font-semibold text-gray-700 mb-1.5 block">
+                    Slug
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="auto-generated-from-name"
+                    value={slug}
+                    onChange={(e) => {
+                      setSlugTouched(true);
+                      setSlug(e.target.value);
+                    }}
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C]"
+                  />
+                </div>
+                <div className="flex items-center gap-2 pb-2.5 flex-shrink-0">
+                  <span className="text-xs font-semibold text-gray-700">Main Card</span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={isMainCard}
+                    onClick={() => setIsMainCard((v) => !v)}
+                    className={`w-11 h-6 rounded-full transition-colors relative flex-shrink-0 cursor-pointer ${isMainCard ? 'bg-[#1C1512]' : 'bg-gray-200'
+                      }`}
+                  >
+                    <span
+                      className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${isMainCard ? 'translate-x-5' : ''
+                        }`}
+                    />
+                  </button>
+                </div>
               </div>
             </div>
 

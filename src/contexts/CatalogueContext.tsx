@@ -448,6 +448,7 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       thumbnailType: (data.thumbnailType || prev.thumbnailType) as ServiceItemPayload['thumbnailType'],
       cardTitle: (data.cardTitle !== undefined ? data.cardTitle : prev.cardTitle || data.name || prev.name) || '',
       cardSubtitle: data.cardSubtitle !== undefined ? data.cardSubtitle : prev.cardSubtitle,
+      cardTemplate: (data.cardTemplate !== undefined ? data.cardTemplate : prev.cardTemplate) as ServiceItemPayload['cardTemplate'],
       shortDescription: data.shortDescription !== undefined ? data.shortDescription : prev.shortDescription,
       displayOrder: data.displayOrder !== undefined ? Number(data.displayOrder) : Number(prev.displayOrder) || 0,
       features: data.features !== undefined ? data.features : prev.features,
