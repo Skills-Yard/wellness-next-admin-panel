@@ -150,8 +150,8 @@ export default function CampaignModal() {
       const res = await saveCampaign(editingCampaign?.id || null, {
         type,
         targetType,
-        categoryId: targetType === 'CATEGORY' ? categoryId : undefined,
-        subCategoryId: targetType === 'SUBCATEGORY' ? subCategoryId : undefined,
+        categoryId: categoryId || undefined,
+        subCategoryId: subCategoryId || undefined,
         serviceItemId: serviceItemId || undefined,
         zoneId: zoneId || undefined,
         title: title || undefined,
@@ -247,11 +247,7 @@ export default function CampaignModal() {
               <label className="text-sm font-medium text-gray-700 mb-1.5 block">Target Audience</label>
               <select
                 value={targetType}
-                onChange={(e) => {
-                  const val = e.target.value as CampaignTargetType;
-                  setTargetType(val);
-                  if (val === 'GLOBAL') { setCategoryId(''); setSubCategoryId(''); }
-                }}
+                onChange={(e) => setTargetType(e.target.value as CampaignTargetType)}
                 className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C] bg-white"
               >
                 {TARGET_TYPES.map(t => <option key={t} value={t}>{t === 'GLOBAL' ? 'Global (all categories)' : t === 'CATEGORY' ? 'Category' : 'Sub-Category'}</option>)}
@@ -259,36 +255,38 @@ export default function CampaignModal() {
             </div>
           </div>
 
-          {/* Category / Sub-Category (conditional) */}
-          {(targetType === 'CATEGORY' || targetType === 'SUBCATEGORY') && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="text-sm font-medium text-gray-700 mb-1.5 block">Category<span className="text-red-500">*</span></label>
-                <select
-                  value={categoryId}
-                  onChange={(e) => { setCategoryId(e.target.value); setSubCategoryId(''); }}
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C] bg-white"
-                >
-                  <option value="">Select category...</option>
-                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              </div>
-              {targetType === 'SUBCATEGORY' && (
-                <div>
-                  <label className="text-sm font-medium text-gray-700 mb-1.5 block">Sub-Category<span className="text-red-500">*</span></label>
-                  <select
-                    value={subCategoryId}
-                    onChange={(e) => setSubCategoryId(e.target.value)}
-                    disabled={!categoryId}
-                    className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C] bg-white disabled:opacity-50"
-                  >
-                    <option value="">Select sub-category...</option>
-                    {subCategoryOptions.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select>
-                </div>
-              )}
+          {/* Category / Sub-Category — optional and independent of targetType, same as Service
+              Item/Zone below (schema has categoryId/subCategoryId as nullable regardless of
+              targetType). Required only when targetType demands them. */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1.5 block">
+                Category {targetType === 'CATEGORY' || targetType === 'SUBCATEGORY' ? <span className="text-red-500">*</span> : <span className="text-gray-400 font-normal">(optional)</span>}
+              </label>
+              <select
+                value={categoryId}
+                onChange={(e) => { setCategoryId(e.target.value); setSubCategoryId(''); }}
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C] bg-white"
+              >
+                <option value="">{targetType === 'GLOBAL' ? 'None' : 'Select category...'}</option>
+                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
             </div>
-          )}
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1.5 block">
+                Sub-Category {targetType === 'SUBCATEGORY' ? <span className="text-red-500">*</span> : <span className="text-gray-400 font-normal">(optional)</span>}
+              </label>
+              <select
+                value={subCategoryId}
+                onChange={(e) => setSubCategoryId(e.target.value)}
+                disabled={!categoryId}
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C] bg-white disabled:opacity-50"
+              >
+                <option value="">{categoryId ? 'None' : 'Select category first'}</option>
+                {subCategoryOptions.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+          </div>
 
           {/* Service Item (optional, independent of targetType) & Zone */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
