@@ -26,6 +26,21 @@ export async function getServicePackagesServerAction(serviceItemId: string): Pro
   }
 }
 
+// Admin-only "get all" — omits serviceItemId so the backend returns every package across
+// every service (each row includes a `serviceItem` ref). Powers the cross-service picker in
+// PackModal; NOT used for the per-service list (see getServicePackagesServerAction above).
+export async function getAllServicePackagesServerAction(): Promise<ServicePackage[]> {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await axiosInstance.get('/admin/catalog/service-packages', { headers });
+    const data = unwrap<ServicePackage[]>(response.data, []);
+    return Array.isArray(data) ? data : [];
+  } catch (error: any) {
+    console.error('[getAllServicePackagesServerAction]', error?.response?.data || error.message);
+    return [];
+  }
+}
+
 // Matches CreateServicePackageDto/UpdateServicePackageDto. label and pricePerSession are required.
 export interface ServicePackagePayload {
   serviceItemId: string;

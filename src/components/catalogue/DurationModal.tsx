@@ -9,24 +9,46 @@ interface DurationModalProps {
   onClose: () => void;
   onAdd: (duration: Omit<ServiceDuration, 'id'>) => void;
   initialData?: ServiceDuration | null;
+  // Cross-service durations to pick from as a starting point (create mode only).
+  existingOptions?: ServiceDuration[];
+  existingLoading?: boolean;
 }
 
-export default function DurationModal({ isOpen, onClose, onAdd, initialData }: DurationModalProps) {
+export default function DurationModal({
+  isOpen,
+  onClose,
+  onAdd,
+  initialData,
+  existingOptions = [],
+  existingLoading = false,
+}: DurationModalProps) {
   const [label, setLabel] = useState('90 mins');
   const [minutes, setMinutes] = useState('90');
   const [price, setPrice] = useState('1199');
+  const [pickedId, setPickedId] = useState('');
 
   useEffect(() => {
     if (isOpen) {
       setLabel(initialData?.label ?? '90 mins');
       setMinutes(initialData ? String(initialData.durationMinutes) : '90');
       setPrice(initialData ? String(initialData.price) : '1199');
+      setPickedId('');
     }
   }, [isOpen, initialData]);
 
   if (!isOpen) return null;
 
   const isEditing = !!initialData;
+
+  const handlePick = (id: string) => {
+    setPickedId(id);
+    const picked = existingOptions.find((d) => d.id === id);
+    if (picked) {
+      setLabel(picked.label);
+      setMinutes(String(picked.durationMinutes));
+      setPrice(String(picked.price));
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,6 +73,32 @@ export default function DurationModal({ isOpen, onClose, onAdd, initialData }: D
         <h3 className="text-xl font-bold text-gray-900 mb-6">
           {isEditing ? 'Edit Duration (Timeslot)' : 'Add Duration (Timeslot)'}
         </h3>
+
+        {!isEditing && (
+          <div className="mb-4">
+            <label className="text-sm font-medium text-gray-700 mb-1 block">
+              Pick from an existing duration (optional)
+            </label>
+            <select
+              value={pickedId}
+              onChange={(e) => handlePick(e.target.value)}
+              disabled={existingLoading}
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C] disabled:opacity-60"
+            >
+              <option value="">
+                {existingLoading ? 'Loading existing durations...' : 'None — enter manually below'}
+              </option>
+              {existingOptions.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.label} · ₹{d.price}{d.serviceItem ? ` · ${d.serviceItem.name}` : ''}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-400 mt-1">
+              Selecting one fills the fields below — you can still edit them before saving.
+            </p>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>

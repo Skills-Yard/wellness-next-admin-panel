@@ -26,6 +26,21 @@ export async function getServiceDurationsServerAction(serviceItemId: string): Pr
   }
 }
 
+// Admin-only "get all" — omits serviceItemId so the backend returns every duration across
+// every service (each row includes a `serviceItem` ref). Powers the cross-service picker in
+// DurationModal; NOT used for the per-service list (see getServiceDurationsServerAction above).
+export async function getAllServiceDurationsServerAction(): Promise<ServiceDuration[]> {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await axiosInstance.get('/admin/catalog/service-durations', { headers });
+    const data = unwrap<ServiceDuration[]>(response.data, []);
+    return Array.isArray(data) ? data : [];
+  } catch (error: any) {
+    console.error('[getAllServiceDurationsServerAction]', error?.response?.data || error.message);
+    return [];
+  }
+}
+
 // Matches CreateServiceDurationDto/UpdateServiceDurationDto.
 export interface ServiceDurationPayload {
   serviceItemId: string;

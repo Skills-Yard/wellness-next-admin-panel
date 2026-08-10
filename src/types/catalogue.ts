@@ -4,6 +4,13 @@
 export type MediaType = 'IMAGE' | 'VIDEO';
 export type ServiceCardTemplate = 'REGULAR' | 'PREMIUM';
 
+// Present only on rows returned by the admin "get all" (no serviceItemId) endpoints —
+// identifies which service a duration/pack/add-on belongs to, for cross-service pickers.
+export interface ServiceItemRef {
+  id: string;
+  name: string;
+}
+
 export interface ServiceDuration {
   id: string;
   serviceItemId?: string;
@@ -13,6 +20,7 @@ export interface ServiceDuration {
   discountedPrice?: number | null;
   isDefault?: boolean;
   displayOrder?: number;
+  serviceItem?: ServiceItemRef;
 }
 
 export interface ServicePackage {
@@ -28,6 +36,7 @@ export interface ServicePackage {
   badgeText?: string | null;
   isPopular?: boolean;
   displayOrder?: number;
+  serviceItem?: ServiceItemRef;
 }
 
 export interface ServiceAddOn {
@@ -40,6 +49,7 @@ export interface ServiceAddOn {
   extraMinutes?: number;
   isActive?: boolean;
   displayOrder?: number;
+  serviceItem?: ServiceItemRef;
 }
 
 export interface FaqItem {

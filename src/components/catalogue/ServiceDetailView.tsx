@@ -57,6 +57,15 @@ export default function ServiceDetailView() {
     addAddOnToService,
     updateAddOnInService,
     deleteAddOnFromService,
+    allServiceDurations,
+    allServicePackages,
+    allServiceAddOns,
+    allServiceDurationsLoading,
+    allServicePackagesLoading,
+    allServiceAddOnsLoading,
+    loadAllServiceDurations,
+    loadAllServicePackages,
+    loadAllServiceAddOns,
     zones,
     zoneServiceItemConfigs,
     deleteZoneServiceItemConfig,
@@ -156,6 +165,16 @@ export default function ServiceDetailView() {
 
   // Sub-categories available under whichever category is currently picked in the form.
   const subCategoryOptions = subCategories.filter(s => s.categoryId === categoryId);
+
+  // Cross-service duration/pack/add-on catalogs power the "pick from existing" selector inside
+  // each modal — load them once when this form mounts so the popups open with data already in
+  // hand instead of re-fetching (and showing a loading state) on every "+ Add" click.
+  useEffect(() => {
+    loadAllServiceDurations();
+    loadAllServicePackages();
+    loadAllServiceAddOns();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (selectedServiceItem) {
@@ -1885,6 +1904,8 @@ export default function ServiceDetailView() {
             isOpen={durationModalOpen}
             onClose={() => { setDurationModalOpen(false); setEditingDuration(null); }}
             initialData={editingDuration}
+            existingOptions={allServiceDurations}
+            existingLoading={allServiceDurationsLoading}
             onAdd={async (dur) => {
               const res = editingDuration
                 ? await updateDurationInService(selectedServiceItem.id, editingDuration.id, dur)
@@ -1902,6 +1923,8 @@ export default function ServiceDetailView() {
             isOpen={packModalOpen}
             onClose={() => { setPackModalOpen(false); setEditingPack(null); }}
             initialData={editingPack}
+            existingOptions={allServicePackages}
+            existingLoading={allServicePackagesLoading}
             onAdd={async (pkg) => {
               const res = editingPack
                 ? await updatePackageInService(selectedServiceItem.id, editingPack.id, pkg)
@@ -1919,6 +1942,8 @@ export default function ServiceDetailView() {
             isOpen={addOnModalOpen}
             onClose={() => { setAddOnModalOpen(false); setEditingAddOn(null); }}
             initialData={editingAddOn}
+            existingOptions={allServiceAddOns}
+            existingLoading={allServiceAddOnsLoading}
             onAdd={async (addon) => {
               const res = editingAddOn
                 ? await updateAddOnInService(selectedServiceItem.id, editingAddOn.id, addon)

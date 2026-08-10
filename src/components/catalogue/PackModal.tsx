@@ -9,15 +9,26 @@ interface PackModalProps {
   onClose: () => void;
   onAdd: (pkg: Omit<ServicePackage, 'id'>) => void;
   initialData?: ServicePackage | null;
+  // Cross-service packages to pick from as a starting point (create mode only).
+  existingOptions?: ServicePackage[];
+  existingLoading?: boolean;
 }
 
-export default function PackModal({ isOpen, onClose, onAdd, initialData }: PackModalProps) {
+export default function PackModal({
+  isOpen,
+  onClose,
+  onAdd,
+  initialData,
+  existingOptions = [],
+  existingLoading = false,
+}: PackModalProps) {
   const [label, setLabel] = useState('4 Sessions');
   const [sessions, setSessions] = useState('4');
   const [price, setPrice] = useState('4319');
   const [originalPrice, setOriginalPrice] = useState('4319');
   const [savings, setSavings] = useState('480');
   const [savingsPercent, setSavingsPercent] = useState('10');
+  const [pickedId, setPickedId] = useState('');
 
   useEffect(() => {
     if (isOpen) {
@@ -27,12 +38,26 @@ export default function PackModal({ isOpen, onClose, onAdd, initialData }: PackM
       setOriginalPrice(initialData?.originalPrice != null ? String(initialData.originalPrice) : initialData ? '' : '4319');
       setSavings(initialData?.savings != null ? String(initialData.savings) : initialData ? '' : '480');
       setSavingsPercent(initialData?.savingsPercent != null ? String(initialData.savingsPercent) : initialData ? '' : '10');
+      setPickedId('');
     }
   }, [isOpen, initialData]);
 
   if (!isOpen) return null;
 
   const isEditing = !!initialData;
+
+  const handlePick = (id: string) => {
+    setPickedId(id);
+    const picked = existingOptions.find((p) => p.id === id);
+    if (picked) {
+      setLabel(picked.label);
+      setSessions(String(picked.sessions));
+      setPrice(String(picked.price));
+      setOriginalPrice(picked.originalPrice != null ? String(picked.originalPrice) : '');
+      setSavings(picked.savings != null ? String(picked.savings) : '');
+      setSavingsPercent(picked.savingsPercent != null ? String(picked.savingsPercent) : '');
+    }
+  };
 
   const sessionsNum = Number(sessions) || 1;
   const priceNum = Number(price) || 0;
@@ -65,6 +90,32 @@ export default function PackModal({ isOpen, onClose, onAdd, initialData }: PackM
         <h3 className="text-xl font-bold text-gray-900 mb-6">
           {isEditing ? 'Edit Session Pack' : 'Add Session Pack'}
         </h3>
+
+        {!isEditing && (
+          <div className="mb-4">
+            <label className="text-sm font-medium text-gray-700 mb-1 block">
+              Pick from an existing pack (optional)
+            </label>
+            <select
+              value={pickedId}
+              onChange={(e) => handlePick(e.target.value)}
+              disabled={existingLoading}
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C] disabled:opacity-60"
+            >
+              <option value="">
+                {existingLoading ? 'Loading existing packs...' : 'None — enter manually below'}
+              </option>
+              {existingOptions.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label} · ₹{p.price}{p.serviceItem ? ` · ${p.serviceItem.name}` : ''}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-400 mt-1">
+              Selecting one fills the fields below — you can still edit them before saving.
+            </p>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>

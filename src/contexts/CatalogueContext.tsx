@@ -42,16 +42,19 @@ import {
 } from '../lib/server-actions/service';
 import {
   getServiceDurationsServerAction,
+  getAllServiceDurationsServerAction,
   saveServiceDurationServerAction,
   deleteServiceDurationServerAction,
 } from '../lib/server-actions/duration';
 import {
   getServicePackagesServerAction,
+  getAllServicePackagesServerAction,
   saveServicePackageServerAction,
   deleteServicePackageServerAction,
 } from '../lib/server-actions/package';
 import {
   getServiceAddOnsServerAction,
+  getAllServiceAddOnsServerAction,
   saveServiceAddOnServerAction,
   deleteServiceAddOnServerAction,
 } from '../lib/server-actions/addon';
@@ -116,6 +119,19 @@ interface CatalogueContextType {
   servicePackages: ServicePackage[];
   serviceAddOns: ServiceAddOn[];
   serviceDetailLoading: boolean;
+
+  // Cross-service catalogs — every duration/package/add-on across every service, each row
+  // carrying a `serviceItem` ref. Fetched on demand (not on load) to power the "pick from
+  // an existing one" selector in DurationModal/PackModal/AddOnModal when creating a new row.
+  allServiceDurations: ServiceDuration[];
+  allServicePackages: ServicePackage[];
+  allServiceAddOns: ServiceAddOn[];
+  allServiceDurationsLoading: boolean;
+  allServicePackagesLoading: boolean;
+  allServiceAddOnsLoading: boolean;
+  loadAllServiceDurations: () => Promise<void>;
+  loadAllServicePackages: () => Promise<void>;
+  loadAllServiceAddOns: () => Promise<void>;
 
   // Modals state
   categoryModalOpen: boolean;
@@ -197,6 +213,13 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [servicePackages, setServicePackages] = useState<ServicePackage[]>([]);
   const [serviceAddOns, setServiceAddOns] = useState<ServiceAddOn[]>([]);
   const [serviceDetailLoading, setServiceDetailLoading] = useState(false);
+
+  const [allServiceDurations, setAllServiceDurations] = useState<ServiceDuration[]>([]);
+  const [allServicePackages, setAllServicePackages] = useState<ServicePackage[]>([]);
+  const [allServiceAddOns, setAllServiceAddOns] = useState<ServiceAddOn[]>([]);
+  const [allServiceDurationsLoading, setAllServiceDurationsLoading] = useState(false);
+  const [allServicePackagesLoading, setAllServicePackagesLoading] = useState(false);
+  const [allServiceAddOnsLoading, setAllServiceAddOnsLoading] = useState(false);
 
   // Modals state
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
@@ -319,6 +342,35 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       setServiceAddOns([]);
     }
   }, [selectedServiceItem?.id, loadServiceDetail]);
+
+  // On-demand cross-service catalogs (see allServiceDurations etc. above) — called when the
+  // corresponding "add" modal opens, not eagerly, since these can span every service.
+  const loadAllServiceDurations = useCallback(async () => {
+    setAllServiceDurationsLoading(true);
+    try {
+      setAllServiceDurations(await getAllServiceDurationsServerAction());
+    } finally {
+      setAllServiceDurationsLoading(false);
+    }
+  }, []);
+
+  const loadAllServicePackages = useCallback(async () => {
+    setAllServicePackagesLoading(true);
+    try {
+      setAllServicePackages(await getAllServicePackagesServerAction());
+    } finally {
+      setAllServicePackagesLoading(false);
+    }
+  }, []);
+
+  const loadAllServiceAddOns = useCallback(async () => {
+    setAllServiceAddOnsLoading(true);
+    try {
+      setAllServiceAddOns(await getAllServiceAddOnsServerAction());
+    } finally {
+      setAllServiceAddOnsLoading(false);
+    }
+  }, []);
 
   const openCategoryModal = (mode: 'category' | 'subcategory', data?: ServiceCategory | ServiceSubCategory | null) => {
     setCategoryModalMode(mode);
@@ -837,6 +889,15 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       servicePackages,
       serviceAddOns,
       serviceDetailLoading,
+      allServiceDurations,
+      allServicePackages,
+      allServiceAddOns,
+      allServiceDurationsLoading,
+      allServicePackagesLoading,
+      allServiceAddOnsLoading,
+      loadAllServiceDurations,
+      loadAllServicePackages,
+      loadAllServiceAddOns,
       categoryModalOpen,
       setCategoryModalOpen,
       categoryModalMode,
