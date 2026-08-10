@@ -26,6 +26,21 @@ export async function getServiceAddOnsServerAction(serviceItemId: string): Promi
   }
 }
 
+// Admin-only "get all" — omits serviceItemId so the backend returns every add-on across
+// every service (each row includes a `serviceItem` ref). Powers the cross-service picker in
+// AddOnModal; NOT used for the per-service list (see getServiceAddOnsServerAction above).
+export async function getAllServiceAddOnsServerAction(): Promise<ServiceAddOn[]> {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await axiosInstance.get('/admin/catalog/service-add-ons', { headers });
+    const data = unwrap<ServiceAddOn[]>(response.data, []);
+    return Array.isArray(data) ? data : [];
+  } catch (error: any) {
+    console.error('[getAllServiceAddOnsServerAction]', error?.response?.data || error.message);
+    return [];
+  }
+}
+
 // Matches CreateServiceAddOnDto/UpdateServiceAddOnDto. imageKey is required by the backend.
 export interface ServiceAddOnPayload {
   serviceItemId: string;
