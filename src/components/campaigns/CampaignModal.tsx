@@ -1,12 +1,41 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import Hls from 'hls.js';
 import { X, Upload, Loader2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useCampaign } from '../../contexts/CampaignContext';
 import { useCatalogue } from '../../contexts/CatalogueContext';
 import { uploadFileToR2 } from '../../lib/uploadToR2';
+import { uploadHlsPackageToR2, HlsUploadProgress } from '../../lib/uploadHlsToR2';
 import { CampaignType, CampaignTargetType, MediaType } from '../../types/catalogue';
+
+// Plays a campaign's media preview. Plain video files use a native src; a `.m3u8` needs an
+// HLS player attached — Safari does that natively, every other browser needs hls.js's
+// MediaSource-based one.
+function VideoPreview({ src }: { src: string }) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !src) return;
+
+    if (!src.toLowerCase().endsWith('.m3u8') || video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src = src;
+      return;
+    }
+
+    let hls: Hls | null = null;
+    if (Hls.isSupported()) {
+      hls = new Hls();
+      hls.loadSource(src);
+      hls.attachMedia(video);
+    }
+    return () => hls?.destroy();
+  }, [src]);
+
+  return <video ref={videoRef} className="max-h-28 object-contain" muted controls />;
+}
 
 const CAMPAIGN_TYPES: CampaignType[] = ['SPOTLIGHT', 'HIGHLIGHT_VIDEO', 'HIGHLIGHT_BANNER', 'CAROUSEL'];
 const TARGET_TYPES: CampaignTargetType[] = ['GLOBAL', 'CATEGORY', 'SUBCATEGORY'];
@@ -51,6 +80,7 @@ export default function CampaignModal() {
   const [mediaKey, setMediaKey] = useState<string | null>(null);
   const [mediaType, setMediaType] = useState<MediaType>('IMAGE');
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<HlsUploadProgress | null>(null);
   const [saving, setSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -108,24 +138,39 @@ export default function CampaignModal() {
     : serviceItems;
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const selected = Array.from(e.target.files || []);
+    // Clear the input so re-selecting the exact same file(s) still fires onChange.
+    e.target.value = '';
+    if (selected.length === 0) return;
 
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('File size cannot exceed 5MB');
-      return;
-    }
+    // Multiple files, or a single .m3u8, means an HLS package (playlist + its segments) rather
+    // than a plain single-file image/video upload.
+    const isHlsPackage = selected.length > 1 || selected[0].name.toLowerCase().endsWith('.m3u8');
 
     setUploading(true);
+    setUploadProgress(isHlsPackage ? { uploaded: 0, total: selected.length } : null);
     try {
-      const result = await uploadFileToR2(file, 'campaigns', slugify(title) || 'campaign');
-      setMediaUrl(result.url);
-      setMediaKey(result.r2Key || result.url);
-      setMediaType(file.type.startsWith('video/') ? 'VIDEO' : 'IMAGE');
+      if (isHlsPackage) {
+        const result = await uploadHlsPackageToR2(selected, slugify(title) || 'campaign', setUploadProgress);
+        setMediaUrl(result.url);
+        setMediaKey(result.r2Key);
+        setMediaType('VIDEO');
+      } else {
+        const file = selected[0];
+        if (file.size > 5 * 1024 * 1024) {
+          toast.error('File size cannot exceed 5MB');
+          return;
+        }
+        const result = await uploadFileToR2(file, 'campaigns', slugify(title) || 'campaign');
+        setMediaUrl(result.url);
+        setMediaKey(result.r2Key || result.url);
+        setMediaType(file.type.startsWith('video/') ? 'VIDEO' : 'IMAGE');
+      }
     } catch (err: any) {
       toast.error(`Upload failed: ${err.message}`);
     } finally {
       setUploading(false);
+      setUploadProgress(null);
     }
   };
 
@@ -204,7 +249,14 @@ export default function CampaignModal() {
           {/* Media Upload */}
           <div>
             <label className="text-sm font-medium text-gray-700 mb-2 block">Campaign Media<span className="text-red-500">*</span></label>
-            <input type="file" ref={fileInputRef} accept="image/*,video/*" className="hidden" onChange={handleFileChange} />
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept="image/*,video/*,.m3u8,.ts"
+              multiple
+              className="hidden"
+              onChange={handleFileChange}
+            />
             <div
               className="h-40 bg-[#FAF5F0] rounded-2xl border border-[#F2E5D9] flex flex-col items-center justify-center text-center p-4 cursor-pointer hover:border-[#D4A373] transition-colors relative overflow-hidden group"
               onClick={() => fileInputRef.current?.click()}
@@ -212,12 +264,14 @@ export default function CampaignModal() {
               {uploading ? (
                 <div className="flex flex-col items-center justify-center text-[#D4A373] gap-2">
                   <Loader2 className="w-6 h-6 animate-spin" />
-                  <span className="text-xs font-semibold">Uploading...</span>
+                  <span className="text-xs font-semibold">
+                    {uploadProgress ? `Uploading ${uploadProgress.uploaded}/${uploadProgress.total} files...` : 'Uploading...'}
+                  </span>
                 </div>
               ) : mediaUrl ? (
                 <div className="w-full h-full relative flex items-center justify-center">
                   {mediaType === 'VIDEO' ? (
-                    <video src={mediaUrl} className="max-h-28 object-contain" muted />
+                    <VideoPreview src={mediaUrl} />
                   ) : (
                     <img src={mediaUrl} alt="Campaign" className="max-h-28 object-contain" />
                   )}
@@ -231,7 +285,7 @@ export default function CampaignModal() {
                     <Upload className="w-4 h-4" />
                   </div>
                   <span className="text-xs font-semibold text-gray-800 mb-0.5">Upload Media</span>
-                  <span className="text-[11px] text-gray-400">PNG, JPG, MP4 up to 5MB</span>
+                  <span className="text-[11px] text-gray-400">PNG, JPG, MP4 up to 5MB — or select a .m3u8 with its .ts segments for HLS</span>
                 </>
               )}
             </div>

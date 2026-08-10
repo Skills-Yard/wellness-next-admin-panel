@@ -11,6 +11,11 @@ export interface GetUploadUrlPayload {
   version?: number;
   slug?: string;
   zoneSlug?: string;
+  // Groups every file (manifest + segments) belonging to one HLS video under the same R2
+  // folder — see R2StorageService.constructR2KeyForSignedURL on the backend, which keys
+  // HLS assets as `<module>/<slug>/videos/<videoId>-v<version>/<fileName>` specifically so
+  // the manifest's relative segment references keep resolving after upload.
+  videoId?: string;
 }
 
 export interface UploadUrlResponse {
