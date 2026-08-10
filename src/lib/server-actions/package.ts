@@ -41,19 +41,15 @@ export async function getAllServicePackagesServerAction(): Promise<ServicePackag
   }
 }
 
-// Matches CreateServicePackageDto/UpdateServicePackageDto. label and pricePerSession are required.
+// Matches CreateServicePackageDto/UpdateServicePackageDto. Per instruction, the admin panel only
+// sends sessions + savingsPercent (the "discount %" applied to sessions x a duration's price) —
+// price/pricePerSession/originalPrice/savings/badgeText/isPopular/displayOrder are intentionally
+// NOT sent; the backend derives/defaults them.
 export interface ServicePackagePayload {
   serviceItemId: string;
   label: string;
   sessions: number;
-  price: number;
-  pricePerSession: number;
-  originalPrice?: number;
-  savings?: number;
   savingsPercent?: number;
-  badgeText?: string;
-  isPopular?: boolean;
-  displayOrder?: number;
 }
 
 export async function saveServicePackageServerAction(

@@ -47,7 +47,9 @@ export default function ServiceDetailView() {
     serviceDurations,
     servicePackages,
     serviceAddOns,
-    serviceDetailLoading,
+    serviceDurationsLoading,
+    servicePackagesLoading,
+    serviceAddOnsLoading,
     addDurationToService,
     updateDurationInService,
     deleteDurationFromService,
@@ -58,13 +60,10 @@ export default function ServiceDetailView() {
     updateAddOnInService,
     deleteAddOnFromService,
     allServiceDurations,
-    allServicePackages,
     allServiceAddOns,
     allServiceDurationsLoading,
-    allServicePackagesLoading,
     allServiceAddOnsLoading,
     loadAllServiceDurations,
-    loadAllServicePackages,
     loadAllServiceAddOns,
     zones,
     zoneServiceItemConfigs,
@@ -166,12 +165,12 @@ export default function ServiceDetailView() {
   // Sub-categories available under whichever category is currently picked in the form.
   const subCategoryOptions = subCategories.filter(s => s.categoryId === categoryId);
 
-  // Cross-service duration/pack/add-on catalogs power the "pick from existing" selector inside
-  // each modal — load them once when this form mounts so the popups open with data already in
-  // hand instead of re-fetching (and showing a loading state) on every "+ Add" click.
+  // Cross-service duration/add-on catalogs power the "pick from existing" selector inside those
+  // modals — load them once when this form mounts so the popups open with data already in hand
+  // instead of re-fetching (and showing a loading state) on every "+ Add" click. Packs no longer
+  // have a cross-service picker — their price is derived from this service's own durations.
   useEffect(() => {
     loadAllServiceDurations();
-    loadAllServicePackages();
     loadAllServiceAddOns();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -733,10 +732,18 @@ export default function ServiceDetailView() {
           {/* SECTION 1: Select Duration (timeslots) */}
           <div className="space-y-3 pt-2 w-full">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-gray-900">Select Duration (timeslots)</h3>
+              <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                Select Duration (timeslots)
+                {serviceDurationsLoading && (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[#C68A4C] normal-case">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Updating...
+                  </span>
+                )}
+              </h3>
               <Button
                 size="sm"
-                disabled={!selectedServiceItem}
+                disabled={!selectedServiceItem || serviceDurationsLoading}
                 onClick={() => { setEditingDuration(null); setDurationModalOpen(true); }}
                 className="bg-[#1C1512] text-white hover:bg-black h-8 px-3"
               >
@@ -746,25 +753,49 @@ export default function ServiceDetailView() {
             </div>
 
             <div className="border border-gray-100 rounded-2xl overflow-x-auto w-full">
-              <table className="w-full text-left border-collapse min-w-[400px]">
+              <table className="w-full text-left border-collapse min-w-[560px]">
                 <thead>
                   <tr className="bg-[#FAF5F0] text-gray-700 text-xs font-semibold uppercase tracking-wider border-b border-[#F2E5D9]">
                     <th className="py-3 px-4 sm:px-6">Duration</th>
-                    <th className="py-3 px-4 sm:px-6 text-center">Price (₹)</th>
+                    <th className="py-3 px-4 sm:px-6 text-center">Original Price (₹)</th>
+                    <th className="py-3 px-4 sm:px-6 text-center">Discounted Price (₹)</th>
+                    <th className="py-3 px-4 sm:px-6 text-center">Discount</th>
                     <th className="py-3 px-4 sm:px-6 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 text-sm text-gray-700">
-                  {serviceDetailLoading ? (
+                  {serviceDurationsLoading ? (
                     <tr>
-                      <td colSpan={3} className="py-6 text-center text-xs text-gray-400">Loading...</td>
+                      <td colSpan={5} className="py-6 text-center text-xs text-gray-400">
+                        <span className="inline-flex items-center gap-1.5">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          {serviceDurations.length > 0 ? 'Updating...' : 'Loading...'}
+                        </span>
+                      </td>
                     </tr>
                   ) : serviceDurations.length > 0 ? (
-                    serviceDurations.map((dur) => (
+                    serviceDurations.map((dur) => {
+                      const hasDiscount = dur.discountedPrice != null && dur.discountedPrice < dur.price;
+                      const discountPercent = hasDiscount
+                        ? Math.round(((dur.price - (dur.discountedPrice as number)) / dur.price) * 100)
+                        : 0;
+                      return (
                       <tr key={dur.id} className="hover:bg-gray-50/50">
                         <td className="py-3 px-4 sm:px-6 font-medium">{dur.label}</td>
-                        <td className="py-3 px-4 sm:px-6 text-center font-semibold text-gray-900">
+                        <td className={`py-3 px-4 sm:px-6 text-center font-semibold ${hasDiscount ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
                           {dur.price.toLocaleString()}
+                        </td>
+                        <td className="py-3 px-4 sm:px-6 text-center font-semibold text-gray-900">
+                          {hasDiscount ? dur.discountedPrice!.toLocaleString() : '-'}
+                        </td>
+                        <td className="py-3 px-4 sm:px-6 text-center">
+                          {hasDiscount ? (
+                            <span className="inline-flex px-2.5 py-1 rounded-full text-[11px] font-semibold bg-green-50 text-green-700">
+                              {discountPercent}% off
+                            </span>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
                         </td>
                         <td className="py-3 px-4 sm:px-6 text-right">
                           <div className="flex items-center justify-end gap-2">
@@ -796,10 +827,11 @@ export default function ServiceDetailView() {
                           </div>
                         </td>
                       </tr>
-                    ))
+                      );
+                    })
                   ) : (
                     <tr>
-                      <td colSpan={3} className="py-6 text-center text-xs text-gray-400">
+                      <td colSpan={5} className="py-6 text-center text-xs text-gray-400">
                         No duration timeslots added yet. Click "+ Add" to add one.
                       </td>
                     </tr>
@@ -812,10 +844,18 @@ export default function ServiceDetailView() {
           {/* SECTION 2: Select a pack */}
           <div className="space-y-3 pt-2 w-full">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-gray-900">Select a pack</h3>
+              <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                Select a pack
+                {servicePackagesLoading && (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[#C68A4C] normal-case">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Updating...
+                  </span>
+                )}
+              </h3>
               <Button
                 size="sm"
-                disabled={!selectedServiceItem}
+                disabled={!selectedServiceItem || servicePackagesLoading}
                 onClick={() => { setEditingPack(null); setPackModalOpen(true); }}
                 className="bg-[#1C1512] text-white hover:bg-black h-8 px-3"
               >
@@ -829,33 +869,39 @@ export default function ServiceDetailView() {
                 <thead>
                   <tr className="bg-[#FAF5F0] text-gray-700 text-xs font-semibold uppercase tracking-wider border-b border-[#F2E5D9]">
                     <th className="py-3 px-4 sm:px-6">Session</th>
-                    <th className="py-3 px-4 sm:px-6 text-center">Price (₹)</th>
-                    <th className="py-3 px-4 sm:px-6 text-center">Original Price</th>
-                    <th className="py-3 px-4 sm:px-6 text-center">Savings</th>
-                    <th className="py-3 px-4 sm:px-6 text-center">Savings (%)</th>
+                    <th className="py-3 px-4 sm:px-6 text-center">Multiplier</th>
+                    <th className="py-3 px-4 sm:px-6 text-center">Discount (%)</th>
                     <th className="py-3 px-4 sm:px-6 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 text-sm text-gray-700">
-                  {serviceDetailLoading ? (
+                  {servicePackagesLoading ? (
                     <tr>
-                      <td colSpan={6} className="py-6 text-center text-xs text-gray-400">Loading...</td>
+                      <td colSpan={4} className="py-6 text-center text-xs text-gray-400">
+                        <span className="inline-flex items-center gap-1.5">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          {servicePackages.length > 0 ? 'Updating...' : 'Loading...'}
+                        </span>
+                      </td>
                     </tr>
                   ) : servicePackages.length > 0 ? (
-                    servicePackages.map((pkg) => (
+                    servicePackages.map((pkg) => {
+                      const base = pkg.originalPrice ?? pkg.price;
+                      const discountPercent = base > 0 ? Math.round(((pkg.price - base) / base) * 100) : 0;
+                      return (
                       <tr key={pkg.id} className="hover:bg-[#FAF9F6]/50">
                         <td className="py-3 px-4 sm:px-6 font-semibold text-gray-900">{pkg.label} ({pkg.sessions})</td>
                         <td className="py-3 px-4 sm:px-6 text-center font-semibold text-gray-900">
-                          {pkg.price.toLocaleString()}
+                          ×{pkg.sessions}
                         </td>
-                        <td className="py-3 px-4 sm:px-6 text-center text-gray-500">
-                          {pkg.originalPrice ? pkg.originalPrice.toLocaleString() : '-'}
-                        </td>
-                        <td className="py-3 px-4 sm:px-6 text-center text-gray-500">
-                          {pkg.savings ? pkg.savings.toLocaleString() : '-'}
-                        </td>
-                        <td className="py-3 px-4 sm:px-6 text-center text-gray-500 font-medium">
-                          {pkg.savingsPercent ? `${pkg.savingsPercent}%` : '-'}
+                        <td className="py-3 px-4 sm:px-6 text-center">
+                          {discountPercent !== 0 ? (
+                            <span className="inline-flex px-2.5 py-1 rounded-full text-[11px] font-semibold bg-[#FAF5F0] text-[#C68A4C]">
+                              {discountPercent}%
+                            </span>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
                         </td>
                         <td className="py-3 px-4 sm:px-6 text-right">
                           <div className="flex items-center justify-end gap-2">
@@ -887,11 +933,14 @@ export default function ServiceDetailView() {
                           </div>
                         </td>
                       </tr>
-                    ))
+                      );
+                    })
                   ) : (
                     <tr>
-                      <td colSpan={6} className="py-6 text-center text-xs text-gray-400">
-                        No session packs added yet. Click "+ Add" to add one.
+                      <td colSpan={4} className="py-6 text-center text-xs text-gray-400">
+                        {serviceDurations.length === 0
+                          ? 'Add a duration first, then create session packs from it.'
+                          : 'No session packs added yet. Click "+ Add" to add one.'}
                       </td>
                     </tr>
                   )}
@@ -903,10 +952,18 @@ export default function ServiceDetailView() {
           {/* SECTION 3: Add-ons Table */}
           <div className="space-y-3 pt-4 border-t border-gray-100 w-full">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-gray-900">Add-ons</h3>
+              <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                Add-ons
+                {serviceAddOnsLoading && (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[#C68A4C] normal-case">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Updating...
+                  </span>
+                )}
+              </h3>
               <Button
                 size="sm"
-                disabled={!selectedServiceItem}
+                disabled={!selectedServiceItem || serviceAddOnsLoading}
                 onClick={() => { setEditingAddOn(null); setAddOnModalOpen(true); }}
                 className="bg-[#1C1512] text-white hover:bg-black h-8 px-3"
               >
@@ -925,9 +982,14 @@ export default function ServiceDetailView() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 text-sm text-gray-700">
-                  {serviceDetailLoading ? (
+                  {serviceAddOnsLoading ? (
                     <tr>
-                      <td colSpan={3} className="py-6 text-center text-xs text-gray-400">Loading...</td>
+                      <td colSpan={3} className="py-6 text-center text-xs text-gray-400">
+                        <span className="inline-flex items-center gap-1.5">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          {serviceAddOns.length > 0 ? 'Updating...' : 'Loading...'}
+                        </span>
+                      </td>
                     </tr>
                   ) : serviceAddOns.length === 0 ? (
                     <tr>
@@ -1923,8 +1985,7 @@ export default function ServiceDetailView() {
             isOpen={packModalOpen}
             onClose={() => { setPackModalOpen(false); setEditingPack(null); }}
             initialData={editingPack}
-            existingOptions={allServicePackages}
-            existingLoading={allServicePackagesLoading}
+            durations={serviceDurations}
             onAdd={async (pkg) => {
               const res = editingPack
                 ? await updatePackageInService(selectedServiceItem.id, editingPack.id, pkg)

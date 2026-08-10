@@ -2,77 +2,72 @@
 
 import React, { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
-import { ServicePackage } from '../../types/catalogue';
+import { ServiceDuration, ServicePackage } from '../../types/catalogue';
 
 interface PackModalProps {
   isOpen: boolean;
   onClose: () => void;
   onAdd: (pkg: Omit<ServicePackage, 'id'>) => void;
   initialData?: ServicePackage | null;
-  // Cross-service packages to pick from as a starting point (create mode only).
-  existingOptions?: ServicePackage[];
-  existingLoading?: boolean;
+  // This service's own durations. No manual "which duration" picker — a pack's base price is
+  // always sessions x the service's default duration price (same rule everywhere), adjusted by
+  // Discount Percent. There's no free-typed "Original Price" anymore either.
+  durations: ServiceDuration[];
 }
 
-export default function PackModal({
-  isOpen,
-  onClose,
-  onAdd,
-  initialData,
-  existingOptions = [],
-  existingLoading = false,
-}: PackModalProps) {
-  const [label, setLabel] = useState('4 Sessions');
-  const [sessions, setSessions] = useState('4');
-  const [price, setPrice] = useState('4319');
-  const [originalPrice, setOriginalPrice] = useState('4319');
-  const [savings, setSavings] = useState('480');
-  const [savingsPercent, setSavingsPercent] = useState('10');
-  const [pickedId, setPickedId] = useState('');
+export default function PackModal({ isOpen, onClose, onAdd, initialData, durations }: PackModalProps) {
+  const [label, setLabel] = useState('1 Session');
+  const [sessions, setSessions] = useState('1');
+  // Non-negative (≥0%) — the field itself never goes negative, "Discount Percent" is just what
+  // this adjustment is called. Defaulting to 0% is what makes a fresh "1 Session" pack land
+  // exactly on the default duration's price. NOTE: the underlying price math still ADDS this
+  // percentage (unchanged, per instruction not to touch that) — only the label changed here.
+  const [discountPercent, setDiscountPercent] = useState('0');
 
   useEffect(() => {
     if (isOpen) {
-      setLabel(initialData?.label ?? '4 Sessions');
-      setSessions(initialData ? String(initialData.sessions) : '4');
-      setPrice(initialData ? String(initialData.price) : '4319');
-      setOriginalPrice(initialData?.originalPrice != null ? String(initialData.originalPrice) : initialData ? '' : '4319');
-      setSavings(initialData?.savings != null ? String(initialData.savings) : initialData ? '' : '480');
-      setSavingsPercent(initialData?.savingsPercent != null ? String(initialData.savingsPercent) : initialData ? '' : '10');
-      setPickedId('');
+      if (initialData) {
+        setLabel(initialData.label);
+        setSessions(String(initialData.sessions));
+        const base = initialData.originalPrice ?? initialData.price;
+        const percent = base > 0 ? Math.round(((initialData.price - base) / base) * 100) : 0;
+        setDiscountPercent(String(Math.max(0, percent)));
+      } else {
+        setLabel('1 Session');
+        setSessions('1');
+        setDiscountPercent('0');
+      }
     }
   }, [isOpen, initialData]);
 
   if (!isOpen) return null;
 
   const isEditing = !!initialData;
-
-  const handlePick = (id: string) => {
-    setPickedId(id);
-    const picked = existingOptions.find((p) => p.id === id);
-    if (picked) {
-      setLabel(picked.label);
-      setSessions(String(picked.sessions));
-      setPrice(String(picked.price));
-      setOriginalPrice(picked.originalPrice != null ? String(picked.originalPrice) : '');
-      setSavings(picked.savings != null ? String(picked.savings) : '');
-      setSavingsPercent(picked.savingsPercent != null ? String(picked.savingsPercent) : '');
-    }
-  };
-
-  const sessionsNum = Number(sessions) || 1;
-  const priceNum = Number(price) || 0;
-  const pricePerSession = Math.round(priceNum / sessionsNum);
+  // Every pack rides on the same reference rate — the service's default duration (falling back
+  // to its first one) — so the same Discount Percent means the same thing no matter which pack
+  // you're editing.
+  const baseDuration = durations.find((d) => d.isDefault) ?? durations[0] ?? null;
+  const sessionsNum = Number(sessions) || 0;
+  const discountNum = Math.max(0, Number(discountPercent) || 0);
+  const basePrice = baseDuration ? baseDuration.price * sessionsNum : 0;
+  const finalPrice = Math.round(basePrice * (1 + discountNum / 100));
+  const pricePerSession = sessionsNum > 0 ? Math.round(finalPrice / sessionsNum) : 0;
+  const canSubmit = !!baseDuration && sessionsNum > 0;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canSubmit) return;
     onAdd({
-      label: label.trim() || `${sessionsNum} Sessions`,
+      label: label.trim() || `${sessionsNum} Session${sessionsNum === 1 ? '' : 's'}`,
       sessions: sessionsNum,
-      price: priceNum,
+      // price/pricePerSession/originalPrice are only computed here to satisfy ServicePackage's
+      // shape and drive this modal's own preview — CatalogueContext no longer forwards them to
+      // the backend, which derives price itself from sessions + savingsPercent.
+      price: finalPrice,
       pricePerSession,
-      originalPrice: originalPrice ? Number(originalPrice) : undefined,
-      savings: savings ? Number(savings) : undefined,
-      savingsPercent: savingsPercent ? Number(savingsPercent) : undefined,
+      originalPrice: basePrice,
+      savings: undefined,
+      savingsPercent: discountNum,
     });
     onClose();
   };
@@ -91,122 +86,93 @@ export default function PackModal({
           {isEditing ? 'Edit Session Pack' : 'Add Session Pack'}
         </h3>
 
-        {!isEditing && (
-          <div className="mb-4">
-            <label className="text-sm font-medium text-gray-700 mb-1 block">
-              Pick from an existing pack (optional)
-            </label>
-            <select
-              value={pickedId}
-              onChange={(e) => handlePick(e.target.value)}
-              disabled={existingLoading}
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C] disabled:opacity-60"
-            >
-              <option value="">
-                {existingLoading ? 'Loading existing packs...' : 'None — enter manually below'}
-              </option>
-              {existingOptions.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.label} · ₹{p.price}{p.serviceItem ? ` · ${p.serviceItem.name}` : ''}
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-gray-400 mt-1">
-              Selecting one fills the fields below — you can still edit them before saving.
+        {!baseDuration ? (
+          <div className="space-y-4">
+            <p className="text-sm text-gray-500 bg-gray-50 border border-dashed border-gray-200 rounded-xl p-4">
+              Add a duration (timeslot) to this service first — packs are priced off its duration price.
             </p>
+            <div className="flex justify-end pt-2 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-5 py-2 rounded-xl border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Close
+              </button>
+            </div>
           </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">Label</label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. 4 Sessions"
+                value={label}
+                onChange={(e) => setLabel(e.target.value)}
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C]"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-1 block">Sessions Count</label>
+                <input
+                  type="number"
+                  required
+                  min={1}
+                  placeholder="e.g. 4"
+                  value={sessions}
+                  onChange={(e) => setSessions(e.target.value)}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C]"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-1 block">Discount Percent</label>
+                <input
+                  type="number"
+                  min={0}
+                  placeholder="0"
+                  value={discountPercent}
+                  onChange={(e) => setDiscountPercent(e.target.value)}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C]"
+                />
+              </div>
+            </div>
+
+            {/* No rupee total shown here — this service can have multiple durations, and the
+                same multiplier/discount apply to whichever one a customer books with this pack,
+                so any single computed amount would only ever be right for one of them. */}
+            <div className="rounded-xl bg-[#FAF5F0] border border-[#F2E5D9] px-4 py-3 flex items-center justify-between">
+              <span className="text-xs font-medium text-gray-500">Pack Price</span>
+              <span className="text-sm font-bold text-gray-900">
+                ×{sessionsNum || 0} duration price
+                {discountNum > 0 && <span className="text-[#C68A4C]"> · {discountNum}% discount</span>}
+              </span>
+            </div>
+            <p className="text-[11px] text-gray-400 -mt-2.5">
+              Applies to whichever duration this pack is booked with{durations.length > 1 ? ` — this service has ${durations.length} durations` : ''}.
+            </p>
+
+            <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-5 py-2 rounded-xl border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={!canSubmit}
+                className="px-5 py-2 rounded-xl bg-[#221812] text-white text-sm font-medium hover:bg-black disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isEditing ? 'Update Pack' : 'Add Pack'}
+              </button>
+            </div>
+          </form>
         )}
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Label</label>
-            <input
-              type="text"
-              required
-              placeholder="e.g. 4 Sessions"
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C]"
-            />
-          </div>
-
-          <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Sessions Count</label>
-            <input
-              type="number"
-              required
-              placeholder="e.g. 4"
-              value={sessions}
-              onChange={(e) => setSessions(e.target.value)}
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C]"
-            />
-          </div>
-
-          <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Price (₹)</label>
-            <input
-              type="number"
-              required
-              placeholder="4319"
-              value={price}
-              onChange={(e) => setPrice(e.target.value)}
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C]"
-            />
-            <p className="text-xs text-gray-400 mt-1">
-              ₹{Number.isFinite(pricePerSession) ? pricePerSession : 0} per session
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Original Price (₹)</label>
-              <input
-                type="number"
-                placeholder="4319"
-                value={originalPrice}
-                onChange={(e) => setOriginalPrice(e.target.value)}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C]"
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Savings (₹)</label>
-              <input
-                type="number"
-                placeholder="480"
-                value={savings}
-                onChange={(e) => setSavings(e.target.value)}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C]"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Savings (%)</label>
-            <input
-              type="number"
-              placeholder="10"
-              value={savingsPercent}
-              onChange={(e) => setSavingsPercent(e.target.value)}
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C]"
-            />
-          </div>
-
-          <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-5 py-2 rounded-xl border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-5 py-2 rounded-xl bg-[#221812] text-white text-sm font-medium hover:bg-black"
-            >
-              {isEditing ? 'Update Pack' : 'Add Pack'}
-            </button>
-          </div>
-        </form>
       </div>
     </div>
   );

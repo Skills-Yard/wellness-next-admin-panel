@@ -118,7 +118,12 @@ interface CatalogueContextType {
   serviceDurations: ServiceDuration[];
   servicePackages: ServicePackage[];
   serviceAddOns: ServiceAddOn[];
-  serviceDetailLoading: boolean;
+  // Split per-entity so adding/updating/deleting just a duration only shows a loading state on
+  // the Duration section — packages/add-ons stay untouched. Each flag covers both the initial
+  // fetch (switching services) and the refetch after any add/update/delete for that entity.
+  serviceDurationsLoading: boolean;
+  servicePackagesLoading: boolean;
+  serviceAddOnsLoading: boolean;
 
   // Cross-service catalogs — every duration/package/add-on across every service, each row
   // carrying a `serviceItem` ref. Fetched on demand (not on load) to power the "pick from
@@ -212,7 +217,9 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [serviceDurations, setServiceDurations] = useState<ServiceDuration[]>([]);
   const [servicePackages, setServicePackages] = useState<ServicePackage[]>([]);
   const [serviceAddOns, setServiceAddOns] = useState<ServiceAddOn[]>([]);
-  const [serviceDetailLoading, setServiceDetailLoading] = useState(false);
+  const [serviceDurationsLoading, setServiceDurationsLoading] = useState(false);
+  const [servicePackagesLoading, setServicePackagesLoading] = useState(false);
+  const [serviceAddOnsLoading, setServiceAddOnsLoading] = useState(false);
 
   const [allServiceDurations, setAllServiceDurations] = useState<ServiceDuration[]>([]);
   const [allServicePackages, setAllServicePackages] = useState<ServicePackage[]>([]);
@@ -314,24 +321,47 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated, authLoading]);
 
-  // Durations/packages/add-ons live on their own endpoints keyed by serviceItemId — refetch
-  // whenever the selected service changes. Unsaved local drafts (id starting with "srv-") have
-  // nothing to fetch yet.
-  const loadServiceDetail = useCallback(async (serviceItemId: string) => {
-    setServiceDetailLoading(true);
+  // Durations/packages/add-ons live on their own endpoints keyed by serviceItemId. Each has its
+  // own loader + loading flag so that, say, adding a duration only flips the Duration section
+  // into a loading/"Updating..." state — packages/add-ons stay untouched. loadServiceDetail
+  // (below) just fans out to all three, for the initial "service selected" load.
+  const loadServiceDurationsList = useCallback(async (serviceItemId: string) => {
+    setServiceDurationsLoading(true);
     try {
-      const [durations, packages, addOns] = await Promise.all([
-        getServiceDurationsServerAction(serviceItemId),
-        getServicePackagesServerAction(serviceItemId),
-        getServiceAddOnsServerAction(serviceItemId),
-      ]);
-      setServiceDurations(durations);
-      setServicePackages(packages);
-      setServiceAddOns(addOns);
+      setServiceDurations(await getServiceDurationsServerAction(serviceItemId));
     } finally {
-      setServiceDetailLoading(false);
+      setServiceDurationsLoading(false);
     }
   }, []);
+
+  const loadServicePackagesList = useCallback(async (serviceItemId: string) => {
+    setServicePackagesLoading(true);
+    try {
+      setServicePackages(await getServicePackagesServerAction(serviceItemId));
+    } finally {
+      setServicePackagesLoading(false);
+    }
+  }, []);
+
+  const loadServiceAddOnsList = useCallback(async (serviceItemId: string) => {
+    setServiceAddOnsLoading(true);
+    try {
+      setServiceAddOns(await getServiceAddOnsServerAction(serviceItemId));
+    } finally {
+      setServiceAddOnsLoading(false);
+    }
+  }, []);
+
+  // Refetches all three — used when the selected service changes (all three genuinely are
+  // loading together in that case). Individual CRUD actions below call the single-entity
+  // loaders directly instead of this.
+  const loadServiceDetail = useCallback(async (serviceItemId: string) => {
+    await Promise.all([
+      loadServiceDurationsList(serviceItemId),
+      loadServicePackagesList(serviceItemId),
+      loadServiceAddOnsList(serviceItemId),
+    ]);
+  }, [loadServiceDurationsList, loadServicePackagesList, loadServiceAddOnsList]);
 
   useEffect(() => {
     if (selectedServiceItem && !isDraftId(selectedServiceItem.id, 'srv-')) {
@@ -342,6 +372,30 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       setServiceAddOns([]);
     }
   }, [selectedServiceItem?.id, loadServiceDetail]);
+
+  // Packs have no durationId column — their price is sessions x a duration's price, derived
+  // server-side from sessions + savingsPercent (see PackModal). To guarantee a "1 Session" pack
+  // always exists at 0% discount, re-derive and re-save it every time a duration is added,
+  // updated, or removed. Best-effort: failures here are logged, not surfaced — they shouldn't
+  // block the duration action that triggered them.
+  const syncDefaultSessionPack = async (serviceId: string) => {
+    try {
+      const durations = await getServiceDurationsServerAction(serviceId);
+      if (durations.length === 0) return;
+
+      const packages = await getServicePackagesServerAction(serviceId);
+      const existing = packages.find(p => p.sessions === 1);
+
+      await saveServicePackageServerAction(existing?.id ?? null, {
+        serviceItemId: serviceId,
+        label: existing?.label || '1 Session',
+        sessions: 1,
+        savingsPercent: 0,
+      });
+    } catch (err) {
+      console.error('[syncDefaultSessionPack]', err);
+    }
+  };
 
   // On-demand cross-service catalogs (see allServiceDurations etc. above) — called when the
   // corresponding "add" modal opens, not eagerly, since these can span every service.
@@ -614,7 +668,8 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       displayOrder: duration.displayOrder,
     });
     if (res.ok) {
-      await loadServiceDetail(serviceId);
+      await syncDefaultSessionPack(serviceId);
+      await Promise.all([loadServiceDurationsList(serviceId), loadServicePackagesList(serviceId)]);
       return { ok: true };
     }
     return { ok: false, message: res.message };
@@ -635,7 +690,8 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       displayOrder: duration.displayOrder,
     });
     if (res.ok) {
-      await loadServiceDetail(serviceId);
+      await syncDefaultSessionPack(serviceId);
+      await Promise.all([loadServiceDurationsList(serviceId), loadServicePackagesList(serviceId)]);
       return { ok: true };
     }
     return { ok: false, message: res.message };
@@ -644,29 +700,26 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const deleteDurationFromService = async (serviceId: string, durationId: string): Promise<ActionResponse> => {
     const res = await deleteServiceDurationServerAction(durationId);
     if (res.ok) {
-      await loadServiceDetail(serviceId);
+      await syncDefaultSessionPack(serviceId);
+      await Promise.all([loadServiceDurationsList(serviceId), loadServicePackagesList(serviceId)]);
       return { ok: true };
     }
     return { ok: false, message: res.message };
   };
 
   // ---- Packages ----
+  // Only serviceItemId/label/sessions/savingsPercent are sent — price/pricePerSession/
+  // originalPrice/savings/badgeText/isPopular/displayOrder are not provided by the admin panel;
+  // the backend derives/defaults them (see ServicePackagePayload).
   const addPackageToService = async (serviceId: string, pkg: Omit<ServicePackage, 'id'>): Promise<ActionResponse> => {
     const res = await saveServicePackageServerAction(null, {
       serviceItemId: serviceId,
       label: pkg.label,
       sessions: pkg.sessions,
-      price: pkg.price,
-      pricePerSession: pkg.pricePerSession,
-      originalPrice: pkg.originalPrice ?? undefined,
-      savings: pkg.savings ?? undefined,
       savingsPercent: pkg.savingsPercent ?? undefined,
-      badgeText: pkg.badgeText ?? undefined,
-      isPopular: pkg.isPopular,
-      displayOrder: pkg.displayOrder,
     });
     if (res.ok) {
-      await loadServiceDetail(serviceId);
+      await loadServicePackagesList(serviceId);
       return { ok: true };
     }
     return { ok: false, message: res.message };
@@ -681,17 +734,10 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       serviceItemId: serviceId,
       label: pkg.label,
       sessions: pkg.sessions,
-      price: pkg.price,
-      pricePerSession: pkg.pricePerSession,
-      originalPrice: pkg.originalPrice ?? undefined,
-      savings: pkg.savings ?? undefined,
       savingsPercent: pkg.savingsPercent ?? undefined,
-      badgeText: pkg.badgeText ?? undefined,
-      isPopular: pkg.isPopular,
-      displayOrder: pkg.displayOrder,
     });
     if (res.ok) {
-      await loadServiceDetail(serviceId);
+      await loadServicePackagesList(serviceId);
       return { ok: true };
     }
     return { ok: false, message: res.message };
@@ -700,7 +746,7 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const deletePackageFromService = async (serviceId: string, packageId: string): Promise<ActionResponse> => {
     const res = await deleteServicePackageServerAction(packageId);
     if (res.ok) {
-      await loadServiceDetail(serviceId);
+      await loadServicePackagesList(serviceId);
       return { ok: true };
     }
     return { ok: false, message: res.message };
@@ -722,7 +768,7 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       displayOrder: addon.displayOrder,
     });
     if (res.ok) {
-      await loadServiceDetail(serviceId);
+      await loadServiceAddOnsList(serviceId);
       return { ok: true };
     }
     return { ok: false, message: res.message };
@@ -744,7 +790,7 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       displayOrder: addon.displayOrder,
     });
     if (res.ok) {
-      await loadServiceDetail(serviceId);
+      await loadServiceAddOnsList(serviceId);
       return { ok: true };
     }
     return { ok: false, message: res.message };
@@ -753,7 +799,7 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const deleteAddOnFromService = async (serviceId: string, addonId: string): Promise<ActionResponse> => {
     const res = await deleteServiceAddOnServerAction(addonId);
     if (res.ok) {
-      await loadServiceDetail(serviceId);
+      await loadServiceAddOnsList(serviceId);
       return { ok: true };
     }
     return { ok: false, message: res.message };
@@ -888,7 +934,9 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       serviceDurations,
       servicePackages,
       serviceAddOns,
-      serviceDetailLoading,
+      serviceDurationsLoading,
+      servicePackagesLoading,
+      serviceAddOnsLoading,
       allServiceDurations,
       allServicePackages,
       allServiceAddOns,
