@@ -14,7 +14,16 @@ import ZoneOverrideModal from './ZoneOverrideModal';
 import ImageCardModal from './ImageCardModal';
 import TextItemModal from './TextItemModal';
 import FaqModal from './FaqModal';
-import { FaqItem, ImageCardItem, MediaType, ReviewItem, OperationalZone } from '../../types/catalogue';
+import {
+  FaqItem,
+  ImageCardItem,
+  MediaType,
+  ReviewItem,
+  OperationalZone,
+  ServiceDuration,
+  ServicePackage,
+  ServiceAddOn,
+} from '../../types/catalogue';
 
 // Lightweight slug preview — the backend re-normalizes the slug itself on save either way.
 function slugify(input: string): string {
@@ -40,10 +49,13 @@ export default function ServiceDetailView() {
     serviceAddOns,
     serviceDetailLoading,
     addDurationToService,
+    updateDurationInService,
     deleteDurationFromService,
     addPackageToService,
+    updatePackageInService,
     deletePackageFromService,
     addAddOnToService,
+    updateAddOnInService,
     deleteAddOnFromService,
     zones,
     zoneServiceItemConfigs,
@@ -97,8 +109,11 @@ export default function ServiceDetailView() {
 
   // Modals state
   const [durationModalOpen, setDurationModalOpen] = useState(false);
+  const [editingDuration, setEditingDuration] = useState<ServiceDuration | null>(null);
   const [packModalOpen, setPackModalOpen] = useState(false);
+  const [editingPack, setEditingPack] = useState<ServicePackage | null>(null);
   const [addOnModalOpen, setAddOnModalOpen] = useState(false);
+  const [editingAddOn, setEditingAddOn] = useState<ServiceAddOn | null>(null);
   const [zoneModalOpen, setZoneModalOpen] = useState(false);
   const [zoneForModal, setZoneForModal] = useState<OperationalZone | null>(null);
   const [zonePickerId, setZonePickerId] = useState('');
@@ -703,7 +718,7 @@ export default function ServiceDetailView() {
               <Button
                 size="sm"
                 disabled={!selectedServiceItem}
-                onClick={() => setDurationModalOpen(true)}
+                onClick={() => { setEditingDuration(null); setDurationModalOpen(true); }}
                 className="bg-[#1C1512] text-white hover:bg-black h-8 px-3"
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -734,6 +749,15 @@ export default function ServiceDetailView() {
                         </td>
                         <td className="py-3 px-4 sm:px-6 text-right">
                           <div className="flex items-center justify-end gap-2">
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              onClick={() => { setEditingDuration(dur); setDurationModalOpen(true); }}
+                              className="w-7 h-7"
+                              title="Edit Timeslot"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </Button>
                             <Button
                               variant="destructive"
                               size="icon"
@@ -773,7 +797,7 @@ export default function ServiceDetailView() {
               <Button
                 size="sm"
                 disabled={!selectedServiceItem}
-                onClick={() => setPackModalOpen(true)}
+                onClick={() => { setEditingPack(null); setPackModalOpen(true); }}
                 className="bg-[#1C1512] text-white hover:bg-black h-8 px-3"
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -817,6 +841,15 @@ export default function ServiceDetailView() {
                         <td className="py-3 px-4 sm:px-6 text-right">
                           <div className="flex items-center justify-end gap-2">
                             <Button
+                              variant="outline"
+                              size="icon"
+                              onClick={() => { setEditingPack(pkg); setPackModalOpen(true); }}
+                              className="w-7 h-7"
+                              title="Edit Session Pack"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button
                               variant="destructive"
                               size="icon"
                               onClick={async () => {
@@ -855,7 +888,7 @@ export default function ServiceDetailView() {
               <Button
                 size="sm"
                 disabled={!selectedServiceItem}
-                onClick={() => setAddOnModalOpen(true)}
+                onClick={() => { setEditingAddOn(null); setAddOnModalOpen(true); }}
                 className="bg-[#1C1512] text-white hover:bg-black h-8 px-3"
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -895,6 +928,15 @@ export default function ServiceDetailView() {
                         <td className="py-3.5 px-4 sm:px-6 text-center font-bold text-gray-900">{addon.price}</td>
                         <td className="py-3.5 px-4 sm:px-6 text-right">
                           <div className="flex items-center justify-end gap-2">
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              onClick={() => { setEditingAddOn(addon); setAddOnModalOpen(true); }}
+                              className="w-7 h-7"
+                              title="Edit Add-on"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </Button>
                             <Button
                               variant="destructive"
                               size="icon"
@@ -1841,40 +1883,52 @@ export default function ServiceDetailView() {
         <>
           <DurationModal
             isOpen={durationModalOpen}
-            onClose={() => setDurationModalOpen(false)}
+            onClose={() => { setDurationModalOpen(false); setEditingDuration(null); }}
+            initialData={editingDuration}
             onAdd={async (dur) => {
-              const res = await addDurationToService(selectedServiceItem.id, dur);
+              const res = editingDuration
+                ? await updateDurationInService(selectedServiceItem.id, editingDuration.id, dur)
+                : await addDurationToService(selectedServiceItem.id, dur);
               if (res.ok) {
-                toast.success('Duration timeslot added!');
+                toast.success(editingDuration ? 'Duration timeslot updated!' : 'Duration timeslot added!');
               } else {
-                toast.error(`Failed to add timeslot: ${res.message || 'Error occurred'}`);
+                toast.error(`Failed to ${editingDuration ? 'update' : 'add'} timeslot: ${res.message || 'Error occurred'}`);
               }
+              setEditingDuration(null);
             }}
           />
 
           <PackModal
             isOpen={packModalOpen}
-            onClose={() => setPackModalOpen(false)}
+            onClose={() => { setPackModalOpen(false); setEditingPack(null); }}
+            initialData={editingPack}
             onAdd={async (pkg) => {
-              const res = await addPackageToService(selectedServiceItem.id, pkg);
+              const res = editingPack
+                ? await updatePackageInService(selectedServiceItem.id, editingPack.id, pkg)
+                : await addPackageToService(selectedServiceItem.id, pkg);
               if (res.ok) {
-                toast.success('Session pack added!');
+                toast.success(editingPack ? 'Session pack updated!' : 'Session pack added!');
               } else {
-                toast.error(`Failed to add session pack: ${res.message || 'Error occurred'}`);
+                toast.error(`Failed to ${editingPack ? 'update' : 'add'} session pack: ${res.message || 'Error occurred'}`);
               }
+              setEditingPack(null);
             }}
           />
 
           <AddOnModal
             isOpen={addOnModalOpen}
-            onClose={() => setAddOnModalOpen(false)}
+            onClose={() => { setAddOnModalOpen(false); setEditingAddOn(null); }}
+            initialData={editingAddOn}
             onAdd={async (addon) => {
-              const res = await addAddOnToService(selectedServiceItem.id, addon);
+              const res = editingAddOn
+                ? await updateAddOnInService(selectedServiceItem.id, editingAddOn.id, addon)
+                : await addAddOnToService(selectedServiceItem.id, addon);
               if (res.ok) {
-                toast.success('Add-on added!');
+                toast.success(editingAddOn ? 'Add-on updated!' : 'Add-on added!');
               } else {
-                toast.error(`Failed to add add-on: ${res.message || 'Error occurred'}`);
+                toast.error(`Failed to ${editingAddOn ? 'update' : 'add'} add-on: ${res.message || 'Error occurred'}`);
               }
+              setEditingAddOn(null);
             }}
           />
 

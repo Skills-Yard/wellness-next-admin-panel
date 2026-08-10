@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { ServicePackage } from '../../types/catalogue';
 
@@ -8,9 +8,10 @@ interface PackModalProps {
   isOpen: boolean;
   onClose: () => void;
   onAdd: (pkg: Omit<ServicePackage, 'id'>) => void;
+  initialData?: ServicePackage | null;
 }
 
-export default function PackModal({ isOpen, onClose, onAdd }: PackModalProps) {
+export default function PackModal({ isOpen, onClose, onAdd, initialData }: PackModalProps) {
   const [label, setLabel] = useState('4 Sessions');
   const [sessions, setSessions] = useState('4');
   const [price, setPrice] = useState('4319');
@@ -18,7 +19,20 @@ export default function PackModal({ isOpen, onClose, onAdd }: PackModalProps) {
   const [savings, setSavings] = useState('480');
   const [savingsPercent, setSavingsPercent] = useState('10');
 
+  useEffect(() => {
+    if (isOpen) {
+      setLabel(initialData?.label ?? '4 Sessions');
+      setSessions(initialData ? String(initialData.sessions) : '4');
+      setPrice(initialData ? String(initialData.price) : '4319');
+      setOriginalPrice(initialData?.originalPrice != null ? String(initialData.originalPrice) : initialData ? '' : '4319');
+      setSavings(initialData?.savings != null ? String(initialData.savings) : initialData ? '' : '480');
+      setSavingsPercent(initialData?.savingsPercent != null ? String(initialData.savingsPercent) : initialData ? '' : '10');
+    }
+  }, [isOpen, initialData]);
+
   if (!isOpen) return null;
+
+  const isEditing = !!initialData;
 
   const sessionsNum = Number(sessions) || 1;
   const priceNum = Number(price) || 0;
@@ -48,7 +62,9 @@ export default function PackModal({ isOpen, onClose, onAdd }: PackModalProps) {
           <X className="w-4 h-4" />
         </button>
 
-        <h3 className="text-xl font-bold text-gray-900 mb-6">Add Session Pack</h3>
+        <h3 className="text-xl font-bold text-gray-900 mb-6">
+          {isEditing ? 'Edit Session Pack' : 'Add Session Pack'}
+        </h3>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -136,7 +152,7 @@ export default function PackModal({ isOpen, onClose, onAdd }: PackModalProps) {
               type="submit"
               className="px-5 py-2 rounded-xl bg-[#221812] text-white text-sm font-medium hover:bg-black"
             >
-              Add Pack
+              {isEditing ? 'Update Pack' : 'Add Pack'}
             </button>
           </div>
         </form>

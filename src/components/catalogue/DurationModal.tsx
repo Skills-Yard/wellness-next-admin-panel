@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { ServiceDuration } from '../../types/catalogue';
 
@@ -8,14 +8,25 @@ interface DurationModalProps {
   isOpen: boolean;
   onClose: () => void;
   onAdd: (duration: Omit<ServiceDuration, 'id'>) => void;
+  initialData?: ServiceDuration | null;
 }
 
-export default function DurationModal({ isOpen, onClose, onAdd }: DurationModalProps) {
+export default function DurationModal({ isOpen, onClose, onAdd, initialData }: DurationModalProps) {
   const [label, setLabel] = useState('90 mins');
   const [minutes, setMinutes] = useState('90');
   const [price, setPrice] = useState('1199');
 
+  useEffect(() => {
+    if (isOpen) {
+      setLabel(initialData?.label ?? '90 mins');
+      setMinutes(initialData ? String(initialData.durationMinutes) : '90');
+      setPrice(initialData ? String(initialData.price) : '1199');
+    }
+  }, [isOpen, initialData]);
+
   if (!isOpen) return null;
+
+  const isEditing = !!initialData;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,7 +48,9 @@ export default function DurationModal({ isOpen, onClose, onAdd }: DurationModalP
           <X className="w-4 h-4" />
         </button>
 
-        <h3 className="text-xl font-bold text-gray-900 mb-6">Add Duration (Timeslot)</h3>
+        <h3 className="text-xl font-bold text-gray-900 mb-6">
+          {isEditing ? 'Edit Duration (Timeslot)' : 'Add Duration (Timeslot)'}
+        </h3>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -88,7 +101,7 @@ export default function DurationModal({ isOpen, onClose, onAdd }: DurationModalP
               type="submit"
               className="px-5 py-2 rounded-xl bg-[#221812] text-white text-sm font-medium hover:bg-black"
             >
-              Add Duration
+              {isEditing ? 'Update Duration' : 'Add Duration'}
             </button>
           </div>
         </form>

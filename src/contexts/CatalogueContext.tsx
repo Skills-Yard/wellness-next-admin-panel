@@ -144,10 +144,13 @@ interface CatalogueContextType {
 
   // Timeslots & Packs & Add-ons management
   addDurationToService: (serviceId: string, duration: Omit<ServiceDuration, 'id'>) => Promise<ActionResponse>;
+  updateDurationInService: (serviceId: string, durationId: string, duration: Omit<ServiceDuration, 'id'>) => Promise<ActionResponse>;
   deleteDurationFromService: (serviceId: string, durationId: string) => Promise<ActionResponse>;
   addPackageToService: (serviceId: string, pkg: Omit<ServicePackage, 'id'>) => Promise<ActionResponse>;
+  updatePackageInService: (serviceId: string, packageId: string, pkg: Omit<ServicePackage, 'id'>) => Promise<ActionResponse>;
   deletePackageFromService: (serviceId: string, packageId: string) => Promise<ActionResponse>;
   addAddOnToService: (serviceId: string, addon: Omit<ServiceAddOn, 'id' | 'serviceItemId'>) => Promise<ActionResponse>;
+  updateAddOnInService: (serviceId: string, addonId: string, addon: Omit<ServiceAddOn, 'id' | 'serviceItemId'>) => Promise<ActionResponse>;
   deleteAddOnFromService: (serviceId: string, addonId: string) => Promise<ActionResponse>;
 
   // Zone entities (name/city/boundary) — see AdminOperationalZoneController / ZoneController
@@ -565,6 +568,27 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return { ok: false, message: res.message };
   };
 
+  const updateDurationInService = async (
+    serviceId: string,
+    durationId: string,
+    duration: Omit<ServiceDuration, 'id'>
+  ): Promise<ActionResponse> => {
+    const res = await saveServiceDurationServerAction(durationId, {
+      serviceItemId: serviceId,
+      label: duration.label,
+      durationMinutes: duration.durationMinutes,
+      price: duration.price,
+      discountedPrice: duration.discountedPrice ?? undefined,
+      isDefault: duration.isDefault,
+      displayOrder: duration.displayOrder,
+    });
+    if (res.ok) {
+      await loadServiceDetail(serviceId);
+      return { ok: true };
+    }
+    return { ok: false, message: res.message };
+  };
+
   const deleteDurationFromService = async (serviceId: string, durationId: string): Promise<ActionResponse> => {
     const res = await deleteServiceDurationServerAction(durationId);
     if (res.ok) {
@@ -577,6 +601,31 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // ---- Packages ----
   const addPackageToService = async (serviceId: string, pkg: Omit<ServicePackage, 'id'>): Promise<ActionResponse> => {
     const res = await saveServicePackageServerAction(null, {
+      serviceItemId: serviceId,
+      label: pkg.label,
+      sessions: pkg.sessions,
+      price: pkg.price,
+      pricePerSession: pkg.pricePerSession,
+      originalPrice: pkg.originalPrice ?? undefined,
+      savings: pkg.savings ?? undefined,
+      savingsPercent: pkg.savingsPercent ?? undefined,
+      badgeText: pkg.badgeText ?? undefined,
+      isPopular: pkg.isPopular,
+      displayOrder: pkg.displayOrder,
+    });
+    if (res.ok) {
+      await loadServiceDetail(serviceId);
+      return { ok: true };
+    }
+    return { ok: false, message: res.message };
+  };
+
+  const updatePackageInService = async (
+    serviceId: string,
+    packageId: string,
+    pkg: Omit<ServicePackage, 'id'>
+  ): Promise<ActionResponse> => {
+    const res = await saveServicePackageServerAction(packageId, {
       serviceItemId: serviceId,
       label: pkg.label,
       sessions: pkg.sessions,
@@ -611,6 +660,28 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     addon: Omit<ServiceAddOn, 'id' | 'serviceItemId'>
   ): Promise<ActionResponse> => {
     const res = await saveServiceAddOnServerAction(null, {
+      serviceItemId: serviceId,
+      name: addon.name,
+      price: addon.price,
+      imageKey: addon.imageKey,
+      description: addon.description,
+      extraMinutes: addon.extraMinutes,
+      isActive: addon.isActive !== undefined ? addon.isActive : true,
+      displayOrder: addon.displayOrder,
+    });
+    if (res.ok) {
+      await loadServiceDetail(serviceId);
+      return { ok: true };
+    }
+    return { ok: false, message: res.message };
+  };
+
+  const updateAddOnInService = async (
+    serviceId: string,
+    addonId: string,
+    addon: Omit<ServiceAddOn, 'id' | 'serviceItemId'>
+  ): Promise<ActionResponse> => {
+    const res = await saveServiceAddOnServerAction(addonId, {
       serviceItemId: serviceId,
       name: addon.name,
       price: addon.price,
@@ -784,10 +855,13 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       updateServiceItemPublishStatus,
       deleteServiceItem,
       addDurationToService,
+      updateDurationInService,
       deleteDurationFromService,
       addPackageToService,
+      updatePackageInService,
       deletePackageFromService,
       addAddOnToService,
+      updateAddOnInService,
       deleteAddOnFromService,
       createZone,
       updateZone,

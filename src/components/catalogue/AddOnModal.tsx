@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { X, Upload, Loader2 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { uploadFileToR2 } from '../../lib/uploadToR2';
@@ -11,9 +11,10 @@ interface AddOnModalProps {
   isOpen: boolean;
   onClose: () => void;
   onAdd: (addon: Omit<ServiceAddOn, 'id' | 'serviceItemId'>) => void;
+  initialData?: ServiceAddOn | null;
 }
 
-export default function AddOnModal({ isOpen, onClose, onAdd }: AddOnModalProps) {
+export default function AddOnModal({ isOpen, onClose, onAdd, initialData }: AddOnModalProps) {
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
   const [description, setDescription] = useState('');
@@ -23,7 +24,19 @@ export default function AddOnModal({ isOpen, onClose, onAdd }: AddOnModalProps) 
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  useEffect(() => {
+    if (isOpen) {
+      setName(initialData?.name ?? '');
+      setPrice(initialData ? String(initialData.price) : '');
+      setDescription(initialData?.description ?? '');
+      setExtraMinutes(initialData ? String(initialData.extraMinutes ?? 0) : '0');
+      setImageUrl(initialData?.imageKey ?? null);
+    }
+  }, [isOpen, initialData]);
+
   if (!isOpen) return null;
+
+  const isEditing = !!initialData;
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -66,7 +79,7 @@ export default function AddOnModal({ isOpen, onClose, onAdd }: AddOnModalProps) 
       description: description.trim() || undefined,
       extraMinutes: Number(extraMinutes) || 0,
       imageKey: imageUrl,
-      isActive: true,
+      isActive: initialData?.isActive ?? true,
     });
     reset();
     onClose();
@@ -94,7 +107,9 @@ export default function AddOnModal({ isOpen, onClose, onAdd }: AddOnModalProps) 
         </button>
 
         {/* Title */}
-        <h3 className="text-xl sm:text-2xl font-bold text-gray-900 mb-6">Add-On</h3>
+        <h3 className="text-xl sm:text-2xl font-bold text-gray-900 mb-6">
+          {isEditing ? 'Edit Add-On' : 'Add-On'}
+        </h3>
 
         <form onSubmit={handleSubmit} className="space-y-5">
           {/* Image Upload */}
@@ -183,7 +198,7 @@ export default function AddOnModal({ isOpen, onClose, onAdd }: AddOnModalProps) 
               Cancel
             </Button>
             <Button type="submit" className="rounded-xl px-6 bg-[#221812] text-white hover:bg-black">
-              Save
+              {isEditing ? 'Update Add-on' : 'Save'}
             </Button>
           </div>
         </form>
