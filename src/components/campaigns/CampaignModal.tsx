@@ -37,7 +37,13 @@ function VideoPreview({ src }: { src: string }) {
   return <video ref={videoRef} className="max-h-28 object-contain" muted controls />;
 }
 
-const CAMPAIGN_TYPES: CampaignType[] = ['SPOTLIGHT', 'HIGHLIGHT_VIDEO', 'HIGHLIGHT_BANNER', 'CAROUSEL'];
+const CAMPAIGN_TYPES: CampaignType[] = [
+  'SPOTLIGHT',
+  'HIGHLIGHT_VIDEO',
+  'HIGHLIGHT_BANNER',
+  'CAROUSEL_VIDEO',
+  'CAROUSEL_BANNER',
+];
 const TARGET_TYPES: CampaignTargetType[] = ['GLOBAL', 'CATEGORY', 'SUBCATEGORY'];
 
 function slugify(input: string): string {

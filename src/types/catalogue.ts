@@ -226,7 +226,15 @@ export interface ZoneAddOnConfig {
 
 // ---- Promotional Campaigns (see wellness-backend/prisma/schema/catalog.prisma) ----
 
-export type CampaignType = 'SPOTLIGHT' | 'HIGHLIGHT_VIDEO' | 'HIGHLIGHT_BANNER' | 'CAROUSEL';
+// 'CAROUSEL' is a deprecated legacy value still accepted by the backend enum
+// (existing rows were migrated off it) — intentionally left out here so the
+// admin UI can no longer create new campaigns with it.
+export type CampaignType =
+  | 'SPOTLIGHT'
+  | 'HIGHLIGHT_VIDEO'
+  | 'HIGHLIGHT_BANNER'
+  | 'CAROUSEL_VIDEO'
+  | 'CAROUSEL_BANNER';
 export type CampaignTargetType = 'GLOBAL' | 'CATEGORY' | 'SUBCATEGORY';
 
 export interface PromotionalCampaign {
