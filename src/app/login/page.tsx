@@ -3,23 +3,21 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../../contexts/AuthContext';
-import { Button } from '../../components/ui/button';
-import { Input } from '../../components/ui/input';
-import { Label } from '../../components/ui/label';
 import { Checkbox } from '../../components/ui/checkbox';
-import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
-import { 
-  Sparkles, 
-  Mail, 
-  Lock, 
-  Eye, 
-  EyeOff, 
-  Loader2, 
-  AlertCircle, 
-  ShieldCheck,
-  ArrowRight 
-} from 'lucide-react';
+import { Eye, EyeOff, Loader2, AlertCircle } from 'lucide-react';
 import { toast } from 'react-toastify';
+
+// Standard 4-color Google "G" mark — no icon library in this project ships brand icons.
+function GoogleIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+      <path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24c0,11.045,8.955,20,20,20c11.045,0,20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z" />
+      <path fill="#FF3D00" d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z" />
+      <path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z" />
+      <path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.087,5.571c0.001-0.001,0.002-0.001,0.003-0.002l6.19,5.238C36.971,39.205,44,34,44,24C44,22.659,43.862,21.35,43.611,20.083z" />
+    </svg>
+  );
+}
 
 export default function AdminLoginPage() {
   const { login, isAuthenticated } = useAuth();
@@ -67,157 +65,136 @@ export default function AdminLoginPage() {
   };
 
   return (
-    <div className="min-h-screen w-full bg-[#FAF9F6] flex items-center justify-center p-4 sm:p-6 lg:p-8 relative overflow-hidden font-sans select-none">
-      
-      {/* Soft Decorative Ambient Background Elements */}
-      <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-gradient-to-br from-[#FAF5F0] via-[#F2E5D9]/40 to-transparent blur-3xl pointer-events-none" />
-      <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-gradient-to-tl from-[#D4A373]/10 via-[#FAF5F0]/60 to-transparent blur-3xl pointer-events-none" />
+    <div className="min-h-screen w-full flex bg-white font-sans select-none">
 
-      {/* Subtle Pattern Grid */}
-      <div className="absolute inset-0 bg-[radial-gradient(#C68A4C_0.75px,transparent_0.75px)] [background-size:24px_24px] opacity-[0.12] pointer-events-none" />
+      {/* Left — full-bleed room photo, hidden below lg: (no room to split the screen). */}
+      <div className="hidden lg:block lg:w-[46%] xl:w-[45%] flex-shrink-0 relative">
+        <img
+          src="/images/loginimage.png"
+          alt="Spa treatment room"
+          className="absolute inset-0 w-full h-full object-cover"
+        />
+      </div>
 
-      <div className="w-full max-w-md relative z-10 animate-in fade-in zoom-in-95 duration-300">
-        
-        {/* Top Branding Section */}
-        <div className="text-center mb-6 flex flex-col items-center">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-[#1C1512] to-[#3D3028] flex items-center justify-center text-[#D4A373] shadow-lg mb-3.5 border border-[#3D3028]">
-            <Sparkles className="w-7 h-7 fill-current" />
+      {/* Right — the form */}
+      <div className="flex-1 flex items-center justify-center p-6 sm:p-10">
+        <div className="w-full max-w-[352px] animate-in fade-in zoom-in-95 duration-300">
+
+          <div className="flex flex-col items-center text-center gap-3 mb-9">
+            <h1 className="text-2xl font-medium text-black">Welcome Back!</h1>
+            <p className="text-sm font-medium text-gray-500">Log in to access the Eezit Admin Panel</p>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">
-            Eezit Admin
-          </h1>
-          <p className="text-xs sm:text-sm text-gray-500 mt-1 flex items-center gap-1.5 justify-center font-medium">
-            <ShieldCheck className="w-4 h-4 text-[#C68A4C]" />
-            Secure Portal Authentication
-          </p>
-        </div>
 
-        {/* Shadcn White Card */}
-        <Card className="border border-gray-200/80 bg-white/95 backdrop-blur-sm text-gray-900 shadow-xl shadow-gray-200/60 rounded-3xl overflow-hidden p-1 sm:p-2">
-          
-          <CardHeader className="space-y-1 pb-3 pt-5 px-6 text-center sm:text-left">
-            <CardTitle className="text-xl font-bold text-gray-900 tracking-tight">
-              Sign In to Your Account
-            </CardTitle>
-            <p className="text-xs text-gray-500">
-              Enter your credentials to access the admin management console.
-            </p>
-          </CardHeader>
+          {errorMessage && (
+            <div className="mb-5 p-3.5 rounded-lg bg-red-50 border border-red-200 flex items-start gap-3 text-red-700 text-xs sm:text-sm animate-in fade-in-50 slide-in-from-top-2">
+              <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+              <div className="leading-snug font-medium">{errorMessage}</div>
+            </div>
+          )}
 
-          <CardContent className="px-6 pb-6 pt-2">
-            
-            {/* Error Message Banner */}
-            {errorMessage && (
-              <div className="mb-4 p-3.5 rounded-2xl bg-red-50 border border-red-200 flex items-start gap-3 text-red-700 text-xs sm:text-sm animate-in fade-in-50 slide-in-from-top-2">
-                <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
-                <div className="leading-snug font-medium">{errorMessage}</div>
-              </div>
-            )}
+          <form onSubmit={handleSubmit}>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              
-              {/* Email Address Field */}
-              <div className="space-y-1.5">
-                <Label htmlFor="email" className="text-xs font-semibold text-gray-700">
+            {/* Email + Password */}
+            <div className="space-y-8">
+              <div className="space-y-3">
+                <label htmlFor="email" className="block text-sm font-medium text-[#25180F]">
                   Email Address
-                </Label>
-                <div className="relative">
-                  <Mail className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="admin@vellora.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    disabled={isSubmitting}
-                    className="pl-10 h-11 bg-[#FAF9F6]/80 border-gray-200 text-gray-900 placeholder:text-gray-400 focus-visible:ring-[#C68A4C]/30 focus-visible:border-[#C68A4C] text-sm rounded-xl"
-                  />
-                </div>
+                </label>
+                <input
+                  id="email"
+                  type="email"
+                  placeholder="Enter email address"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  disabled={isSubmitting}
+                  className="w-full px-3 py-3 border border-black/8 rounded-lg text-sm text-gray-900 placeholder:text-black/36 focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C] disabled:opacity-60 transition-colors"
+                />
               </div>
 
-              {/* Password Field */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="password" className="text-xs font-semibold text-gray-700">
-                    Password
-                  </Label>
-                </div>
+              <div className="space-y-3">
+                <label htmlFor="password" className="block text-sm font-medium text-[#25180F]">
+                  Password
+                </label>
                 <div className="relative">
-                  <Lock className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <Input
+                  <input
                     id="password"
                     type={showPassword ? 'text' : 'password'}
-                    placeholder="••••••••••••"
+                    placeholder="Enter your password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
                     disabled={isSubmitting}
-                    className="pl-10 pr-10 h-11 bg-[#FAF9F6]/80 border-gray-200 text-gray-900 placeholder:text-gray-400 focus-visible:ring-[#C68A4C]/30 focus-visible:border-[#C68A4C] text-sm rounded-xl"
+                    className="w-full px-3 py-3 pr-10 border border-black/8 rounded-lg text-sm text-gray-900 placeholder:text-black/36 focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C] disabled:opacity-60 transition-colors"
                   />
                   <button
                     type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 transition-colors p-0.5 cursor-pointer"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-800 transition-colors cursor-pointer"
                     tabIndex={-1}
                   >
-                    {showPassword ? (
-                      <EyeOff className="w-4 h-4" />
-                    ) : (
-                      <Eye className="w-4 h-4" />
-                    )}
+                    {showPassword ? <EyeOff className="w-[18px] h-[18px]" /> : <Eye className="w-[18px] h-[18px]" />}
                   </button>
                 </div>
               </div>
+            </div>
 
-              {/* Remember Login Checkbox */}
-              <div className="flex items-center justify-between pt-1 pb-1">
-                <div className="flex items-center space-x-2.5">
-                  <Checkbox
-                    id="remember"
-                    checked={rememberMe}
-                    onCheckedChange={(checked) => setRememberMe(!!checked)}
-                    className="border-gray-300 data-[state=checked]:bg-[#1C1512] data-[state=checked]:border-[#1C1512] data-[state=checked]:text-white rounded-md"
-                  />
-                  <label
-                    htmlFor="remember"
-                    className="text-xs text-gray-600 cursor-pointer select-none font-medium"
-                  >
-                    Remember login session
-                  </label>
-                </div>
-              </div>
+            {/* Remember me + Forgot password */}
+            <div className="flex items-center justify-between mt-5">
+              <label htmlFor="remember" className="flex items-center gap-2 cursor-pointer select-none">
+                <Checkbox
+                  id="remember"
+                  checked={rememberMe}
+                  onCheckedChange={(checked) => setRememberMe(!!checked)}
+                  className="w-4 h-4 rounded-sm border-gray-500"
+                />
+                <span className="text-xs font-medium text-gray-500">Remember me</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => toast.info("Password reset isn't set up yet — contact an admin to reset your password.")}
+                className="text-xs font-medium text-[#25180F] hover:underline cursor-pointer"
+              >
+                Forgot Password?
+              </button>
+            </div>
 
-              {/* Submit Button */}
-              <Button
+            {/* Log in / divider / Google */}
+            <div className="mt-9 space-y-[22px]">
+              <button
                 type="submit"
                 disabled={isSubmitting}
-                className="w-full h-11 bg-[#1C1512] hover:bg-black text-white font-semibold text-sm rounded-xl shadow-md transition-all duration-200 active:scale-[0.99] flex items-center justify-center gap-2 mt-2 cursor-pointer"
+                className="w-full h-[42px] flex items-center justify-center gap-2 bg-[#25180F] hover:bg-black text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
               >
                 {isSubmitting ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin text-white" />
-                    <span>Authenticating...</span>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Logging in...</span>
                   </>
                 ) : (
-                  <>
-                    <span>Sign In to Admin</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </>
+                  <span>Log in</span>
                 )}
-              </Button>
+              </button>
 
-            </form>
-          </CardContent>
+              <div className="relative flex items-center justify-center">
+                <div className="w-full border-t border-black/14" />
+                <span className="absolute bg-white px-3 text-sm font-medium text-gray-500">or</span>
+              </div>
 
-        </Card>
+              <button
+                type="button"
+                onClick={() => toast.info("Google sign-in isn't set up yet.")}
+                className="w-full h-[42px] flex items-center justify-center gap-2 border border-black/8 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors cursor-pointer"
+              >
+                <GoogleIcon className="w-5 h-5" />
+                Continue with Google
+              </button>
+            </div>
 
-        {/* Footer info */}
-        <div className="mt-6 text-center text-xs text-gray-400 font-medium">
-          <p>&copy; {new Date().getFullYear()} Eezit Wellness Inc. All rights reserved.</p>
+          </form>
         </div>
-
       </div>
+
     </div>
   );
 }
