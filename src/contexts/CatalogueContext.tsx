@@ -374,26 +374,25 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [selectedServiceItem?.id, loadServiceDetail]);
 
   // Packs have no durationId column — their price is sessions x a duration's price, derived
-  // server-side from sessions + savingsPercent (see PackModal). To guarantee a "1 Session" pack
-  // always exists at 0% discount, re-derive and re-save it every time a duration is added,
-  // updated, or removed. Best-effort: failures here are logged, not surfaced — they shouldn't
-  // block the duration action that triggered them.
-  const syncDefaultSessionPack = async (serviceId: string) => {
+  // server-side from sessions + savingsPercent (see PackModal). Bootstrap a "1 Session" / 0%
+  // pack ONCE, the first time a service gets a duration to price off of — deliberately NOT
+  // re-synced on every later duration add/update/delete (that used to make the Pack section
+  // flash "Updating..." for edits that have nothing to do with packs). Past that first pack,
+  // pricing is entirely user-managed via session count + discount %. Best-effort: failures here
+  // are logged, not surfaced — they shouldn't block the duration action that triggered them.
+  const createDefaultPackIfMissing = async (serviceId: string) => {
     try {
-      const durations = await getServiceDurationsServerAction(serviceId);
-      if (durations.length === 0) return;
-
       const packages = await getServicePackagesServerAction(serviceId);
-      const existing = packages.find(p => p.sessions === 1);
+      if (packages.length > 0) return;
 
-      await saveServicePackageServerAction(existing?.id ?? null, {
+      await saveServicePackageServerAction(null, {
         serviceItemId: serviceId,
-        label: existing?.label || '1 Session',
+        label: '1 Session',
         sessions: 1,
         savingsPercent: 0,
       });
     } catch (err) {
-      console.error('[syncDefaultSessionPack]', err);
+      console.error('[createDefaultPackIfMissing]', err);
     }
   };
 
@@ -658,6 +657,9 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   // ---- Durations ----
   const addDurationToService = async (serviceId: string, duration: Omit<ServiceDuration, 'id'>): Promise<ActionResponse> => {
+    // Read before the save so this only fires on this service's very first duration — packs are
+    // otherwise left untouched by duration actions (see createDefaultPackIfMissing above).
+    const isFirstDuration = serviceDurations.length === 0;
     const res = await saveServiceDurationServerAction(null, {
       serviceItemId: serviceId,
       label: duration.label,
@@ -668,8 +670,11 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       displayOrder: duration.displayOrder,
     });
     if (res.ok) {
-      await syncDefaultSessionPack(serviceId);
-      await Promise.all([loadServiceDurationsList(serviceId), loadServicePackagesList(serviceId)]);
+      await loadServiceDurationsList(serviceId);
+      if (isFirstDuration) {
+        await createDefaultPackIfMissing(serviceId);
+        await loadServicePackagesList(serviceId);
+      }
       return { ok: true };
     }
     return { ok: false, message: res.message };
@@ -690,8 +695,7 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       displayOrder: duration.displayOrder,
     });
     if (res.ok) {
-      await syncDefaultSessionPack(serviceId);
-      await Promise.all([loadServiceDurationsList(serviceId), loadServicePackagesList(serviceId)]);
+      await loadServiceDurationsList(serviceId);
       return { ok: true };
     }
     return { ok: false, message: res.message };
@@ -700,8 +704,7 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const deleteDurationFromService = async (serviceId: string, durationId: string): Promise<ActionResponse> => {
     const res = await deleteServiceDurationServerAction(durationId);
     if (res.ok) {
-      await syncDefaultSessionPack(serviceId);
-      await Promise.all([loadServiceDurationsList(serviceId), loadServicePackagesList(serviceId)]);
+      await loadServiceDurationsList(serviceId);
       return { ok: true };
     }
     return { ok: false, message: res.message };

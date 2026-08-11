@@ -11,8 +11,15 @@ interface ImageCardModalProps {
   titleText: string;
   hasSubtitle?: boolean;
   initialData?: { title: string; subtitle?: string; image?: string };
+  // Cosmetic — every saved item is already reusable across services via the Library (which
+  // aggregates directly off saved service data, see useLibrarySections), so there's no separate
+  // "private" state to gate on. Shown to match the Create screen design; hide it for edit forms.
+  showLibraryCheckbox?: boolean;
+  // Renders just the form (no backdrop/card/close button/title) for use inside AddSectionModal's
+  // "Create" tab. Standalone (non-embedded) use — the Edit flow — is unaffected.
+  embedded?: boolean;
   onClose: () => void;
-  onAdd: (item: { title: string; subtitle?: string; description?: string; image: string }) => void;
+  onAdd: (item: { title: string; subtitle?: string; description?: string; image: string }) => void | Promise<void>;
 }
 
 export default function ImageCardModal({
@@ -20,6 +27,8 @@ export default function ImageCardModal({
   titleText,
   hasSubtitle = false,
   initialData,
+  showLibraryCheckbox = true,
+  embedded = false,
   onClose,
   onAdd,
 }: ImageCardModalProps) {
@@ -27,12 +36,16 @@ export default function ImageCardModal({
   const [subtitle, setSubtitle] = useState(initialData?.subtitle || '');
   const [imageUrl, setImageUrl] = useState<string | null>(initialData?.image || null);
   const [uploading, setUploading] = useState(false);
+  const [saveToLibrary, setSaveToLibrary] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   React.useEffect(() => {
     if (isOpen) {
       setTitle(initialData?.title || '');
       setSubtitle(initialData?.subtitle || '');
       setImageUrl(initialData?.image || null);
+      setSaveToLibrary(true);
+      setSaving(false);
     }
   }, [isOpen, initialData]);
 
@@ -60,39 +73,140 @@ export default function ImageCardModal({
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) return;
+    if (!title.trim() || saving) return;
     if (!imageUrl) {
       toast.error('Please upload an image');
       return;
     }
 
-    onAdd({
-      title,
-      subtitle,
-      description: subtitle,
-      image: imageUrl,
-    });
+    setSaving(true);
+    try {
+      await onAdd({
+        title,
+        subtitle,
+        description: subtitle,
+        image: imageUrl,
+      });
 
-    setTitle('');
-    setSubtitle('');
-    setImageUrl(null);
-    onClose();
+      setTitle('');
+      setSubtitle('');
+      setImageUrl(null);
+      onClose();
+    } finally {
+      setSaving(false);
+    }
   };
+
+  const form = (
+    <form onSubmit={handleSubmit} className="space-y-4 animate-in fade-in duration-150">
+      {/* Hidden file input */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        accept="image/*"
+        className="hidden"
+        onChange={handleFileChange}
+      />
+
+      {/* Image Upload Area */}
+      <div>
+        <label className="text-xs font-semibold text-gray-700 mb-1.5 block">
+          Image<span className="text-red-500">*</span>
+        </label>
+        <div
+          className="h-32 bg-[#FAF5F0] rounded-2xl border border-[#F2E5D9] flex flex-col items-center justify-center text-center p-3 cursor-pointer hover:border-[#D4A373] transition-colors relative overflow-hidden group"
+          onClick={() => fileInputRef.current?.click()}
+        >
+          {uploading ? (
+            <div className="flex flex-col items-center justify-center text-[#D4A373] gap-2">
+              <Loader2 className="w-5 h-5 animate-spin" />
+              <span className="text-xs font-semibold">Uploading...</span>
+            </div>
+          ) : imageUrl ? (
+            <div className="w-full h-full relative flex items-center justify-center">
+              <img src={imageUrl} alt="Card Preview" className="max-h-24 object-contain" />
+              <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity rounded-xl">
+                <span className="text-xs text-white bg-black/60 px-2.5 py-1 rounded-md">Change Image</span>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="w-9 h-9 rounded-full bg-white flex items-center justify-center text-[#D4A373] mb-1 shadow-xs">
+                <Upload className="w-4 h-4" />
+              </div>
+              <span className="text-xs font-semibold text-gray-800">Upload Image</span>
+              <span className="text-[10px] text-gray-400">PNG, JPG up to 5MB</span>
+            </>
+          )}
+        </div>
+      </div>
+
+      <div>
+        <label className="text-xs font-semibold text-gray-700 mb-1.5 block">Title<span className="text-red-500">*</span></label>
+        <input
+          type="text"
+          required
+          placeholder="Enter title"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C]"
+        />
+      </div>
+
+      {hasSubtitle && (
+        <div>
+          <label className="text-xs font-semibold text-gray-700 mb-1.5 block">Subtitle / Description</label>
+          <textarea
+            rows={2}
+            placeholder="Enter description"
+            value={subtitle}
+            onChange={(e) => setSubtitle(e.target.value)}
+            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C] resize-none"
+          />
+        </div>
+      )}
+
+      {showLibraryCheckbox && (
+        <label className="flex items-center gap-2 cursor-pointer select-none w-fit">
+          <input
+            type="checkbox"
+            checked={saveToLibrary}
+            onChange={(e) => setSaveToLibrary(e.target.checked)}
+            className="w-4 h-4 rounded border-gray-400 text-[#25180F] focus:ring-[#C68A4C]/30"
+          />
+          <span className="text-xs text-gray-700">Save this on library</span>
+        </label>
+      )}
+
+      {/* Buttons */}
+      <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-100">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onClose}
+          className="rounded-xl px-6"
+        >
+          Cancel
+        </Button>
+        <Button
+          type="submit"
+          disabled={saving}
+          className="rounded-xl px-6 bg-[#221812] text-white hover:bg-black inline-flex items-center gap-2"
+        >
+          {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+          {saving ? 'Saving...' : 'Save'}
+        </Button>
+      </div>
+    </form>
+  );
+
+  if (embedded) return form;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in duration-200">
       <div className="bg-white rounded-3xl w-full max-w-xl p-6 sm:p-8 shadow-2xl relative border border-gray-100 max-h-[90vh] overflow-y-auto">
-
-        {/* Hidden file input */}
-        <input
-          type="file"
-          ref={fileInputRef}
-          accept="image/*"
-          className="hidden"
-          onChange={handleFileChange}
-        />
 
         {/* Close Button */}
         <button
@@ -107,83 +221,7 @@ export default function ImageCardModal({
           {titleText}
         </h3>
 
-        <form onSubmit={handleSubmit} className="space-y-4 animate-in fade-in duration-150">
-          {/* Image Upload Area */}
-          <div>
-            <label className="text-xs font-semibold text-gray-700 mb-1.5 block">
-              Image<span className="text-red-500">*</span>
-            </label>
-            <div
-              className="h-32 bg-[#FAF5F0] rounded-2xl border border-[#F2E5D9] flex flex-col items-center justify-center text-center p-3 cursor-pointer hover:border-[#D4A373] transition-colors relative overflow-hidden group"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              {uploading ? (
-                <div className="flex flex-col items-center justify-center text-[#D4A373] gap-2">
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  <span className="text-xs font-semibold">Uploading...</span>
-                </div>
-              ) : imageUrl ? (
-                <div className="w-full h-full relative flex items-center justify-center">
-                  <img src={imageUrl} alt="Card Preview" className="max-h-24 object-contain" />
-                  <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity rounded-xl">
-                    <span className="text-xs text-white bg-black/60 px-2.5 py-1 rounded-md">Change Image</span>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div className="w-9 h-9 rounded-full bg-white flex items-center justify-center text-[#D4A373] mb-1 shadow-xs">
-                    <Upload className="w-4 h-4" />
-                  </div>
-                  <span className="text-xs font-semibold text-gray-800">Upload Image</span>
-                  <span className="text-[10px] text-gray-400">PNG, JPG up to 5MB</span>
-                </>
-              )}
-            </div>
-          </div>
-
-          <div>
-            <label className="text-xs font-semibold text-gray-700 mb-1.5 block">Title<span className="text-red-500">*</span></label>
-            <input
-              type="text"
-              required
-              placeholder="Enter title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C]"
-            />
-          </div>
-
-          {hasSubtitle && (
-            <div>
-              <label className="text-xs font-semibold text-gray-700 mb-1.5 block">Subtitle / Description</label>
-              <textarea
-                rows={2}
-                placeholder="Enter description"
-                value={subtitle}
-                onChange={(e) => setSubtitle(e.target.value)}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C] resize-none"
-              />
-            </div>
-          )}
-
-          {/* Buttons */}
-          <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-100">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onClose}
-              className="rounded-xl px-6"
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              className="rounded-xl px-6 bg-[#221812] text-white hover:bg-black"
-            >
-              Save
-            </Button>
-          </div>
-        </form>
+        {form}
       </div>
     </div>
   );

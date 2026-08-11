@@ -14,6 +14,17 @@ import ZoneOverrideModal from './ZoneOverrideModal';
 import ImageCardModal from './ImageCardModal';
 import TextItemModal from './TextItemModal';
 import FaqModal from './FaqModal';
+import AddSectionModal from './AddSectionModal';
+import LibraryPickerModal from './LibraryPickerModal';
+import {
+  useLibrarySections,
+  LibrarySectionKey,
+  TextLibraryPayload,
+  ImageLibraryPayload,
+  DurationLibraryPayload,
+  PackLibraryPayload,
+  AddOnLibraryPayload,
+} from '../../hooks/useLibrarySections';
 import {
   FaqItem,
   ImageCardItem,
@@ -59,12 +70,9 @@ export default function ServiceDetailView() {
     addAddOnToService,
     updateAddOnInService,
     deleteAddOnFromService,
-    allServiceDurations,
-    allServiceAddOns,
-    allServiceDurationsLoading,
-    allServiceAddOnsLoading,
     loadAllServiceDurations,
     loadAllServiceAddOns,
+    loadAllServicePackages,
     zones,
     zoneServiceItemConfigs,
     deleteZoneServiceItemConfig,
@@ -125,7 +133,23 @@ export default function ServiceDetailView() {
   const [zoneModalOpen, setZoneModalOpen] = useState(false);
   const [zoneForModal, setZoneForModal] = useState<OperationalZone | null>(null);
   const [zonePickerId, setZonePickerId] = useState('');
-  const [faqModalOpen, setFaqModalOpen] = useState(false);
+
+  // Add -> Create/Library wizard (see AddSectionModal). One popup, tab-switched, drives all 13
+  // sections — renderCreate is set per-button-click to whatever embedded Create form that
+  // section needs; the Library tab is generic, driven purely by sectionKey (see
+  // useLibrarySections + handleLibrarySave below).
+  const [addSection, setAddSection] = useState<{
+    isOpen: boolean;
+    sectionKey: LibrarySectionKey;
+    label: string;
+    renderCreate: () => React.ReactNode;
+  } | null>(null);
+  const librarySections = useLibrarySections();
+
+  const openAddSection = (sectionKey: LibrarySectionKey, label: string, renderCreate: () => React.ReactNode) => {
+    setAddSection({ isOpen: true, sectionKey, label, renderCreate });
+  };
+  const closeAddSection = () => setAddSection(null);
 
   // Generic Image Card Modal State
   const [imageModalConfig, setImageModalConfig] = useState<{
@@ -172,6 +196,7 @@ export default function ServiceDetailView() {
   useEffect(() => {
     loadAllServiceDurations();
     loadAllServiceAddOns();
+    loadAllServicePackages();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -373,9 +398,14 @@ export default function ServiceDetailView() {
     }
   };
 
-  const handleImageCardAdd = async (item: { title: string; subtitle?: string; description?: string; image: string }) => {
-    const section = imageModalConfig.targetSection;
-    const editIndex = imageModalConfig.editIndex;
+  const handleImageCardAdd = async (
+    item: { title: string; subtitle?: string; description?: string; image: string },
+    // Set when saving straight from the Library picker (see handleLibrarySave) — bypasses
+    // imageModalConfig entirely since there's no modal/edit-index involved in that flow.
+    sectionOverride?: 'overview' | 'procedure' | 'items' | 'included'
+  ) => {
+    const section = sectionOverride ?? imageModalConfig.targetSection;
+    const editIndex = sectionOverride ? undefined : imageModalConfig.editIndex;
     const card: ImageCardItem = { id: `${section}-${Date.now()}`, title: item.title, subtitle: item.subtitle, image: item.image };
 
     if (section === 'overview') {
@@ -401,9 +431,13 @@ export default function ServiceDetailView() {
     }
   };
 
-  const handleTextItemAdd = async (text: string) => {
-    const section = textModalConfig.targetSection;
-    const editIdx = textModalConfig.editIndex;
+  const handleTextItemAdd = async (
+    text: string,
+    // Set when saving straight from the Library picker (see handleLibrarySave).
+    sectionOverride?: 'features' | 'pros' | 'care' | 'disclaimer' | 'trusted'
+  ) => {
+    const section = sectionOverride ?? textModalConfig.targetSection;
+    const editIdx = sectionOverride ? undefined : textModalConfig.editIndex;
 
     if (section === 'features') {
       const updated = editIdx !== undefined ? features.map((f, i) => (i === editIdx ? text : f)) : [...features, text];
@@ -444,8 +478,88 @@ export default function ServiceDetailView() {
     if (selectedServiceItem) await saveServiceItem({ name: serviceName || selectedServiceItem.name, faqs });
   };
 
+  // Fires when "Save Selected" is clicked in the Library tab — routes the picked row's payload
+  // (see useLibrarySections) to the same save path its section's Create form would use, so a
+  // library pick behaves exactly like manually re-typing that same item.
+  const handleLibrarySave = async (sectionKey: LibrarySectionKey, payload: unknown) => {
+    switch (sectionKey) {
+      case 'features':
+      case 'pros':
+      case 'care':
+      case 'disclaimer':
+      case 'trusted':
+        await handleTextItemAdd((payload as TextLibraryPayload).text, sectionKey);
+        break;
+      case 'overview':
+      case 'procedure':
+      case 'items':
+      case 'included': {
+        const p = payload as ImageLibraryPayload;
+        await handleImageCardAdd(p, sectionKey);
+        break;
+      }
+      case 'faqs':
+        await handleFaqAdd(payload as FaqItem);
+        break;
+      case 'duration': {
+        if (!selectedServiceItem) break;
+        const d = payload as DurationLibraryPayload;
+        const res = await addDurationToService(selectedServiceItem.id, {
+          label: d.label,
+          durationMinutes: d.durationMinutes,
+          price: d.price,
+          discountedPrice: d.discountedPrice,
+        });
+        if (res.ok) toast.success('Duration timeslot added!');
+        else toast.error(`Failed to add timeslot: ${res.message || 'Error occurred'}`);
+        break;
+      }
+      case 'pack': {
+        if (!selectedServiceItem) break;
+        const p = payload as PackLibraryPayload;
+        // Same rule as PackModal: price always derives from THIS service's own default
+        // duration x sessions, adjusted by savingsPercent — a library pack only carries over
+        // its sessions/discount shape, never its absolute price from wherever it came from.
+        const baseDuration = serviceDurations.find((d) => d.isDefault) ?? serviceDurations[0] ?? null;
+        if (!baseDuration) {
+          toast.error('Add a duration to this service first — packs are priced off its duration price.');
+          break;
+        }
+        const basePrice = baseDuration.price * p.sessions;
+        const finalPrice = Math.round(basePrice * (1 + p.savingsPercent / 100));
+        const pricePerSession = p.sessions > 0 ? Math.round(finalPrice / p.sessions) : 0;
+        const res = await addPackageToService(selectedServiceItem.id, {
+          label: p.label,
+          sessions: p.sessions,
+          price: finalPrice,
+          pricePerSession,
+          originalPrice: basePrice,
+          savingsPercent: p.savingsPercent,
+        });
+        if (res.ok) toast.success('Session pack added!');
+        else toast.error(`Failed to add session pack: ${res.message || 'Error occurred'}`);
+        break;
+      }
+      case 'addon': {
+        if (!selectedServiceItem) break;
+        const a = payload as AddOnLibraryPayload;
+        const res = await addAddOnToService(selectedServiceItem.id, {
+          name: a.name,
+          price: a.price,
+          imageKey: a.imageKey,
+          description: a.description,
+          extraMinutes: a.extraMinutes,
+          isActive: a.isActive ?? true,
+        });
+        if (res.ok) toast.success('Add-on added!');
+        else toast.error(`Failed to add add-on: ${res.message || 'Error occurred'}`);
+        break;
+      }
+    }
+  };
+
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-16 animate-in fade-in duration-300 w-full">
+    <div className="space-y-6 max-w-7xl mx-auto pb-16 lg:pb-4 animate-in fade-in duration-300 w-full">
 
       {/* Hidden file inputs */}
       <input
@@ -473,12 +587,14 @@ export default function ServiceDetailView() {
       {/* Main 2-Column Split Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-8 items-start w-full">
 
-        {/* LEFT COLUMN: SERVICES LIST TABLE */}
-        <div className="lg:col-span-4 space-y-4 w-full">
+        {/* LEFT COLUMN: SERVICES LIST TABLE — sticky and independently scrollable from lg: up,
+            so it stays in view while the much longer edit form on the right scrolls past it. */}
+        <div className="lg:col-span-4 space-y-4 w-full lg:sticky lg:top-6 lg:self-start lg:max-h-[calc(100vh-15rem)] lg:overflow-y-auto">
           <Card className="w-full">
 
-            {/* Header with '+' Button */}
-            <div className="bg-[#FAF5F0] px-4 sm:px-6 py-4 border-b border-[#F2E5D9] flex items-center justify-between">
+            {/* Header with '+' Button — pinned within the list's own scroll box (see the sticky
+                wrapper above) so it stays visible while a long services list scrolls under it. */}
+            <div className="bg-[#FAF5F0] px-4 sm:px-6 py-4 border-b border-[#F2E5D9] flex items-center justify-between lg:sticky lg:top-0 lg:z-10">
               <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">Services</span>
               <div className="flex items-center gap-3">
                 <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">Action</span>
@@ -545,11 +661,13 @@ export default function ServiceDetailView() {
           </Card>
         </div>
 
-        {/* RIGHT COLUMN: EDIT SERVICE FORM & ALL SECTIONS */}
-        <Card className="lg:col-span-8 p-4 sm:p-6 md:p-8 space-y-8 md:space-y-10 w-full">
+        {/* RIGHT COLUMN: EDIT SERVICE FORM & ALL SECTIONS — the header (title + Save as
+            Draft/Publish) is pinned; only the form body below it scrolls, independently from
+            the page and from the sticky services list on the left. */}
+        <Card className="lg:col-span-8 w-full lg:h-[calc(100vh-15rem)] flex flex-col overflow-hidden">
 
           {/* Top Form Header & Save Buttons */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 pb-5">
+          <div className="flex-shrink-0 bg-white lg:sticky lg:top-0 lg:z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 px-4 sm:px-6 md:px-8 pt-4 sm:pt-6 md:pt-8 pb-5">
             <h2 className="text-xl font-bold text-gray-900">Edit Service</h2>
             <div className="flex items-center gap-3">
               <Button
@@ -568,6 +686,9 @@ export default function ServiceDetailView() {
               </Button>
             </div>
           </div>
+
+          {/* Scrollable form body */}
+          <div className="flex-1 overflow-y-auto px-4 sm:px-6 md:px-8 py-6 md:py-8 space-y-8 md:space-y-10">
 
           {/* Service Name, Slug, Upload Row */}
           <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
@@ -744,7 +865,20 @@ export default function ServiceDetailView() {
               <Button
                 size="sm"
                 disabled={!selectedServiceItem || serviceDurationsLoading}
-                onClick={() => { setEditingDuration(null); setDurationModalOpen(true); }}
+                onClick={() => openAddSection('duration', 'Duration', () => (
+                  <DurationModal
+                    embedded
+                    isOpen
+                    initialData={null}
+                    onClose={closeAddSection}
+                    onAdd={async (dur) => {
+                      if (!selectedServiceItem) return;
+                      const res = await addDurationToService(selectedServiceItem.id, dur);
+                      if (res.ok) toast.success('Duration timeslot added!');
+                      else toast.error(`Failed to add timeslot: ${res.message || 'Error occurred'}`);
+                    }}
+                  />
+                ))}
                 className="bg-[#1C1512] text-white hover:bg-black h-8 px-3"
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -856,7 +990,21 @@ export default function ServiceDetailView() {
               <Button
                 size="sm"
                 disabled={!selectedServiceItem || servicePackagesLoading}
-                onClick={() => { setEditingPack(null); setPackModalOpen(true); }}
+                onClick={() => openAddSection('pack', 'Pack', () => (
+                  <PackModal
+                    embedded
+                    isOpen
+                    initialData={null}
+                    durations={serviceDurations}
+                    onClose={closeAddSection}
+                    onAdd={async (pkg) => {
+                      if (!selectedServiceItem) return;
+                      const res = await addPackageToService(selectedServiceItem.id, pkg);
+                      if (res.ok) toast.success('Session pack added!');
+                      else toast.error(`Failed to add session pack: ${res.message || 'Error occurred'}`);
+                    }}
+                  />
+                ))}
                 className="bg-[#1C1512] text-white hover:bg-black h-8 px-3"
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -964,7 +1112,20 @@ export default function ServiceDetailView() {
               <Button
                 size="sm"
                 disabled={!selectedServiceItem || serviceAddOnsLoading}
-                onClick={() => { setEditingAddOn(null); setAddOnModalOpen(true); }}
+                onClick={() => openAddSection('addon', 'Add-On', () => (
+                  <AddOnModal
+                    embedded
+                    isOpen
+                    initialData={null}
+                    onClose={closeAddSection}
+                    onAdd={async (addon) => {
+                      if (!selectedServiceItem) return;
+                      const res = await addAddOnToService(selectedServiceItem.id, addon);
+                      if (res.ok) toast.success('Add-on added!');
+                      else toast.error(`Failed to add add-on: ${res.message || 'Error occurred'}`);
+                    }}
+                  />
+                ))}
                 className="bg-[#1C1512] text-white hover:bg-black h-8 px-3"
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -1159,7 +1320,16 @@ export default function ServiceDetailView() {
               <h3 className="text-sm font-bold text-gray-900">Features</h3>
               <Button
                 size="sm"
-                onClick={() => setTextModalConfig({ isOpen: true, title: 'Add Feature', placeholder: 'Enter feature content...', targetSection: 'features' })}
+                onClick={() => openAddSection('features', 'Feature', () => (
+                  <TextItemModal
+                    embedded
+                    isOpen
+                    titleText="Create Feature"
+                    placeholderText="Enter feature content..."
+                    onClose={closeAddSection}
+                    onAdd={(text) => handleTextItemAdd(text, 'features')}
+                  />
+                ))}
                 className="bg-[#1C1512] text-white hover:bg-black h-8 px-3"
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -1219,7 +1389,16 @@ export default function ServiceDetailView() {
               <h3 className="text-sm font-bold text-gray-900">Overview</h3>
               <Button
                 size="sm"
-                onClick={() => setImageModalConfig({ isOpen: true, title: 'Add Overview Step Item', hasSubtitle: false, targetSection: 'overview' })}
+                onClick={() => openAddSection('overview', 'Overview', () => (
+                  <ImageCardModal
+                    embedded
+                    isOpen
+                    titleText="Create Overview"
+                    hasSubtitle={false}
+                    onClose={closeAddSection}
+                    onAdd={(item) => handleImageCardAdd(item, 'overview')}
+                  />
+                ))}
                 className="bg-[#1C1512] text-white hover:bg-black h-8 px-3"
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -1303,7 +1482,16 @@ export default function ServiceDetailView() {
               <h3 className="text-sm font-bold text-gray-900">Procedure</h3>
               <Button
                 size="sm"
-                onClick={() => setImageModalConfig({ isOpen: true, title: 'Add Procedure Step', hasSubtitle: true, targetSection: 'procedure' })}
+                onClick={() => openAddSection('procedure', 'Procedure', () => (
+                  <ImageCardModal
+                    embedded
+                    isOpen
+                    titleText="Create Procedure"
+                    hasSubtitle={true}
+                    onClose={closeAddSection}
+                    onAdd={(item) => handleImageCardAdd(item, 'procedure')}
+                  />
+                ))}
                 className="bg-[#1C1512] text-white hover:bg-black h-8 px-3"
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -1361,7 +1549,16 @@ export default function ServiceDetailView() {
               <h3 className="text-sm font-bold text-gray-900">Disclaimer</h3>
               <Button
                 size="sm"
-                onClick={() => setTextModalConfig({ isOpen: true, title: 'Add Disclaimer Instruction', placeholder: 'Enter disclaimer point...', targetSection: 'disclaimer' })}
+                onClick={() => openAddSection('disclaimer', 'Disclaimer', () => (
+                  <TextItemModal
+                    embedded
+                    isOpen
+                    titleText="Create Disclaimer"
+                    placeholderText="Enter disclaimer point..."
+                    onClose={closeAddSection}
+                    onAdd={(text) => handleTextItemAdd(text, 'disclaimer')}
+                  />
+                ))}
                 className="bg-[#1C1512] text-white hover:bg-black h-8 px-3"
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -1421,7 +1618,16 @@ export default function ServiceDetailView() {
               <h3 className="text-sm font-bold text-gray-900">Item Used</h3>
               <Button
                 size="sm"
-                onClick={() => setImageModalConfig({ isOpen: true, title: 'Add Item Used', hasSubtitle: false, targetSection: 'items' })}
+                onClick={() => openAddSection('items', 'Items', () => (
+                  <ImageCardModal
+                    embedded
+                    isOpen
+                    titleText="Create Items"
+                    hasSubtitle={false}
+                    onClose={closeAddSection}
+                    onAdd={(item) => handleImageCardAdd(item, 'items')}
+                  />
+                ))}
                 className="bg-[#1C1512] text-white hover:bg-black h-8 px-3"
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -1478,7 +1684,16 @@ export default function ServiceDetailView() {
               <h3 className="text-sm font-bold text-gray-900">Our Skilled Professionals</h3>
               <Button
                 size="sm"
-                onClick={() => setTextModalConfig({ isOpen: true, title: 'Add Professional Highlight', placeholder: 'Enter professional highlight...', targetSection: 'pros' })}
+                onClick={() => openAddSection('pros', 'Expertise', () => (
+                  <TextItemModal
+                    embedded
+                    isOpen
+                    titleText="Create Expertise"
+                    placeholderText="Enter professional highlight..."
+                    onClose={closeAddSection}
+                    onAdd={(text) => handleTextItemAdd(text, 'pros')}
+                  />
+                ))}
                 className="bg-[#1C1512] text-white hover:bg-black h-8 px-3"
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -1538,7 +1753,16 @@ export default function ServiceDetailView() {
               <h3 className="text-sm font-bold text-gray-900">Pre & Post Care</h3>
               <Button
                 size="sm"
-                onClick={() => setTextModalConfig({ isOpen: true, title: 'Add Pre & Post Care Instruction', placeholder: 'Enter care instruction...', targetSection: 'care' })}
+                onClick={() => openAddSection('care', 'Pre & Post Care', () => (
+                  <TextItemModal
+                    embedded
+                    isOpen
+                    titleText="Create Pre & Post Care"
+                    placeholderText="Enter care instruction..."
+                    onClose={closeAddSection}
+                    onAdd={(text) => handleTextItemAdd(text, 'care')}
+                  />
+                ))}
                 className="bg-[#1C1512] text-white hover:bg-black h-8 px-3"
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -1598,7 +1822,16 @@ export default function ServiceDetailView() {
               <h3 className="text-sm font-bold text-gray-900">What's Included</h3>
               <Button
                 size="sm"
-                onClick={() => setImageModalConfig({ isOpen: true, title: "Add What's Included Product", hasSubtitle: true, targetSection: 'included' })}
+                onClick={() => openAddSection('included', "What's Included", () => (
+                  <ImageCardModal
+                    embedded
+                    isOpen
+                    titleText="Create What's Included"
+                    hasSubtitle={true}
+                    onClose={closeAddSection}
+                    onAdd={(item) => handleImageCardAdd(item, 'included')}
+                  />
+                ))}
                 className="bg-[#1C1512] text-white hover:bg-black h-8 px-3"
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -1658,7 +1891,15 @@ export default function ServiceDetailView() {
               <h3 className="text-sm font-bold text-gray-900">FAQs</h3>
               <Button
                 size="sm"
-                onClick={() => setFaqModalOpen(true)}
+                onClick={() => openAddSection('faqs', 'FAQ', () => (
+                  <FaqModal
+                    embedded
+                    isOpen
+                    titleText="Create FAQ"
+                    onClose={closeAddSection}
+                    onAdd={handleFaqAdd}
+                  />
+                ))}
                 className="bg-[#1C1512] text-white hover:bg-black h-8 px-3"
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -1727,7 +1968,16 @@ export default function ServiceDetailView() {
               <h3 className="text-sm font-bold text-gray-900">Trusted & Loved</h3>
               <Button
                 size="sm"
-                onClick={() => setTextModalConfig({ isOpen: true, title: 'Add Trusted & Loved Point', placeholder: 'Enter point...', targetSection: 'trusted' })}
+                onClick={() => openAddSection('trusted', 'Trusted & Loved', () => (
+                  <TextItemModal
+                    embedded
+                    isOpen
+                    titleText="Create Trusted & Loved"
+                    placeholderText="Enter point..."
+                    onClose={closeAddSection}
+                    onAdd={(text) => handleTextItemAdd(text, 'trusted')}
+                  />
+                ))}
                 className="bg-[#1C1512] text-white hover:bg-black h-8 px-3"
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -1955,6 +2205,8 @@ export default function ServiceDetailView() {
 
           </div>
 
+          </div>
+
         </Card>
 
       </div>
@@ -1966,8 +2218,6 @@ export default function ServiceDetailView() {
             isOpen={durationModalOpen}
             onClose={() => { setDurationModalOpen(false); setEditingDuration(null); }}
             initialData={editingDuration}
-            existingOptions={allServiceDurations}
-            existingLoading={allServiceDurationsLoading}
             onAdd={async (dur) => {
               const res = editingDuration
                 ? await updateDurationInService(selectedServiceItem.id, editingDuration.id, dur)
@@ -2003,8 +2253,6 @@ export default function ServiceDetailView() {
             isOpen={addOnModalOpen}
             onClose={() => { setAddOnModalOpen(false); setEditingAddOn(null); }}
             initialData={editingAddOn}
-            existingOptions={allServiceAddOns}
-            existingLoading={allServiceAddOnsLoading}
             onAdd={async (addon) => {
               const res = editingAddOn
                 ? await updateAddOnInService(selectedServiceItem.id, editingAddOn.id, addon)
@@ -2030,6 +2278,7 @@ export default function ServiceDetailView() {
             titleText={imageModalConfig.title}
             hasSubtitle={imageModalConfig.hasSubtitle}
             initialData={imageModalConfig.initialData}
+            showLibraryCheckbox={imageModalConfig.editIndex === undefined}
             onClose={() => setImageModalConfig(prev => ({ ...prev, isOpen: false, editIndex: undefined, initialData: undefined }))}
             onAdd={handleImageCardAdd}
           />
@@ -2039,17 +2288,41 @@ export default function ServiceDetailView() {
             titleText={textModalConfig.title}
             placeholderText={textModalConfig.placeholder}
             initialValue={textModalConfig.initialValue}
+            showLibraryCheckbox={textModalConfig.editIndex === undefined}
             onClose={() => setTextModalConfig(prev => ({ ...prev, isOpen: false, editIndex: undefined, initialValue: undefined }))}
             onAdd={handleTextItemAdd}
           />
 
-          <FaqModal
-            isOpen={faqModalOpen}
-            onClose={() => setFaqModalOpen(false)}
-            onAdd={handleFaqAdd}
-          />
         </>
       )}
+
+      {/* Add -> Create/Library wizard shell — see openAddSection/handleLibrarySave above. FAQ has
+          no separate "edit" modal (edits happen inline in its list), so it only ever needs the
+          embedded instance rendered inside this shell — no standalone <FaqModal> here. */}
+      <AddSectionModal
+        isOpen={!!addSection?.isOpen}
+        label={addSection?.label ?? ''}
+        onClose={closeAddSection}
+        renderCreate={addSection?.renderCreate ?? (() => null)}
+        renderLibrary={() => {
+          if (!addSection) return null;
+          const section = librarySections[addSection.sectionKey];
+          return (
+            <LibraryPickerModal
+              embedded
+              isOpen
+              label={section.label}
+              columns={section.columns}
+              rows={section.rows}
+              categories={section.categories}
+              loading={section.loading}
+              emptyMessage={section.emptyMessage}
+              onClose={closeAddSection}
+              onSave={(payload) => handleLibrarySave(addSection.sectionKey, payload)}
+            />
+          );
+        }}
+      />
 
     </div>
   );
