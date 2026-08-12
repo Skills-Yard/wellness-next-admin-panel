@@ -19,6 +19,7 @@ import LibraryPickerModal from './LibraryPickerModal';
 import {
   useLibrarySections,
   LibrarySectionKey,
+  ServiceLibraryPayload,
   TextLibraryPayload,
   ImageLibraryPayload,
   DurationLibraryPayload,
@@ -409,7 +410,10 @@ export default function ServiceDetailView() {
   const handleDuplicateService = async (id: string) => {
     setDuplicatingId(id);
     try {
-      const res = await duplicateServiceItem(id);
+      // Always land the clone in whichever sub-category is currently active — a no-op for the
+      // per-row Duplicate button (its source already lives there) and what makes the "+ Add
+      // Service -> Duplicate Existing" picker below usable for cross-sub-category templates.
+      const res = await duplicateServiceItem(id, selectedSubCategory?.id);
       if (res.ok) {
         toast.success('Service item duplicated!');
       } else {
@@ -502,45 +506,137 @@ export default function ServiceDetailView() {
     if (selectedServiceItem) await saveServiceItem({ name: serviceName || selectedServiceItem.name, faqs });
   };
 
-  // Fires when "Save Selected" is clicked in the Library tab — routes the picked row's payload
+  // Batch counterparts of handleTextItemAdd/handleImageCardAdd/handleFaqAdd for the Library tab's
+  // multi-select (see handleLibrarySave below). These merge every picked item into the array in
+  // ONE setState + ONE saveServiceItem call rather than calling the single-item handlers in a
+  // loop — looping them would have each iteration read the same pre-loop array off its closure
+  // (React doesn't re-render mid-loop) and overwrite, silently dropping every item but the last.
+  const handleTextItemsBatchAdd = async (
+    section: 'features' | 'pros' | 'care' | 'disclaimer' | 'trusted',
+    texts: string[]
+  ) => {
+    if (texts.length === 0 || !selectedServiceItem) return;
+    const label = {
+      features: 'Feature', pros: 'Highlight', care: 'Care instruction', disclaimer: 'Disclaimer point', trusted: 'Highlight point',
+    }[section];
+    const name = serviceName || selectedServiceItem.name;
+    if (section === 'features') {
+      const updated = [...features, ...texts];
+      setFeatures(updated);
+      await saveServiceItem({ name, features: updated });
+    } else if (section === 'pros') {
+      const updated = [...skilledPros, ...texts];
+      setSkilledPros(updated);
+      await saveServiceItem({ name, skilledPros: updated });
+    } else if (section === 'care') {
+      const updated = [...prePostCare, ...texts];
+      setPrePostCare(updated);
+      await saveServiceItem({ name, prePostCare: updated });
+    } else if (section === 'disclaimer') {
+      const updated = [...disclaimer, ...texts];
+      setDisclaimer(updated);
+      await saveServiceItem({ name, disclaimer: updated });
+    } else if (section === 'trusted') {
+      const updated = [...trustedLoved, ...texts];
+      setTrustedLoved(updated);
+      await saveServiceItem({ name, trustedLoved: updated });
+    }
+    toast.success(`${texts.length} ${label}${texts.length === 1 ? '' : 's'} added!`);
+  };
+
+  const handleImageCardsBatchAdd = async (
+    section: 'overview' | 'procedure' | 'items' | 'included',
+    items: { title: string; subtitle?: string; image: string }[]
+  ) => {
+    if (items.length === 0 || !selectedServiceItem) return;
+    // Index-suffixed so ids stay unique even though every card in the batch shares a Date.now().
+    const cards: ImageCardItem[] = items.map((item, i) => ({
+      id: `${section}-${Date.now()}-${i}`, title: item.title, subtitle: item.subtitle, image: item.image,
+    }));
+    const name = serviceName || selectedServiceItem.name;
+    if (section === 'overview') {
+      const updated = [...overviewGallery, ...cards];
+      setOverviewGallery(updated);
+      await saveServiceItem({ name, overview: { text: overviewText, gallery: updated } });
+    } else if (section === 'procedure') {
+      const updated = [...procedureSteps, ...cards];
+      setProcedureSteps(updated);
+      await saveServiceItem({ name, procedureSteps: updated });
+    } else if (section === 'items') {
+      const updated = [...itemsUsed, ...cards];
+      setItemsUsed(updated);
+      await saveServiceItem({ name, itemsUsed: updated });
+    } else if (section === 'included') {
+      const updated = [...whatsIncluded, ...cards];
+      setWhatsIncluded(updated);
+      await saveServiceItem({ name, whatsIncluded: updated });
+    }
+    toast.success(`${cards.length} item${cards.length === 1 ? '' : 's'} added!`);
+  };
+
+  const handleFaqsBatchAdd = async (newFaqs: FaqItem[]) => {
+    if (newFaqs.length === 0 || !selectedServiceItem) return;
+    const updated = [...faqs, ...newFaqs];
+    setFaqs(updated);
+    await saveServiceItem({ name: serviceName || selectedServiceItem.name, faqs: updated });
+    toast.success(`${newFaqs.length} FAQ${newFaqs.length === 1 ? '' : 's'} added!`);
+  };
+
+  // Fires when "Save Selected" is clicked in the Library tab — routes every picked row's payload
   // (see useLibrarySections) to the same save path its section's Create form would use, so a
-  // library pick behaves exactly like manually re-typing that same item.
-  const handleLibrarySave = async (sectionKey: LibrarySectionKey, payload: unknown) => {
+  // library pick behaves like manually re-typing those same items. Duration/Pack/Add-On/Service
+  // each create an independent backend row per item, so those loop with a sequential await
+  // (each add already re-fetches its list from the server, so there's no stale-closure risk);
+  // the JSON-array sections batch through handle*BatchAdd above instead, for the reason in its
+  // comment.
+  const handleLibrarySave = async (sectionKey: LibrarySectionKey, payloads: unknown[]) => {
+    if (payloads.length === 0) return;
     switch (sectionKey) {
+      case 'service': {
+        if (!selectedSubCategory) break;
+        let succeeded = 0;
+        for (const { id: sourceId } of payloads as ServiceLibraryPayload[]) {
+          const res = await duplicateServiceItem(sourceId, selectedSubCategory.id);
+          if (res.ok) succeeded++;
+          else toast.error(`Failed to duplicate: ${res.message || 'Error occurred'}`);
+        }
+        if (succeeded > 0) toast.success(`${succeeded} service${succeeded === 1 ? '' : 's'} duplicated!`);
+        break;
+      }
       case 'features':
       case 'pros':
       case 'care':
       case 'disclaimer':
       case 'trusted':
-        await handleTextItemAdd((payload as TextLibraryPayload).text, sectionKey);
+        await handleTextItemsBatchAdd(sectionKey, (payloads as TextLibraryPayload[]).map((p) => p.text));
         break;
       case 'overview':
       case 'procedure':
       case 'items':
-      case 'included': {
-        const p = payload as ImageLibraryPayload;
-        await handleImageCardAdd(p, sectionKey);
+      case 'included':
+        await handleImageCardsBatchAdd(sectionKey, payloads as ImageLibraryPayload[]);
         break;
-      }
       case 'faqs':
-        await handleFaqAdd(payload as FaqItem);
+        await handleFaqsBatchAdd(payloads as FaqItem[]);
         break;
       case 'duration': {
         if (!selectedServiceItem) break;
-        const d = payload as DurationLibraryPayload;
-        const res = await addDurationToService(selectedServiceItem.id, {
-          label: d.label,
-          durationMinutes: d.durationMinutes,
-          price: d.price,
-          discountedPrice: d.discountedPrice,
-        });
-        if (res.ok) toast.success('Duration timeslot added!');
-        else toast.error(`Failed to add timeslot: ${res.message || 'Error occurred'}`);
+        let succeeded = 0;
+        for (const d of payloads as DurationLibraryPayload[]) {
+          const res = await addDurationToService(selectedServiceItem.id, {
+            label: d.label,
+            durationMinutes: d.durationMinutes,
+            price: d.price,
+            discountedPrice: d.discountedPrice,
+          });
+          if (res.ok) succeeded++;
+          else toast.error(`Failed to add "${d.label}": ${res.message || 'Error occurred'}`);
+        }
+        if (succeeded > 0) toast.success(`${succeeded} timeslot${succeeded === 1 ? '' : 's'} added!`);
         break;
       }
       case 'pack': {
         if (!selectedServiceItem) break;
-        const p = payload as PackLibraryPayload;
         // Same rule as PackModal: price always derives from THIS service's own default
         // duration x sessions, adjusted by savingsPercent — a library pack only carries over
         // its sessions/discount shape, never its absolute price from wherever it came from.
@@ -549,34 +645,41 @@ export default function ServiceDetailView() {
           toast.error('Add a duration to this service first — packs are priced off its duration price.');
           break;
         }
-        const basePrice = baseDuration.price * p.sessions;
-        const finalPrice = Math.round(basePrice * (1 + p.savingsPercent / 100));
-        const pricePerSession = p.sessions > 0 ? Math.round(finalPrice / p.sessions) : 0;
-        const res = await addPackageToService(selectedServiceItem.id, {
-          label: p.label,
-          sessions: p.sessions,
-          price: finalPrice,
-          pricePerSession,
-          originalPrice: basePrice,
-          savingsPercent: p.savingsPercent,
-        });
-        if (res.ok) toast.success('Session pack added!');
-        else toast.error(`Failed to add session pack: ${res.message || 'Error occurred'}`);
+        let succeeded = 0;
+        for (const p of payloads as PackLibraryPayload[]) {
+          const basePrice = baseDuration.price * p.sessions;
+          const finalPrice = Math.round(basePrice * (1 + p.savingsPercent / 100));
+          const pricePerSession = p.sessions > 0 ? Math.round(finalPrice / p.sessions) : 0;
+          const res = await addPackageToService(selectedServiceItem.id, {
+            label: p.label,
+            sessions: p.sessions,
+            price: finalPrice,
+            pricePerSession,
+            originalPrice: basePrice,
+            savingsPercent: p.savingsPercent,
+          });
+          if (res.ok) succeeded++;
+          else toast.error(`Failed to add "${p.label}": ${res.message || 'Error occurred'}`);
+        }
+        if (succeeded > 0) toast.success(`${succeeded} session pack${succeeded === 1 ? '' : 's'} added!`);
         break;
       }
       case 'addon': {
         if (!selectedServiceItem) break;
-        const a = payload as AddOnLibraryPayload;
-        const res = await addAddOnToService(selectedServiceItem.id, {
-          name: a.name,
-          price: a.price,
-          imageKey: a.imageKey,
-          description: a.description,
-          extraMinutes: a.extraMinutes,
-          isActive: a.isActive ?? true,
-        });
-        if (res.ok) toast.success('Add-on added!');
-        else toast.error(`Failed to add add-on: ${res.message || 'Error occurred'}`);
+        let succeeded = 0;
+        for (const a of payloads as AddOnLibraryPayload[]) {
+          const res = await addAddOnToService(selectedServiceItem.id, {
+            name: a.name,
+            price: a.price,
+            imageKey: a.imageKey,
+            description: a.description,
+            extraMinutes: a.extraMinutes,
+            isActive: a.isActive ?? true,
+          });
+          if (res.ok) succeeded++;
+          else toast.error(`Failed to add "${a.name}": ${res.message || 'Error occurred'}`);
+        }
+        if (succeeded > 0) toast.success(`${succeeded} add-on${succeeded === 1 ? '' : 's'} added!`);
         break;
       }
     }
@@ -624,7 +727,31 @@ export default function ServiceDetailView() {
                 <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">Action</span>
                 <Button
                   size="icon"
-                  onClick={handleCreateNewService}
+                  onClick={() => {
+                    if (!selectedSubCategory) {
+                      toast.error('Select a sub-category first');
+                      return;
+                    }
+                    openAddSection('service', 'Service', () => (
+                      <div className="flex flex-col items-center justify-center text-center gap-4 py-8">
+                        <p className="text-sm text-gray-500 max-w-xs">
+                          Starts a blank draft under{' '}
+                          <span className="font-semibold text-gray-800">{selectedSubCategory.name}</span> — you'll
+                          fill in its name, pricing, and content in the edit form.
+                        </p>
+                        <Button
+                          onClick={() => {
+                            handleCreateNewService();
+                            closeAddSection();
+                          }}
+                          className="bg-[#1C1512] text-white hover:bg-black"
+                        >
+                          <Plus className="w-4 h-4" />
+                          Create Blank Service
+                        </Button>
+                      </div>
+                    ));
+                  }}
                   className="w-7 h-7 bg-[#1C1512] text-white hover:bg-black"
                   title="Add Service"
                 >
@@ -2364,7 +2491,7 @@ export default function ServiceDetailView() {
               loading={section.loading}
               emptyMessage={section.emptyMessage}
               onClose={closeAddSection}
-              onSave={(payload) => handleLibrarySave(addSection.sectionKey, payload)}
+              onSave={(payloads) => handleLibrarySave(addSection.sectionKey, payloads)}
             />
           );
         }}

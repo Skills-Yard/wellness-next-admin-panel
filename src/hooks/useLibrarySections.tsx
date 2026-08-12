@@ -6,6 +6,7 @@ import { ServiceItem, ImageCardItem, ServiceDuration, ServicePackage, ServiceAdd
 import { LibraryColumn, LibraryRow } from '../components/catalogue/LibraryPickerModal';
 
 export type LibrarySectionKey =
+  | 'service'
   | 'duration' | 'pack' | 'addon'
   | 'features' | 'overview' | 'procedure' | 'disclaimer' | 'items'
   | 'pros' | 'care' | 'included' | 'faqs' | 'trusted';
@@ -21,6 +22,7 @@ export interface LibrarySection {
 
 // Payload shapes each section's LibraryRow.payload carries — what handleLibrarySave (in
 // ServiceDetailView) receives back when a row is picked and "Save Selected" is clicked.
+export interface ServiceLibraryPayload { id: string }
 export interface TextLibraryPayload { text: string }
 export interface ImageLibraryPayload { title: string; subtitle?: string; image: string }
 export interface FaqLibraryPayload { question: string; answer: string }
@@ -35,7 +37,9 @@ export interface AddOnLibraryPayload {
 // scanned, de-duplicated (case-insensitive), and counted into "Used in N services". Duration/Pack/
 // Add-On reuse the existing cross-service admin "get all" lists (allServiceDurations etc.) the
 // same way the old "pick from existing" dropdowns did. No Badge column anywhere — that's not a
-// real DB field, so (per instruction) it's simply left out rather than faked.
+// real DB field, so (per instruction) it's simply left out rather than faked. Service reuses the
+// already-loaded serviceItems list itself — picking a row here duplicates that whole service (see
+// duplicateServiceItem in CatalogueContext) rather than reusing one of its sub-fields.
 export function useLibrarySections(): Record<LibrarySectionKey, LibrarySection> {
   const {
     serviceItems,
@@ -196,6 +200,22 @@ export function useLibrarySections(): Record<LibrarySectionKey, LibrarySection> 
       payload: { question: entry.question, answer: entry.answer } as FaqLibraryPayload,
     }));
 
+    // ---- Service (whole service items, for "+ Add Service -> Duplicate Existing") ----
+    const serviceRows: LibraryRow[] = serviceItems.map((si) => {
+      const sub = subCategories.find((s) => s.id === si.subCategoryId);
+      return {
+        id: si.id,
+        categoryIds: categoryIdsFor(si.id),
+        searchText: `${si.name} ${sub?.name || ''}`,
+        cells: {
+          name: si.name,
+          subCategory: sub?.name || '—',
+        },
+        // Just the source id — duplicateServiceItem re-fetches everything else it needs itself.
+        payload: { id: si.id } as ServiceLibraryPayload,
+      };
+    });
+
     // ---- Duration / Pack / Add-On (real DB rows via the admin "get all" endpoints) ----
     const durationRows: LibraryRow[] = allServiceDurations.map((d: ServiceDuration) => {
       const hasDiscount = d.discountedPrice != null && d.discountedPrice < d.price;
@@ -264,6 +284,17 @@ export function useLibrarySections(): Record<LibrarySectionKey, LibrarySection> 
     }));
 
     return {
+      service: {
+        label: 'Service',
+        columns: [
+          { key: 'name', label: 'Service Name' },
+          { key: 'subCategory', label: 'Sub Category' },
+        ],
+        rows: serviceRows,
+        categories: categoryOptions,
+        loading: false,
+        emptyMessage: 'No services yet to duplicate.',
+      },
       duration: {
         label: 'Duration',
         columns: [

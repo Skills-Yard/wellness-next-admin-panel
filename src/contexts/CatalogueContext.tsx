@@ -166,7 +166,10 @@ interface CatalogueContextType {
   // Clones a service item plus its durations/packages/add-ons AND their per-zone
   // availability/surge/price overrides as brand-new rows on a brand-new service item (same data,
   // independent ids) — see implementation below for the create ordering this requires.
-  duplicateServiceItem: (id: string) => Promise<ActionResponse>;
+  // overrideSubCategoryId places the clone under a different sub-category than its source (used
+  // by the "+ Add Service -> Duplicate Existing" picker, which can duplicate from any
+  // sub-category into whichever one is currently active); omit it to keep the source's own.
+  duplicateServiceItem: (id: string, overrideSubCategoryId?: string) => Promise<ActionResponse>;
 
   // Timeslots & Packs & Add-ons management
   addDurationToService: (serviceId: string, duration: Omit<ServiceDuration, 'id'>) => Promise<ActionResponse>;
@@ -674,7 +677,7 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // individually against the new service's (and new durations'/packages'/add-ons') ids, the same
   // way a human re-typing them into the new service one at a time would. Starts as an unpublished
   // draft (like "+ Add Service") so a duplicate never goes live unreviewed.
-  const duplicateServiceItem = async (id: string): Promise<ActionResponse> => {
+  const duplicateServiceItem = async (id: string, overrideSubCategoryId?: string): Promise<ActionResponse> => {
     try {
       const source = await getServiceItemByIdServerAction(id);
       if (!source) return { ok: false, message: 'Service item not found' };
@@ -703,7 +706,7 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const addOnZoneConfigs = allAddOnZoneConfigs.filter(c => addOnIds.has(c.serviceAddOnId));
 
       const createRes = await saveServiceItemServerAction(null, {
-        subCategoryId: source.subCategoryId,
+        subCategoryId: overrideSubCategoryId || source.subCategoryId,
         name: `${source.name} (Copy)`,
         slug: `${source.slug}-copy-${Date.now()}`,
         thumbnailKey: source.thumbnailKey,

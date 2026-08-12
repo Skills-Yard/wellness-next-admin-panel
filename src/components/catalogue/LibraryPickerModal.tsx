@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { X, Search, ChevronDown, Loader2 } from 'lucide-react';
+import { X, Search, ChevronDown, Loader2, Check } from 'lucide-react';
 
 export interface LibraryColumn {
   key: string;
@@ -32,10 +32,12 @@ interface LibraryPickerModalProps {
   // AddSectionModal's "Library" tab.
   embedded?: boolean;
   onClose: () => void;
-  onSave: (payload: unknown) => void | Promise<void>;
+  // Called once with every selected row's payload (in selection order) when "Save Selected" is
+  // clicked — callers batch-apply the whole array in one go rather than being invoked per row.
+  onSave: (payloads: unknown[]) => void | Promise<void>;
 }
 
-// Third step of the 3-step Add flow — a searchable, category-filterable, paginated single-select
+// Third step of the 3-step Add flow — a searchable, category-filterable, paginated multi-select
 // table shared by every section's Library picker. Columns/rows are supplied by the caller
 // (see useLibrarySections), so this component has no section-specific knowledge at all.
 export default function LibraryPickerModal({
@@ -54,7 +56,7 @@ export default function LibraryPickerModal({
   const [search, setSearch] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [page, setPage] = useState(1);
-  const [selectedId, setSelectedId] = useState('');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -62,10 +64,19 @@ export default function LibraryPickerModal({
       setSearch('');
       setCategoryId('');
       setPage(1);
-      setSelectedId('');
+      setSelectedIds(new Set());
       setSaving(false);
     }
   }, [isOpen]);
+
+  const toggleRow = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -82,12 +93,25 @@ export default function LibraryPickerModal({
 
   if (!isOpen) return null;
 
+  // "Select all" reflects/toggles every row matching the current search + category filter
+  // (across all pages), not just the current page — recomputed each render off `filtered` so it
+  // stays correct as the user keeps refining the search.
+  const allFilteredSelected = filtered.length > 0 && filtered.every((r) => selectedIds.has(r.id));
+  const toggleSelectAllFiltered = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allFilteredSelected) filtered.forEach((r) => next.delete(r.id));
+      else filtered.forEach((r) => next.add(r.id));
+      return next;
+    });
+  };
+
   const handleSave = async () => {
-    const picked = rows.find((r) => r.id === selectedId);
-    if (!picked || saving) return;
+    const picked = rows.filter((r) => selectedIds.has(r.id));
+    if (picked.length === 0 || saving) return;
     setSaving(true);
     try {
-      await onSave(picked.payload);
+      await onSave(picked.map((r) => r.payload));
       onClose();
     } finally {
       setSaving(false);
@@ -135,7 +159,18 @@ export default function LibraryPickerModal({
         <table className="w-full text-left border-collapse">
           <thead className="sticky top-0">
             <tr className="bg-[#FAF5F0] text-gray-900 text-xs font-semibold border-b border-black/8">
-              <th className="py-3 px-4 w-8" />
+              <th className="py-3 px-4 w-8">
+                {filtered.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={toggleSelectAllFiltered}
+                    title={allFilteredSelected ? 'Deselect all' : 'Select all matching'}
+                    className={`inline-flex items-center justify-center w-4 h-4 rounded border ${allFilteredSelected ? 'border-[#25180F] bg-[#25180F]' : 'border-[#25180F]/60'}`}
+                  >
+                    {allFilteredSelected && <Check className="w-3 h-3 text-white" strokeWidth={3} />}
+                  </button>
+                )}
+              </th>
               {columns.map((col) => (
                 <th
                   key={col.key}
@@ -166,13 +201,15 @@ export default function LibraryPickerModal({
               pageRows.map((row) => (
                 <tr
                   key={row.id}
-                  onClick={() => setSelectedId(row.id)}
+                  onClick={() => toggleRow(row.id)}
                   className="hover:bg-gray-50/50 cursor-pointer"
                 >
                   <td className="py-3 px-4">
                     <span
-                      className={`inline-block w-4 h-4 rounded-full border ${selectedId === row.id ? 'border-[#25180F] bg-[#25180F] ring-2 ring-offset-2 ring-[#25180F]/20' : 'border-[#25180F]/60'}`}
-                    />
+                      className={`inline-flex items-center justify-center w-4 h-4 rounded border ${selectedIds.has(row.id) ? 'border-[#25180F] bg-[#25180F]' : 'border-[#25180F]/60'}`}
+                    >
+                      {selectedIds.has(row.id) && <Check className="w-3 h-3 text-white" strokeWidth={3} />}
+                    </span>
                   </td>
                   {columns.map((col) => (
                     <td
@@ -194,6 +231,9 @@ export default function LibraryPickerModal({
           {filtered.length === 0
             ? 'Showing 0 of 0'
             : `Showing ${(currentPage - 1) * pageSize + 1} to ${Math.min(currentPage * pageSize, filtered.length)} of ${filtered.length}`}
+          {selectedIds.size > 0 && (
+            <span className="ml-2 font-medium text-[#C68A4C]">· {selectedIds.size} selected</span>
+          )}
         </span>
         {totalPages > 1 && (
           <div className="flex items-center gap-2">
@@ -227,12 +267,12 @@ export default function LibraryPickerModal({
         </button>
         <button
           type="button"
-          disabled={!selectedId || saving}
+          disabled={selectedIds.size === 0 || saving}
           onClick={handleSave}
           className="px-5 py-2 rounded-xl bg-[#25180F] text-white text-sm font-medium hover:bg-black disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
         >
           {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-          {saving ? 'Saving...' : 'Save Selected'}
+          {saving ? 'Saving...' : `Save Selected${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`}
         </button>
       </div>
     </>
