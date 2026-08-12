@@ -33,6 +33,7 @@ import {
 } from '../lib/server-actions/sub-category';
 import {
   getServiceItemsServerAction,
+  getServiceItemByIdServerAction,
   saveServiceItemServerAction,
   updateServiceItemStatusServerAction,
   updateServiceItemSlugServerAction,
@@ -162,6 +163,10 @@ interface CatalogueContextType {
   updateServiceItemStatus: (id: string, isActive: boolean) => Promise<ActionResponse>;
   updateServiceItemPublishStatus: (id: string, isPublished: boolean) => Promise<ActionResponse>;
   deleteServiceItem: (id: string) => Promise<ActionResponse>;
+  // Clones a service item plus its durations/packages/add-ons AND their per-zone
+  // availability/surge/price overrides as brand-new rows on a brand-new service item (same data,
+  // independent ids) — see implementation below for the create ordering this requires.
+  duplicateServiceItem: (id: string) => Promise<ActionResponse>;
 
   // Timeslots & Packs & Add-ons management
   addDurationToService: (serviceId: string, duration: Omit<ServiceDuration, 'id'>) => Promise<ActionResponse>;
@@ -655,6 +660,180 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return { ok: false, message: res.message };
   };
 
+  // Clones an existing service item into a brand-new one — same content, independent rows.
+  // The service-item JSON columns are copied as-is via the detail endpoint (the list endpoint
+  // doesn't embed them); durations/packages/add-ons and their per-zone availability/price
+  // overrides are fetched from their own endpoints (never embedded anywhere) and each re-created
+  // individually against the new service's (and new durations'/packages'/add-ons') ids, the same
+  // way a human re-typing them into the new service one at a time would. Starts as an unpublished
+  // draft (like "+ Add Service") so a duplicate never goes live unreviewed.
+  const duplicateServiceItem = async (id: string): Promise<ActionResponse> => {
+    try {
+      const source = await getServiceItemByIdServerAction(id);
+      if (!source) return { ok: false, message: 'Service item not found' };
+
+      // The four zone-config list endpoints have no serviceItemId filter — they return every
+      // config row across every zone/service (see the comments on each getZone*ConfigsServerAction
+      // above) — so pull them alongside this service's own durations/packages/add-ons and filter
+      // down to just this source service's rows below.
+      const [durations, packages, addOns, allItemZoneConfigs, allDurationZoneConfigs, allPackageZoneConfigs, allAddOnZoneConfigs] = await Promise.all([
+        getServiceDurationsServerAction(id),
+        getServicePackagesServerAction(id),
+        getServiceAddOnsServerAction(id),
+        getZoneServiceItemConfigsServerAction(),
+        getZoneDurationConfigsServerAction(),
+        getZonePackageConfigsServerAction(),
+        getZoneAddOnConfigsServerAction(),
+      ]);
+
+      const durationIds = new Set(durations.map(d => d.id));
+      const packageIds = new Set(packages.map(p => p.id));
+      const addOnIds = new Set(addOns.map(a => a.id));
+
+      const itemZoneConfigs = allItemZoneConfigs.filter(c => c.serviceItemId === id);
+      const durationZoneConfigs = allDurationZoneConfigs.filter(c => durationIds.has(c.serviceDurationId));
+      const packageZoneConfigs = allPackageZoneConfigs.filter(c => packageIds.has(c.servicePackageId));
+      const addOnZoneConfigs = allAddOnZoneConfigs.filter(c => addOnIds.has(c.serviceAddOnId));
+
+      const createRes = await saveServiceItemServerAction(null, {
+        subCategoryId: source.subCategoryId,
+        name: `${source.name} (Copy)`,
+        slug: `${source.slug}-copy-${Date.now()}`,
+        thumbnailKey: source.thumbnailKey,
+        thumbnailType: source.thumbnailType,
+        cardTitle: source.cardTitle,
+        cardSubtitle: source.cardSubtitle,
+        cardTemplate: source.cardTemplate,
+        shortDescription: source.shortDescription,
+        tags: source.tags,
+        isActive: true,
+        isPublished: false,
+        displayOrder: source.displayOrder,
+        features: source.features,
+        overview: source.overview,
+        procedureSteps: source.procedureSteps,
+        itemsUsed: source.itemsUsed,
+        skilledPros: source.skilledPros,
+        prePostCare: source.prePostCare,
+        disclaimer: source.disclaimer,
+        whatsIncluded: source.whatsIncluded,
+        faqs: source.faqs,
+        trustedLoved: source.trustedLoved,
+        reviews: source.reviews,
+        customReviews: source.customReviews,
+      });
+
+      if (!createRes.ok) {
+        return { ok: false, message: createRes.message || 'Failed to create duplicate service item' };
+      }
+      const newServiceId = createRes.data.id;
+
+      // Add-ons and the service-item-level zone availability/surge configs have no dependency on
+      // durations, so they run alongside them; packages must wait until durations exist since the
+      // backend derives a pack's price off this service's own default duration (see
+      // addPackageToService/PackModal elsewhere in this file) — captured here so their new ids can
+      // be used to remap the per-duration/per-add-on zone price overrides below.
+      const [durationResults, addOnResults] = await Promise.all([
+        Promise.all(durations.map(d => saveServiceDurationServerAction(null, {
+          serviceItemId: newServiceId,
+          label: d.label,
+          durationMinutes: d.durationMinutes,
+          price: d.price,
+          discountedPrice: d.discountedPrice ?? undefined,
+          isDefault: d.isDefault,
+          displayOrder: d.displayOrder,
+        }))),
+        Promise.all(addOns.map(a => saveServiceAddOnServerAction(null, {
+          serviceItemId: newServiceId,
+          name: a.name,
+          description: a.description,
+          price: a.price,
+          imageKey: a.imageKey,
+          extraMinutes: a.extraMinutes,
+          isActive: a.isActive !== undefined ? a.isActive : true,
+          displayOrder: a.displayOrder,
+        }))),
+        Promise.all(itemZoneConfigs.map(c => saveZoneServiceItemConfigServerAction(null, {
+          zoneId: c.zoneId,
+          serviceItemId: newServiceId,
+          isAvailable: c.isAvailable,
+          surgeMultiplier: c.surgeMultiplier,
+        }))),
+      ]);
+
+      const durationIdMap = new Map<string, string>();
+      durations.forEach((d, i) => {
+        const res = durationResults[i];
+        if (res.ok) durationIdMap.set(d.id, res.data.id);
+      });
+      const addOnIdMap = new Map<string, string>();
+      addOns.forEach((a, i) => {
+        const res = addOnResults[i];
+        if (res.ok) addOnIdMap.set(a.id, res.data.id);
+      });
+
+      // Re-point each per-zone price override at the matching newly-created duration/add-on
+      // (skipping any whose duration/add-on failed to clone above).
+      await Promise.all([
+        ...durationZoneConfigs.flatMap(c => {
+          const newDurationId = durationIdMap.get(c.serviceDurationId);
+          if (!newDurationId) return [];
+          return [saveZoneDurationConfigServerAction(null, {
+            zoneId: c.zoneId,
+            serviceDurationId: newDurationId,
+            price: c.price,
+            discountedPrice: c.discountedPrice ?? undefined,
+          })];
+        }),
+        ...addOnZoneConfigs.flatMap(c => {
+          const newAddOnId = addOnIdMap.get(c.serviceAddOnId);
+          if (!newAddOnId) return [];
+          return [saveZoneAddOnConfigServerAction(null, {
+            zoneId: c.zoneId,
+            serviceAddOnId: newAddOnId,
+            price: c.price,
+          })];
+        }),
+      ]);
+
+      const packageResults = await Promise.all(
+        packages.map(p => saveServicePackageServerAction(null, {
+          serviceItemId: newServiceId,
+          label: p.label,
+          sessions: p.sessions,
+          savingsPercent: p.savingsPercent ?? undefined,
+        }))
+      );
+      const packageIdMap = new Map<string, string>();
+      packages.forEach((p, i) => {
+        const res = packageResults[i];
+        if (res.ok) packageIdMap.set(p.id, res.data.id);
+      });
+
+      await Promise.all(
+        packageZoneConfigs.flatMap(c => {
+          const newPackageId = packageIdMap.get(c.servicePackageId);
+          if (!newPackageId) return [];
+          return [saveZonePackageConfigServerAction(null, {
+            zoneId: c.zoneId,
+            servicePackageId: newPackageId,
+            price: c.price,
+            originalPrice: c.originalPrice ?? undefined,
+            savings: c.savings ?? undefined,
+            savingsPercent: c.savingsPercent ?? undefined,
+          })];
+        })
+      );
+
+      await refreshData();
+      setSelectedServiceItem(createRes.data);
+      return { ok: true };
+    } catch (err: any) {
+      console.error('[duplicateServiceItem]', err);
+      return { ok: false, message: err?.message || 'Failed to duplicate service item' };
+    }
+  };
+
   // ---- Durations ----
   const addDurationToService = async (serviceId: string, duration: Omit<ServiceDuration, 'id'>): Promise<ActionResponse> => {
     // Read before the save so this only fires on this service's very first duration — packs are
@@ -966,6 +1145,7 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       updateServiceItemStatus,
       updateServiceItemPublishStatus,
       deleteServiceItem,
+      duplicateServiceItem,
       addDurationToService,
       updateDurationInService,
       deleteDurationFromService,

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Edit3, Pencil, Trash2, Upload, ChevronDown, Loader2 } from 'lucide-react';
+import { Plus, Edit3, Pencil, Trash2, Copy, Upload, ChevronDown, Loader2 } from 'lucide-react';
 import { useCatalogue } from '../../contexts/CatalogueContext';
 import { uploadFileToR2 } from '../../lib/uploadToR2';
 import { toast } from 'react-toastify';
@@ -45,6 +45,12 @@ function slugify(input: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
+// Unsaved local draft (see handleCreateNewService) — nothing exists on the backend yet, so
+// there's nothing for duplicateServiceItem to fetch/clone.
+function isDraftServiceId(id?: string | null): boolean {
+  return !!id && id.startsWith('srv-');
+}
+
 export default function ServiceDetailView() {
   const {
     categories,
@@ -55,6 +61,7 @@ export default function ServiceDetailView() {
     setSelectedServiceItem,
     saveServiceItem,
     deleteServiceItem,
+    duplicateServiceItem,
     serviceDurations,
     servicePackages,
     serviceAddOns,
@@ -93,6 +100,7 @@ export default function ServiceDetailView() {
   const [thumbnailType, setThumbnailType] = useState<MediaType>('IMAGE');
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const reviewFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -398,6 +406,22 @@ export default function ServiceDetailView() {
     }
   };
 
+  const handleDuplicateService = async (id: string) => {
+    setDuplicatingId(id);
+    try {
+      const res = await duplicateServiceItem(id);
+      if (res.ok) {
+        toast.success('Service item duplicated!');
+      } else {
+        toast.error(`Failed to duplicate: ${res.message || 'Error occurred'}`);
+      }
+    } catch (err: any) {
+      toast.error(`Failed to duplicate: ${err.message}`);
+    } finally {
+      setDuplicatingId(null);
+    }
+  };
+
   const handleImageCardAdd = async (
     item: { title: string; subtitle?: string; description?: string; image: string },
     // Set when saving straight from the Library picker (see handleLibrarySave) — bypasses
@@ -641,6 +665,20 @@ export default function ServiceDetailView() {
                           title="Edit Service"
                         >
                           <Edit3 className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={() => handleDuplicateService(service.id)}
+                          disabled={duplicatingId === service.id || isDraftServiceId(service.id)}
+                          className="w-7 h-7"
+                          title="Duplicate Service"
+                        >
+                          {duplicatingId === service.id ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5" />
+                          )}
                         </Button>
                         <Button
                           variant="destructive"
