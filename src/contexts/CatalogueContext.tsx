@@ -199,6 +199,13 @@ const CatalogueContext = createContext<CatalogueContextType | undefined>(undefin
 
 const isDraftId = (id?: string | null, prefix?: string) => !!id && !!prefix && id.startsWith(prefix);
 
+// Neither endpoint returns durations/packages in a meaningful order (both the per-service and
+// the cross-service "get all" lists come back in whatever order the backend happens to return),
+// so every setter below sorts client-side — durations shortest-first, packages fewest-sessions-
+// first — instead of showing raw insertion order.
+const sortByDurationMinutes = (list: ServiceDuration[]) => [...list].sort((a, b) => a.durationMinutes - b.durationMinutes);
+const sortByPackageSessions = (list: ServicePackage[]) => [...list].sort((a, b) => a.sessions - b.sessions);
+
 export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [activeView, setActiveView] = useState<'categories' | 'service-detail'>('categories');
@@ -333,7 +340,7 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const loadServiceDurationsList = useCallback(async (serviceItemId: string) => {
     setServiceDurationsLoading(true);
     try {
-      setServiceDurations(await getServiceDurationsServerAction(serviceItemId));
+      setServiceDurations(sortByDurationMinutes(await getServiceDurationsServerAction(serviceItemId)));
     } finally {
       setServiceDurationsLoading(false);
     }
@@ -342,7 +349,7 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const loadServicePackagesList = useCallback(async (serviceItemId: string) => {
     setServicePackagesLoading(true);
     try {
-      setServicePackages(await getServicePackagesServerAction(serviceItemId));
+      setServicePackages(sortByPackageSessions(await getServicePackagesServerAction(serviceItemId)));
     } finally {
       setServicePackagesLoading(false);
     }
@@ -406,7 +413,7 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const loadAllServiceDurations = useCallback(async () => {
     setAllServiceDurationsLoading(true);
     try {
-      setAllServiceDurations(await getAllServiceDurationsServerAction());
+      setAllServiceDurations(sortByDurationMinutes(await getAllServiceDurationsServerAction()));
     } finally {
       setAllServiceDurationsLoading(false);
     }
@@ -415,7 +422,7 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const loadAllServicePackages = useCallback(async () => {
     setAllServicePackagesLoading(true);
     try {
-      setAllServicePackages(await getAllServicePackagesServerAction());
+      setAllServicePackages(sortByPackageSessions(await getAllServicePackagesServerAction()));
     } finally {
       setAllServicePackagesLoading(false);
     }
