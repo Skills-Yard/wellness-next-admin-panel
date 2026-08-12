@@ -1090,7 +1090,7 @@ export default function ServiceDetailView() {
                         </td>
                         <td className="py-3 px-4 sm:px-6 text-center">
                           {discountPercent !== 0 ? (
-                            <span className="inline-flex px-2.5 py-1 rounded-full text-[11px] font-semibold bg-[#FAF5F0] text-[#C68A4C]">
+                            <span className="inline-flex px-2.5 py-1 rounded-full text-[11px] font-semibold bg-green-50 text-green-700">
                               {discountPercent}%
                             </span>
                           ) : (
