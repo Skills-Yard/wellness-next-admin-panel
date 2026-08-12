@@ -1034,8 +1034,16 @@ export default function ServiceDetailView() {
                     </tr>
                   ) : servicePackages.length > 0 ? (
                     servicePackages.map((pkg) => {
-                      const base = pkg.originalPrice ?? pkg.price;
-                      const discountPercent = base > 0 ? Math.round(((pkg.price - base) / base) * 100) : 0;
+                      // The backend derives price/originalPrice from sessions + savingsPercent (see
+                      // ServicePackagePayload in lib/server-actions/package.ts) and echoes savingsPercent
+                      // back directly — use it instead of re-deriving from price/originalPrice, which
+                      // isn't guaranteed to round-trip cleanly.
+                      const discountPercent = pkg.savingsPercent != null
+                        ? Math.round(pkg.savingsPercent)
+                        : (() => {
+                          const base = pkg.originalPrice ?? pkg.price;
+                          return base > 0 ? Math.round(((pkg.price - base) / base) * 100) : 0;
+                        })();
                       return (
                       <tr key={pkg.id} className="hover:bg-[#FAF9F6]/50">
                         <td className="py-3 px-4 sm:px-6 font-semibold text-gray-900">{pkg.label} ({pkg.sessions})</td>
