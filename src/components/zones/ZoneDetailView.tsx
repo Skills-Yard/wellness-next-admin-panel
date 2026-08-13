@@ -178,7 +178,7 @@ export default function ZoneDetailView() {
               addons.map((c) => (
                 <ConfigRow
                   key={c.id}
-                  title={`${serviceNameFor(c.serviceAddOn?.serviceItemId) || 'Unknown service'} — ${c.serviceAddOn?.name || c.serviceAddOnId}`}
+                  title={c.serviceAddOn?.name || c.serviceAddOnId}
                   subtitle={`₹${c.price.toLocaleString()}`}
                   onDelete={async () => {
                     const res = await deleteZoneAddOnConfig(c.id);

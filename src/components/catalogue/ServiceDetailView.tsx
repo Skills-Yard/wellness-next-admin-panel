@@ -79,6 +79,7 @@ export default function ServiceDetailView() {
     deletePackageFromService,
     addAddOnToService,
     updateAddOnInService,
+    linkAddOnToService,
     deleteAddOnFromService,
     loadAllServiceDurations,
     loadAllServiceAddOns,
@@ -684,17 +685,13 @@ export default function ServiceDetailView() {
         break;
       }
       case 'addon': {
+        // Add-ons are shared (many-to-many with service items) — a Library pick LINKS the same
+        // existing row to this service (merging it into that add-on's serviceItems, keeping every
+        // service it was already linked to) instead of cloning a new one. See linkAddOnToService.
         if (!selectedServiceItem) break;
         let succeeded = 0;
         for (const a of payloads as AddOnLibraryPayload[]) {
-          const res = await addAddOnToService(selectedServiceItem.id, {
-            name: a.name,
-            price: a.price,
-            imageKey: a.imageKey,
-            description: a.description,
-            extraMinutes: a.extraMinutes,
-            isActive: a.isActive ?? true,
-          });
+          const res = await linkAddOnToService(selectedServiceItem.id, a.id, a.serviceItemIds);
           if (res.ok) succeeded++;
           else toast.error(`Failed to add "${a.name}": ${res.message || 'Error occurred'}`);
         }

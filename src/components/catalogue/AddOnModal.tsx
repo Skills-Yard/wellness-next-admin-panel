@@ -10,7 +10,7 @@ import { ServiceAddOn } from '../../types/catalogue';
 interface AddOnModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAdd: (addon: Omit<ServiceAddOn, 'id' | 'serviceItemId'>) => void | Promise<void>;
+  onAdd: (addon: Omit<ServiceAddOn, 'id' | 'serviceItems'>) => void | Promise<void>;
   initialData?: ServiceAddOn | null;
   // Cosmetic — every saved add-on is already reusable across services via the Library (see
   // useLibrarySections), so there's no separate "private" state to gate on. Shown to match the

@@ -220,8 +220,14 @@ interface CatalogueContextType {
   addPackageToService: (serviceId: string, pkg: Omit<ServicePackage, 'id'>) => Promise<ActionResponse>;
   updatePackageInService: (serviceId: string, packageId: string, pkg: Omit<ServicePackage, 'id'>) => Promise<ActionResponse>;
   deletePackageFromService: (serviceId: string, packageId: string) => Promise<ActionResponse>;
-  addAddOnToService: (serviceId: string, addon: Omit<ServiceAddOn, 'id' | 'serviceItemId'>) => Promise<ActionResponse>;
-  updateAddOnInService: (serviceId: string, addonId: string, addon: Omit<ServiceAddOn, 'id' | 'serviceItemId'>) => Promise<ActionResponse>;
+  addAddOnToService: (serviceId: string, addon: Omit<ServiceAddOn, 'id' | 'serviceItems'>) => Promise<ActionResponse>;
+  updateAddOnInService: (serviceId: string, addonId: string, addon: Omit<ServiceAddOn, 'id' | 'serviceItems'>) => Promise<ActionResponse>;
+  // Attaches an EXISTING (possibly already shared) add-on to another service, merging serviceId
+  // into its current serviceItems instead of replacing them — the same add-on row then shows up
+  // under every linked service. Used by the Library "pick existing add-on" picker.
+  linkAddOnToService: (serviceId: string, addonId: string, currentServiceItemIds: string[]) => Promise<ActionResponse>;
+  // Unlinks the add-on from just this service, preserving its links to every other service that
+  // shares it; only hard-deletes the row once this was its last remaining link.
   deleteAddOnFromService: (serviceId: string, addonId: string) => Promise<ActionResponse>;
 
   // Zone entities (name/city/boundary) — see AdminOperationalZoneController / ZoneController
@@ -863,28 +869,28 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const source = await getServiceItemByIdServerAction(id);
       if (!source) return { ok: false, message: 'Service item not found' };
 
-      // The four zone-config list endpoints have no serviceItemId filter — they return every
-      // config row across every zone/service (see the comments on each getZone*ConfigsServerAction
-      // above) — so pull them alongside this service's own durations/packages/add-ons and filter
-      // down to just this source service's rows below.
-      const [durations, packages, addOns, allItemZoneConfigs, allDurationZoneConfigs, allPackageZoneConfigs, allAddOnZoneConfigs] = await Promise.all([
+      // The three zone-config list endpoints below have no serviceItemId filter — they return
+      // every config row across every zone/service (see the comments on each
+      // getZone*ConfigsServerAction above) — so pull them alongside this service's own
+      // durations/packages/add-ons and filter down to just this source service's rows below.
+      // (Add-ons are linked rather than cloned — see the add-ons step further down — so there's
+      // no per-zone add-on price override to re-point at a new id; the existing override already
+      // covers the shared add-on wherever it's linked.)
+      const [durations, packages, addOns, allItemZoneConfigs, allDurationZoneConfigs, allPackageZoneConfigs] = await Promise.all([
         getServiceDurationsServerAction(id),
         getServicePackagesServerAction(id),
         getServiceAddOnsServerAction(id),
         getZoneServiceItemConfigsServerAction(),
         getZoneDurationConfigsServerAction(),
         getZonePackageConfigsServerAction(),
-        getZoneAddOnConfigsServerAction(),
       ]);
 
       const durationIds = new Set(durations.map(d => d.id));
       const packageIds = new Set(packages.map(p => p.id));
-      const addOnIds = new Set(addOns.map(a => a.id));
 
       const itemZoneConfigs = allItemZoneConfigs.filter(c => c.serviceItemId === id);
       const durationZoneConfigs = allDurationZoneConfigs.filter(c => durationIds.has(c.serviceDurationId));
       const packageZoneConfigs = allPackageZoneConfigs.filter(c => packageIds.has(c.servicePackageId));
-      const addOnZoneConfigs = allAddOnZoneConfigs.filter(c => addOnIds.has(c.serviceAddOnId));
 
       const createRes = await saveServiceItemServerAction(null, {
         subCategoryId: overrideSubCategoryId || source.subCategoryId,
@@ -921,12 +927,16 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       }
       const newServiceId = createRes.data.id;
 
-      // Add-ons and the service-item-level zone availability/surge configs have no dependency on
-      // durations, so they run alongside them; packages must wait until durations exist since the
-      // backend derives a pack's price off this service's own default duration (see
-      // addPackageToService/PackModal elsewhere in this file) — captured here so their new ids can
-      // be used to remap the per-duration/per-add-on zone price overrides below.
-      const [durationResults, addOnResults] = await Promise.all([
+      // Add-ons are LINKED, not cloned: each of the source service's add-ons gets newServiceId
+      // merged into its existing serviceItems (keeping every service it was already linked to),
+      // so the duplicate shares the exact same add-on rows rather than getting independent
+      // copies — editing one later updates it for both. Runs alongside durations/the
+      // service-item-level zone availability/surge configs, none of which depend on each other;
+      // packages must wait until durations exist since the backend derives a pack's price off
+      // this service's own default duration (see addPackageToService/PackModal elsewhere in this
+      // file) — durations are captured here so their new ids can be used to remap the per-zone
+      // price overrides below.
+      const [durationResults] = await Promise.all([
         Promise.all(durations.map(d => saveServiceDurationServerAction(null, {
           serviceItemId: newServiceId,
           label: d.label,
@@ -936,16 +946,12 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           isDefault: d.isDefault,
           displayOrder: d.displayOrder,
         }))),
-        Promise.all(addOns.map(a => saveServiceAddOnServerAction(null, {
-          serviceItemId: newServiceId,
-          name: a.name,
-          description: a.description,
-          price: a.price,
-          imageKey: a.imageKey,
-          extraMinutes: a.extraMinutes,
-          isActive: a.isActive !== undefined ? a.isActive : true,
-          displayOrder: a.displayOrder,
-        }))),
+        Promise.all(addOns.map(a => {
+          const existingIds = (a.serviceItems || []).map((si) => si.id);
+          return saveServiceAddOnServerAction(a.id, {
+            serviceItemIds: existingIds.includes(newServiceId) ? existingIds : [...existingIds, newServiceId],
+          });
+        })),
         Promise.all(itemZoneConfigs.map(c => saveZoneServiceItemConfigServerAction(null, {
           zoneId: c.zoneId,
           serviceItemId: newServiceId,
@@ -959,16 +965,11 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const res = durationResults[i];
         if (res.ok) durationIdMap.set(d.id, res.data.id);
       });
-      const addOnIdMap = new Map<string, string>();
-      addOns.forEach((a, i) => {
-        const res = addOnResults[i];
-        if (res.ok) addOnIdMap.set(a.id, res.data.id);
-      });
 
-      // Re-point each per-zone price override at the matching newly-created duration/add-on
-      // (skipping any whose duration/add-on failed to clone above).
-      await Promise.all([
-        ...durationZoneConfigs.flatMap(c => {
+      // Re-point each per-duration price override at the matching newly-created duration
+      // (skipping any duration that failed to clone above).
+      await Promise.all(
+        durationZoneConfigs.flatMap(c => {
           const newDurationId = durationIdMap.get(c.serviceDurationId);
           if (!newDurationId) return [];
           return [saveZoneDurationConfigServerAction(null, {
@@ -977,17 +978,8 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             price: c.price,
             discountedPrice: c.discountedPrice ?? undefined,
           })];
-        }),
-        ...addOnZoneConfigs.flatMap(c => {
-          const newAddOnId = addOnIdMap.get(c.serviceAddOnId);
-          if (!newAddOnId) return [];
-          return [saveZoneAddOnConfigServerAction(null, {
-            zoneId: c.zoneId,
-            serviceAddOnId: newAddOnId,
-            price: c.price,
-          })];
-        }),
-      ]);
+        })
+      );
 
       const packageResults = await Promise.all(
         packages.map(p => saveServicePackageServerAction(null, {
@@ -1028,6 +1020,10 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   };
 
   // ---- Durations ----
+  // Each of add/update/delete below also refreshes allServiceDurations (loadAllServiceDurations)
+  // alongside this service's own list — that cross-service list backs the Library "pick existing
+  // duration" picker (see useLibrarySections), so skipping it left a just-added/edited/removed
+  // duration stale there until the page remounted (same gap fixed for add-ons above).
   const addDurationToService = async (serviceId: string, duration: Omit<ServiceDuration, 'id'>): Promise<ActionResponse> => {
     // Read before the save so this only fires on this service's very first duration — packs are
     // otherwise left untouched by duration actions (see createDefaultPackIfMissing above).
@@ -1042,7 +1038,7 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       displayOrder: duration.displayOrder,
     });
     if (res.ok) {
-      await loadServiceDurationsList(serviceId);
+      await Promise.all([loadServiceDurationsList(serviceId), loadAllServiceDurations()]);
       if (isFirstDuration) {
         await createDefaultPackIfMissing(serviceId);
         await loadServicePackagesList(serviceId);
@@ -1067,7 +1063,7 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       displayOrder: duration.displayOrder,
     });
     if (res.ok) {
-      await loadServiceDurationsList(serviceId);
+      await Promise.all([loadServiceDurationsList(serviceId), loadAllServiceDurations()]);
       return { ok: true };
     }
     return { ok: false, message: res.message };
@@ -1076,7 +1072,7 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const deleteDurationFromService = async (serviceId: string, durationId: string): Promise<ActionResponse> => {
     const res = await deleteServiceDurationServerAction(durationId);
     if (res.ok) {
-      await loadServiceDurationsList(serviceId);
+      await Promise.all([loadServiceDurationsList(serviceId), loadAllServiceDurations()]);
       return { ok: true };
     }
     return { ok: false, message: res.message };
@@ -1085,7 +1081,9 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // ---- Packages ----
   // Only serviceItemId/label/sessions/savingsPercent are sent — price/pricePerSession/
   // originalPrice/savings/badgeText/isPopular/displayOrder are not provided by the admin panel;
-  // the backend derives/defaults them (see ServicePackagePayload).
+  // the backend derives/defaults them (see ServicePackagePayload). Each also refreshes
+  // allServicePackages (loadAllServicePackages) for the same Library-picker-staleness reason as
+  // durations/add-ons above.
   const addPackageToService = async (serviceId: string, pkg: Omit<ServicePackage, 'id'>): Promise<ActionResponse> => {
     const res = await saveServicePackageServerAction(null, {
       serviceItemId: serviceId,
@@ -1094,7 +1092,7 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       savingsPercent: pkg.savingsPercent ?? undefined,
     });
     if (res.ok) {
-      await loadServicePackagesList(serviceId);
+      await Promise.all([loadServicePackagesList(serviceId), loadAllServicePackages()]);
       return { ok: true };
     }
     return { ok: false, message: res.message };
@@ -1112,7 +1110,7 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       savingsPercent: pkg.savingsPercent ?? undefined,
     });
     if (res.ok) {
-      await loadServicePackagesList(serviceId);
+      await Promise.all([loadServicePackagesList(serviceId), loadAllServicePackages()]);
       return { ok: true };
     }
     return { ok: false, message: res.message };
@@ -1121,19 +1119,26 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const deletePackageFromService = async (serviceId: string, packageId: string): Promise<ActionResponse> => {
     const res = await deleteServicePackageServerAction(packageId);
     if (res.ok) {
-      await loadServicePackagesList(serviceId);
+      await Promise.all([loadServicePackagesList(serviceId), loadAllServicePackages()]);
       return { ok: true };
     }
     return { ok: false, message: res.message };
   };
 
   // ---- Add-ons ----
+  // Add-ons are many-to-many with service items (see ServiceAddOn.serviceItems in
+  // catalog.prisma) — the backend's update does a full replace of serviceItemIds, never a merge,
+  // so every helper below resolves the FULL target set (existing links ± the one changing)
+  // itself instead of sending just the touched id. Each also refreshes allServiceAddOns
+  // (loadAllServiceAddOns), not just this service's own list — that cross-service list backs the
+  // Library "pick existing add-on" picker (see useLibrarySections), so skipping it would leave a
+  // just-created/just-relinked add-on invisible there until the page remounts.
   const addAddOnToService = async (
     serviceId: string,
-    addon: Omit<ServiceAddOn, 'id' | 'serviceItemId'>
+    addon: Omit<ServiceAddOn, 'id' | 'serviceItems'>
   ): Promise<ActionResponse> => {
     const res = await saveServiceAddOnServerAction(null, {
-      serviceItemId: serviceId,
+      serviceItemIds: [serviceId],
       name: addon.name,
       price: addon.price,
       imageKey: addon.imageKey,
@@ -1143,19 +1148,20 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       displayOrder: addon.displayOrder,
     });
     if (res.ok) {
-      await loadServiceAddOnsList(serviceId);
+      await Promise.all([loadServiceAddOnsList(serviceId), loadAllServiceAddOns()]);
       return { ok: true };
     }
     return { ok: false, message: res.message };
   };
 
+  // Edits the shared row in place — no serviceItemIds sent, so its links to every service that
+  // shares it are left exactly as they were.
   const updateAddOnInService = async (
     serviceId: string,
     addonId: string,
-    addon: Omit<ServiceAddOn, 'id' | 'serviceItemId'>
+    addon: Omit<ServiceAddOn, 'id' | 'serviceItems'>
   ): Promise<ActionResponse> => {
     const res = await saveServiceAddOnServerAction(addonId, {
-      serviceItemId: serviceId,
       name: addon.name,
       price: addon.price,
       imageKey: addon.imageKey,
@@ -1165,16 +1171,42 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       displayOrder: addon.displayOrder,
     });
     if (res.ok) {
-      await loadServiceAddOnsList(serviceId);
+      await Promise.all([loadServiceAddOnsList(serviceId), loadAllServiceAddOns()]);
       return { ok: true };
     }
     return { ok: false, message: res.message };
   };
 
-  const deleteAddOnFromService = async (serviceId: string, addonId: string): Promise<ActionResponse> => {
-    const res = await deleteServiceAddOnServerAction(addonId);
+  // Attaches an existing add-on (e.g. picked from the Library) to another service by merging
+  // serviceId into its current links — every service it was already linked to stays linked.
+  const linkAddOnToService = async (
+    serviceId: string,
+    addonId: string,
+    currentServiceItemIds: string[]
+  ): Promise<ActionResponse> => {
+    if (currentServiceItemIds.includes(serviceId)) return { ok: true }; // already linked, nothing to do
+    const res = await saveServiceAddOnServerAction(addonId, {
+      serviceItemIds: [...currentServiceItemIds, serviceId],
+    });
     if (res.ok) {
-      await loadServiceAddOnsList(serviceId);
+      await Promise.all([loadServiceAddOnsList(serviceId), loadAllServiceAddOns()]);
+      return { ok: true };
+    }
+    return { ok: false, message: res.message };
+  };
+
+  // Removes the add-on from just this service. If it's still linked to other services the row
+  // (and those other links) stay alive — it's a full delete only when this was the last link.
+  const deleteAddOnFromService = async (serviceId: string, addonId: string): Promise<ActionResponse> => {
+    const addon = serviceAddOns.find((a) => a.id === addonId);
+    const remainingIds = (addon?.serviceItems || [])
+      .map((si) => si.id)
+      .filter((sid) => sid !== serviceId);
+    const res = remainingIds.length > 0
+      ? await saveServiceAddOnServerAction(addonId, { serviceItemIds: remainingIds })
+      : await deleteServiceAddOnServerAction(addonId);
+    if (res.ok) {
+      await Promise.all([loadServiceAddOnsList(serviceId), loadAllServiceAddOns()]);
       return { ok: true };
     }
     return { ok: false, message: res.message };
@@ -1374,6 +1406,7 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       deletePackageFromService,
       addAddOnToService,
       updateAddOnInService,
+      linkAddOnToService,
       deleteAddOnFromService,
       createZone,
       updateZone,

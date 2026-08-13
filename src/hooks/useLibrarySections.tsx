@@ -29,6 +29,10 @@ export interface FaqLibraryPayload { question: string; answer: string }
 export interface DurationLibraryPayload { label: string; durationMinutes: number; price: number; discountedPrice?: number }
 export interface PackLibraryPayload { label: string; sessions: number; savingsPercent: number }
 export interface AddOnLibraryPayload {
+  // Add-ons are shared (many-to-many with service items) — picking one from the Library links
+  // the SAME row to the target service rather than cloning it, so id + its current links travel
+  // along with the display fields (see handleLibrarySave's 'addon' case in ServiceDetailView).
+  id: string; serviceItemIds: string[];
   name: string; price: number; imageKey: string; description?: string; extraMinutes?: number; isActive?: boolean;
 }
 
@@ -259,29 +263,36 @@ export function useLibrarySections(): Record<LibrarySectionKey, LibrarySection> 
       } as PackLibraryPayload,
     }));
 
-    const addonRows: LibraryRow[] = allServiceAddOns.map((a: ServiceAddOn) => ({
-      id: a.id,
-      categoryIds: categoryIdsFor(a.serviceItem?.id),
-      searchText: `${a.name} ${a.serviceItem?.name || ''}`,
-      cells: {
-        name: (
-          <span className="flex items-center gap-2.5">
-            {a.imageKey && imageThumb(a.imageKey, a.name)}
-            {a.name}
-          </span>
-        ),
-        price: `₹${a.price.toLocaleString()}`,
-        duration: a.extraMinutes ? `${a.extraMinutes} min` : '–',
-      },
-      payload: {
-        name: a.name,
-        price: a.price,
-        imageKey: a.imageKey,
-        description: a.description,
-        extraMinutes: a.extraMinutes,
-        isActive: a.isActive,
-      } as AddOnLibraryPayload,
-    }));
+    const addonRows: LibraryRow[] = allServiceAddOns.map((a: ServiceAddOn) => {
+      // Many-to-many now — an add-on can list several owning services, so its category filter
+      // and search text fold in all of them instead of a single serviceItem.
+      const linkedServices = a.serviceItems || [];
+      return {
+        id: a.id,
+        categoryIds: Array.from(new Set(linkedServices.flatMap((si) => categoryIdsFor(si.id)))),
+        searchText: `${a.name} ${linkedServices.map((si) => si.name).join(' ')}`,
+        cells: {
+          name: (
+            <span className="flex items-center gap-2.5">
+              {a.imageKey && imageThumb(a.imageKey, a.name)}
+              {a.name}
+            </span>
+          ),
+          price: `₹${a.price.toLocaleString()}`,
+          duration: a.extraMinutes ? `${a.extraMinutes} min` : '–',
+        },
+        payload: {
+          id: a.id,
+          serviceItemIds: linkedServices.map((si) => si.id),
+          name: a.name,
+          price: a.price,
+          imageKey: a.imageKey,
+          description: a.description,
+          extraMinutes: a.extraMinutes,
+          isActive: a.isActive,
+        } as AddOnLibraryPayload,
+      };
+    });
 
     return {
       service: {

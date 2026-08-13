@@ -41,13 +41,20 @@ export async function getAllServiceAddOnsServerAction(): Promise<ServiceAddOn[]>
   }
 }
 
-// Matches CreateServiceAddOnDto/UpdateServiceAddOnDto. imageKey is required by the backend.
+// Matches CreateServiceAddOnDto/UpdateServiceAddOnDto. All fields besides serviceItemIds are
+// only truly required when creating (id === null) — the backend's update DTO is a PartialType,
+// so a link/unlink-only PATCH can send just serviceItemIds and leave everything else alone.
+// serviceItemIds is the FULL set of service items this add-on should be linked to after the
+// call — the backend does a full replace (`set`), not a merge — so callers must include every
+// id that should stay linked, not just the one being added/removed. Required on create
+// (ArrayNotEmpty); omit it entirely on an update that isn't touching links so the existing
+// links are left untouched (see UpdateServiceAddOnDto being a PartialType).
 export interface ServiceAddOnPayload {
-  serviceItemId: string;
-  name: string;
+  serviceItemIds?: string[];
+  name?: string;
   description?: string;
-  price: number;
-  imageKey: string;
+  price?: number;
+  imageKey?: string;
   extraMinutes?: number;
   isActive?: boolean;
   displayOrder?: number;

@@ -41,7 +41,6 @@ export interface ServicePackage {
 
 export interface ServiceAddOn {
   id: string;
-  serviceItemId: string;
   name: string;
   description?: string;
   price: number;
@@ -49,7 +48,11 @@ export interface ServiceAddOn {
   extraMinutes?: number;
   isActive?: boolean;
   displayOrder?: number;
-  serviceItem?: ServiceItemRef;
+  // Many-to-many (see catalog.prisma ServiceAddOn.serviceItems): the same add-on row can be
+  // shared across several service items instead of being cloned per item. Present on rows from
+  // findAll (getServiceAddOnsServerAction/getAllServiceAddOnsServerAction) — NOT present on
+  // getServiceAddOnById, whose repository call doesn't include the relation.
+  serviceItems?: ServiceItemRef[];
 }
 
 export interface FaqItem {
@@ -259,8 +262,10 @@ export interface ZoneAddOnConfig {
   serviceAddOnId: string;
   price: number;
   zone?: OperationalZone;
-  // Joined by the backend (findZoneAddOnConfigs includes serviceAddOn: true).
-  serviceAddOn?: { id: string; name: string; serviceItemId: string };
+  // Joined by the backend (findZoneAddOnConfigs includes serviceAddOn: true) — a bare scalar
+  // include, so no serviceItemId/serviceItems here. Add-ons are shared across service items now,
+  // so there's no single "owning" service to reference anyway.
+  serviceAddOn?: { id: string; name: string };
 }
 
 // Controls, per zone, which Suites are available for that category's browse flow (see
