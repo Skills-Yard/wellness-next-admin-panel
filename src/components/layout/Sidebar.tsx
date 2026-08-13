@@ -30,7 +30,7 @@ const menuItems = [
   { label: 'Zones', icon: MapPinned, href: '/zones' },
   { label: 'Bookings', icon: Calendar, href: '/bookings' },
   { label: 'Partners', icon: UserCheck, href: '/partners' },
-  { label: 'Customers', icon: Users, href: '/customers' },
+  { label: 'Users', icon: Users, href: '/users' },
   { label: 'Settings', icon: Settings, href: '/settings' },
 ];
 
@@ -53,7 +53,7 @@ export default function Sidebar({ onCloseMobile }: SidebarProps) {
             </div>
             <div>
               <h1 className="font-bold text-lg text-white tracking-wide">Eezit Admin</h1>
-                   <p className="text-xs text-[#A8988A]">Eezit Management</p>
+              <p className="text-xs text-[#A8988A]">Eezit Management</p>
             </div>
           </div>
 
@@ -78,11 +78,10 @@ export default function Sidebar({ onCloseMobile }: SidebarProps) {
                 key={item.href}
                 href={item.href}
                 onClick={onCloseMobile}
-                className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${
-                  isActive
+                className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${isActive
                     ? 'bg-[#2D221C] text-[#D4A373] shadow-sm border border-[#3D3028]'
                     : 'text-[#A8988A] hover:bg-[#251D19] hover:text-white'
-                }`}
+                  }`}
               >
                 <Icon className={`w-5 h-5 ${isActive ? 'text-[#D4A373]' : 'text-[#A8988A]'}`} />
                 <span>{item.label}</span>
@@ -94,7 +93,7 @@ export default function Sidebar({ onCloseMobile }: SidebarProps) {
 
       {/* Bottom User Avatar Profile Card & Logout */}
       <div className="border-t border-[#2D231E] pt-4 px-1 mt-6 space-y-3">
-        
+
         {/* User Avatar & Info */}
         <div className="flex items-center gap-3 px-3 py-2 rounded-xl bg-[#251D19]/60 border border-[#3D3028]/50">
           <Avatar
@@ -114,7 +113,7 @@ export default function Sidebar({ onCloseMobile }: SidebarProps) {
         </div>
 
         {/* Logout Button */}
-        <button 
+        <button
           onClick={logout}
           className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-[#A8988A] hover:bg-[#251D19] hover:text-red-400 transition-all cursor-pointer"
         >
