@@ -12,10 +12,11 @@ import {
   saveZoneDurationConfigServerAction,
   saveZonePackageConfigServerAction,
   saveZoneAddOnConfigServerAction,
+  saveZoneSuiteConfigServerAction,
 } from '../../lib/server-actions/zone';
-import { ServiceDuration, ServicePackage, ServiceAddOn, ServiceItem } from '../../types/catalogue';
+import { ServiceDuration, ServicePackage, ServiceAddOn, ServiceItem, ServiceSuite } from '../../types/catalogue';
 
-type ConfigType = 'service' | 'duration' | 'package' | 'addon';
+type ConfigType = 'service' | 'duration' | 'package' | 'addon' | 'suite';
 type SubOption = ServiceDuration | ServicePackage | ServiceAddOn;
 
 interface ZoneConfigModalProps {
@@ -30,6 +31,7 @@ const TITLES: Record<ConfigType, string> = {
   duration: 'Duration Price Override',
   package: 'Package Price Override',
   addon: 'Add-on Price Override',
+  suite: 'Suite Availability',
 };
 
 const SUB_LABELS: Record<ConfigType, string> = {
@@ -37,6 +39,7 @@ const SUB_LABELS: Record<ConfigType, string> = {
   duration: 'Duration',
   package: 'Package',
   addon: 'Add-on',
+  suite: '',
 };
 
 function optionLabel(opt: SubOption): string {
@@ -48,24 +51,33 @@ interface CategoryGroup {
   services: ServiceItem[];
 }
 
+interface SuiteCategoryGroup {
+  categoryName: string;
+  suites: ServiceSuite[];
+}
+
 export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }: ZoneConfigModalProps) {
   const {
     categories,
     subCategories,
     serviceItems,
+    suites,
     zones,
     zoneServiceItemConfigs,
     zoneDurationConfigs,
     zonePackageConfigs,
     zoneAddOnConfigs,
+    zoneSuiteConfigs,
     saveZoneServiceItemConfig,
     saveZoneDurationConfig,
     saveZonePackageConfig,
     saveZoneAddOnConfig,
+    saveZoneSuiteConfig,
     refreshData,
   } = useCatalogue();
 
-  const needsSub = configType !== 'service';
+  const isSuiteConfig = configType === 'suite';
+  const needsSub = configType !== 'service' && !isSuiteConfig;
 
   // Services already carrying a config row for this zone (whether available or not) — the
   // pool that Duration/Package/Add-on overrides are allowed to target, and the pool excluded
@@ -95,7 +107,21 @@ export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }:
     categoryGroups.push({ categoryName: 'Other', services: ungroupedServices });
   }
 
+  // Suites without a config row for this zone yet — same "no config row yet" pool as
+  // pickableServices above, just keyed off ZoneSuiteConfig instead.
+  const suitesInZoneIds = new Set(
+    zoneSuiteConfigs.filter((c) => c.zoneId === zoneId).map((c) => c.suiteId)
+  );
+  const pickableSuites = suites.filter((s) => !suitesInZoneIds.has(s.id));
+  const suiteCategoryGroups: SuiteCategoryGroup[] = categories
+    .map((cat) => ({
+      categoryName: cat.name,
+      suites: pickableSuites.filter((s) => s.categoryId === cat.id),
+    }))
+    .filter((group) => group.suites.length > 0);
+
   const [serviceItemId, setServiceItemId] = useState('');
+  const [suiteId, setSuiteId] = useState('');
   const [subOptions, setSubOptions] = useState<SubOption[]>([]);
   const [subId, setSubId] = useState('');
   const [loadingSub, setLoadingSub] = useState(false);
@@ -113,6 +139,7 @@ export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }:
   useEffect(() => {
     if (isOpen) {
       setServiceItemId('');
+      setSuiteId('');
       setSubOptions([]);
       setSubId('');
       setIsAvailable(true);
@@ -153,7 +180,11 @@ export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }:
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!serviceItemId) {
+    if (isSuiteConfig && !suiteId) {
+      toast.error('Select a suite');
+      return;
+    }
+    if (!isSuiteConfig && !serviceItemId) {
       toast.error('Select a service item');
       return;
     }
@@ -181,6 +212,8 @@ export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }:
           isAvailable,
           surgeMultiplier: Number(surgeMultiplier) || 1,
         });
+      } else if (configType === 'suite') {
+        res = await saveZoneSuiteConfig(null, { zoneId, suiteId, isAvailable });
       } else if (configType === 'duration') {
         res = await saveZoneDurationConfig(null, {
           zoneId,
@@ -213,8 +246,8 @@ export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }:
   };
 
   // "Apply to all zones" writes one row per zone that doesn't already have this exact
-  // service/duration/package/add-on configured — a snapshot fan-out, not a live "applies to
-  // every zone forever" rule (zoneId is required on these 4 models, unlike PromotionalCampaign,
+  // service/duration/package/add-on/suite configured — a snapshot fan-out, not a live "applies
+  // to every zone forever" rule (zoneId is required on these 5 models, unlike PromotionalCampaign,
   // so there's no null-means-everywhere option here). A zone created later needs this re-run.
   // Calls the raw server actions directly (not the context-wrapped ones) so N zones only cost
   // one refreshData() at the end instead of N.
@@ -254,6 +287,14 @@ export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }:
         originalPrice: originalPrice.trim() ? Number(originalPrice) : undefined,
         savings: savings.trim() ? Number(savings) : undefined,
         savingsPercent: savingsPercent.trim() ? Number(savingsPercent) : undefined,
+      })));
+    } else if (configType === 'suite') {
+      alreadyConfiguredZoneIds = new Set(
+        zoneSuiteConfigs.filter((c) => c.suiteId === suiteId).map((c) => c.zoneId)
+      );
+      targets = zones.filter((z) => !alreadyConfiguredZoneIds.has(z.id));
+      results = await Promise.all(targets.map((z) => saveZoneSuiteConfigServerAction(null, {
+        zoneId: z.id, suiteId, isAvailable,
       })));
     } else {
       alreadyConfiguredZoneIds = new Set(
@@ -298,6 +339,40 @@ export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }:
         <h3 className="text-xl font-bold text-gray-900 mb-6">{TITLES[configType]}</h3>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {isSuiteConfig && (
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">Suite</label>
+              <select
+                value={suiteId}
+                onChange={(e) => setSuiteId(e.target.value)}
+                disabled={pickableSuites.length === 0}
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C] disabled:opacity-50"
+              >
+                <option value="">
+                  {pickableSuites.length === 0 ? 'No suites available' : 'Select a suite...'}
+                </option>
+                {suiteCategoryGroups.map((group) => (
+                  <optgroup key={group.categoryName} label={group.categoryName}>
+                    {group.suites.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+              {pickableSuites.length === 0 && suites.length > 0 && (
+                <p className="text-xs text-gray-400 mt-1.5">
+                  Every suite already has an availability entry in this zone.
+                </p>
+              )}
+              {suites.length === 0 && (
+                <p className="text-xs text-gray-400 mt-1.5">
+                  No suites exist yet — add one from the Categories page first.
+                </p>
+              )}
+            </div>
+          )}
+
+          {!isSuiteConfig && (
           <div>
             <label className="text-sm font-medium text-gray-700 mb-1 block">Service Item</label>
             <select
@@ -328,6 +403,7 @@ export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }:
               </p>
             )}
           </div>
+          )}
 
           {needsSub && (
             <div>
@@ -346,7 +422,7 @@ export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }:
             </div>
           )}
 
-          {configType === 'service' && (
+          {(configType === 'service' || isSuiteConfig) && (
             <>
               <label className="flex items-center gap-2 text-sm text-gray-700">
                 <input
@@ -357,17 +433,19 @@ export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }:
                 />
                 Available in this zone
               </label>
-              <div>
-                <label className="text-sm font-medium text-gray-700 mb-1 block">Surge Multiplier</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  value={surgeMultiplier}
-                  onChange={(e) => setSurgeMultiplier(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C]"
-                />
-              </div>
+              {configType === 'service' && (
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-1 block">Surge Multiplier</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    value={surgeMultiplier}
+                    onChange={(e) => setSurgeMultiplier(e.target.value)}
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C]"
+                  />
+                </div>
+              )}
             </>
           )}
 

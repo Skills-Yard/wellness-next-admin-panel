@@ -56,6 +56,8 @@ export default function ServiceDetailView() {
   const {
     categories,
     subCategories,
+    genders,
+    suites,
     selectedSubCategory,
     serviceItems,
     selectedServiceItem,
@@ -92,6 +94,8 @@ export default function ServiceDetailView() {
   const [slugTouched, setSlugTouched] = useState(false);
   const [categoryId, setCategoryId] = useState('');
   const [subCategoryId, setSubCategoryId] = useState('');
+  const [genderId, setGenderId] = useState('');
+  const [suiteId, setSuiteId] = useState('');
   const [cardSubtitle, setCardSubtitle] = useState('');
   // "Main Card" toggle — reuses the existing cardTemplate column (no dedicated isMainCard field
   // on ServiceItem): ON maps to 'PREMIUM', OFF maps to 'REGULAR'.
@@ -197,6 +201,9 @@ export default function ServiceDetailView() {
 
   // Sub-categories available under whichever category is currently picked in the form.
   const subCategoryOptions = subCategories.filter(s => s.categoryId === categoryId);
+  // Suites are scoped to a category too (see ServiceSuite in catalog.prisma) — same filtering
+  // as subCategoryOptions above. Genders are global, so no filtering needed for those.
+  const suiteOptions = suites.filter(s => s.categoryId === categoryId);
 
   // Cross-service duration/add-on catalogs power the "pick from existing" selector inside those
   // modals — load them once when this form mounts so the popups open with data already in hand
@@ -223,6 +230,8 @@ export default function ServiceDetailView() {
       const parentCategoryId = subCategories.find(s => s.id === selectedServiceItem.subCategoryId)?.categoryId || '';
       setCategoryId(parentCategoryId);
       setSubCategoryId(selectedServiceItem.subCategoryId || '');
+      setGenderId(selectedServiceItem.genderId || '');
+      setSuiteId(selectedServiceItem.suiteId || '');
 
       setFeatures(Array.isArray(selectedServiceItem.features) ? selectedServiceItem.features : []);
       setOverviewText(selectedServiceItem.overview?.text || '');
@@ -334,6 +343,14 @@ export default function ServiceDetailView() {
       toast.error('Please select a sub-category');
       return;
     }
+    if (!genderId) {
+      toast.error('Please select a gender');
+      return;
+    }
+    if (!suiteId) {
+      toast.error('Please select a suite');
+      return;
+    }
 
     setSaving(true);
     try {
@@ -341,6 +358,8 @@ export default function ServiceDetailView() {
         name: serviceName,
         slug: slugify(slug || serviceName),
         subCategoryId,
+        genderId,
+        suiteId,
         cardTitle: serviceName,
         cardSubtitle,
         cardTemplate: isMainCard ? 'PREMIUM' : 'REGULAR',
@@ -958,6 +977,10 @@ export default function ServiceDetailView() {
                     setCategoryId(newCategoryId);
                     const firstSub = subCategories.find(s => s.categoryId === newCategoryId);
                     setSubCategoryId(firstSub?.id || '');
+                    // Suites are scoped to the category too — a suite picked under the old
+                    // category won't exist in the new one's options, so reset it the same way.
+                    const firstSuite = suites.find(s => s.categoryId === newCategoryId);
+                    setSuiteId(firstSuite?.id || '');
                   }}
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C] bg-white cursor-pointer"
                 >
@@ -987,6 +1010,54 @@ export default function ServiceDetailView() {
                 </select>
                 <ChevronDown className="w-4 h-4 text-gray-400 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
+            </div>
+          </div>
+
+          {/* Gender & Suite Dropdowns (see ServiceGender/ServiceSuite in catalog.prisma) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="text-xs font-semibold text-gray-700 mb-1.5 block">
+                Gender<span className="text-red-500">*</span>
+              </label>
+              <div className="relative">
+                <select
+                  value={genderId}
+                  onChange={(e) => setGenderId(e.target.value)}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C] bg-white cursor-pointer"
+                >
+                  <option value="" disabled>Select a gender</option>
+                  {genders.map((g) => (
+                    <option key={g.id} value={g.id}>{g.name}</option>
+                  ))}
+                </select>
+                <ChevronDown className="w-4 h-4 text-gray-400 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+              </div>
+              {genders.length === 0 && (
+                <p className="text-xs text-gray-400 mt-1.5">No genders yet — add one from the Genders section above.</p>
+              )}
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-gray-700 mb-1.5 block">
+                Suite<span className="text-red-500">*</span>
+              </label>
+              <div className="relative">
+                <select
+                  value={suiteId}
+                  onChange={(e) => setSuiteId(e.target.value)}
+                  disabled={!categoryId}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C] bg-white cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <option value="" disabled>Select a suite</option>
+                  {suiteOptions.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+                <ChevronDown className="w-4 h-4 text-gray-400 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+              </div>
+              {categoryId && suiteOptions.length === 0 && (
+                <p className="text-xs text-gray-400 mt-1.5">No suites for this category yet — add one from the Categories page.</p>
+              )}
             </div>
           </div>
 

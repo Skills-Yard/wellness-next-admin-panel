@@ -19,7 +19,7 @@ export interface UploadResult {
  */
 export async function uploadFileToR2(
   file: File,
-  module: 'categories' | 'subcategories' | 'services' | 'addons' | 'professional-banners' | 'app-content' | 'campaigns',
+  module: 'categories' | 'subcategories' | 'genders' | 'suites' | 'services' | 'addons' | 'professional-banners' | 'app-content' | 'campaigns',
   slug?: string
 ): Promise<UploadResult> {
   const signed = await getUploadUrlServerAction({
