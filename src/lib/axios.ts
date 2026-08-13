@@ -1,6 +1,6 @@
 import axios, { AxiosInstance } from 'axios';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://projector-flatness-grappling.ngrok-free.dev/api/v1';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://wellness-backend-1-trvx.onrender.com/api/v1';
 
 export const axiosInstance: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
@@ -11,7 +11,6 @@ export const axiosInstance: AxiosInstance = axios.create({
   timeout: 10000,
 });
 
-// Request interceptor to attach bearer token if available
 axiosInstance.interceptors.request.use((config) => {
   if (typeof window !== 'undefined') {
     const token = localStorage.getItem('wellness_admin_token');
@@ -22,7 +21,6 @@ axiosInstance.interceptors.request.use((config) => {
   return config;
 });
 
-// Response interceptor for clean error handling
 axiosInstance.interceptors.response.use(
   (response) => response,
   (error) => {
