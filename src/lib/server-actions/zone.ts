@@ -8,6 +8,7 @@ import {
   ZoneDurationConfig,
   ZonePackageConfig,
   ZoneAddOnConfig,
+  ZoneSuiteConfig,
 } from '../../types/catalogue';
 import { ActionResult, getAuthHeaders } from './category';
 import { parseServerError } from '../errorParser';
@@ -297,5 +298,55 @@ export async function deleteZoneAddOnConfigServerAction(id: string): Promise<Act
   } catch (error: any) {
     console.error('[deleteZoneAddOnConfigServerAction]', error?.response?.data || error.message);
     return { ok: false, message: parseServerError(error, 'Failed to remove zone add-on price') };
+  }
+}
+
+// ---- Zone Suite Configs (per-zone suite availability, no pricing) ----
+// Controls which Suites show up in a zone's category browse flow — see ZoneSuiteConfig in
+// wellness-backend/prisma/schema/zone.prisma. Same "list has no per-entity filter" caveat as
+// the four config lists above.
+
+export async function getZoneSuiteConfigsServerAction(): Promise<ZoneSuiteConfig[]> {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await axiosInstance.get('/admin/zones/suite-configs', { headers });
+    const data = unwrap<ZoneSuiteConfig[]>(response.data, []);
+    return Array.isArray(data) ? data : [];
+  } catch (error: any) {
+    console.error('[getZoneSuiteConfigsServerAction]', error?.response?.data || error.message);
+    return [];
+  }
+}
+
+export interface ZoneSuiteConfigPayload {
+  zoneId: string;
+  suiteId: string;
+  isAvailable?: boolean;
+}
+
+export async function saveZoneSuiteConfigServerAction(
+  id: string | null,
+  payload: ZoneSuiteConfigPayload
+): Promise<ActionResult<ZoneSuiteConfig>> {
+  try {
+    const headers = await getAuthHeaders();
+    const response = id
+      ? await axiosInstance.patch(`/admin/zones/suite-configs/${id}`, payload, { headers })
+      : await axiosInstance.post('/admin/zones/suite-configs', payload, { headers });
+    return { ok: true, data: unwrap(response.data, response.data) };
+  } catch (error: any) {
+    console.error('[saveZoneSuiteConfigServerAction]', error?.response?.data || error.message);
+    return { ok: false, message: parseServerError(error, 'Failed to save zone suite availability') };
+  }
+}
+
+export async function deleteZoneSuiteConfigServerAction(id: string): Promise<ActionResult<void>> {
+  try {
+    const headers = await getAuthHeaders();
+    await axiosInstance.delete(`/admin/zones/suite-configs/${id}`, { headers });
+    return { ok: true, data: undefined };
+  } catch (error: any) {
+    console.error('[deleteZoneSuiteConfigServerAction]', error?.response?.data || error.message);
+    return { ok: false, message: parseServerError(error, 'Failed to remove zone suite availability') };
   }
 }

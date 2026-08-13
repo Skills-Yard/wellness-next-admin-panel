@@ -75,6 +75,8 @@ export interface ReviewItem {
 export interface ServiceItem {
   id: string;
   subCategoryId: string;
+  genderId: string;
+  suiteId: string;
   name: string;
   slug: string;
   thumbnailKey?: string;
@@ -116,6 +118,43 @@ export interface ServiceItem {
   addOns?: ServiceAddOn[];
 
   subCategory?: ServiceSubCategory;
+  gender?: ServiceGender;
+  suite?: ServiceSuite;
+}
+
+// Fixed classification (code is MALE/FEMALE, unique per row — see ServiceGenderType in
+// wellness-backend/prisma/schema/enums.prisma) but otherwise a marketing-content row just like
+// ServiceCategory (title/subtitle/icon/banner). Not scoped to a category — shared globally.
+export type ServiceGenderCode = 'MALE' | 'FEMALE';
+
+export interface ServiceGender {
+  id: string;
+  code: ServiceGenderCode;
+  name: string;
+  slug: string;
+  title: string;
+  subtitle?: string;
+  iconKey?: string;
+  homeBannerKey?: string;
+  homeBannerType?: MediaType;
+  displayOrder: number;
+  isActive: boolean;
+}
+
+// Scoped to a ServiceCategory, same relationship shape as ServiceSubCategory.
+export interface ServiceSuite {
+  id: string;
+  categoryId: string;
+  name: string;
+  slug: string;
+  title: string;
+  subtitle?: string;
+  iconKey?: string;
+  homeBannerKey?: string;
+  homeBannerType?: MediaType;
+  displayOrder: number;
+  isActive: boolean;
+  category?: ServiceCategory;
 }
 
 export interface ServiceSubCategory {
@@ -222,6 +261,18 @@ export interface ZoneAddOnConfig {
   zone?: OperationalZone;
   // Joined by the backend (findZoneAddOnConfigs includes serviceAddOn: true).
   serviceAddOn?: { id: string; name: string; serviceItemId: string };
+}
+
+// Controls, per zone, which Suites are available for that category's browse flow (see
+// ZoneSuiteConfig in wellness-backend/prisma/schema/zone.prisma). No pricing — availability only.
+export interface ZoneSuiteConfig {
+  id: string;
+  zoneId: string;
+  suiteId: string;
+  isAvailable: boolean;
+  zone?: OperationalZone;
+  // Joined by the backend (findZoneSuiteConfigs includes suite: true).
+  suite?: ServiceSuite;
 }
 
 // ---- Promotional Campaigns (see wellness-backend/prisma/schema/catalog.prisma) ----

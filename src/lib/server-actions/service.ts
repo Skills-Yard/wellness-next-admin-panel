@@ -44,6 +44,8 @@ export async function getServiceItemByIdServerAction(id: string): Promise<Servic
 // beforeYouBook — no editor section writes those, so they're omitted here rather than guessed.
 export interface ServiceItemPayload {
   subCategoryId?: string;
+  genderId?: string;
+  suiteId?: string;
   name: string;
   slug?: string;
   thumbnailKey?: string;

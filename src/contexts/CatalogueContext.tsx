@@ -4,6 +4,8 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import {
   ServiceCategory,
   ServiceSubCategory,
+  ServiceGender,
+  ServiceSuite,
   ServiceItem,
   ServiceDuration,
   ServicePackage,
@@ -13,6 +15,7 @@ import {
   ZoneDurationConfig,
   ZonePackageConfig,
   ZoneAddOnConfig,
+  ZoneSuiteConfig,
 } from '../types/catalogue';
 import { useAuth } from './AuthContext';
 import {
@@ -31,6 +34,22 @@ import {
   deleteSubCategoryServerAction,
   SubCategoryPayload,
 } from '../lib/server-actions/sub-category';
+import {
+  getServiceGendersServerAction,
+  saveServiceGenderServerAction,
+  updateServiceGenderStatusServerAction,
+  updateServiceGenderSlugServerAction,
+  deleteServiceGenderServerAction,
+  ServiceGenderPayload,
+} from '../lib/server-actions/gender';
+import {
+  getServiceSuitesServerAction,
+  saveServiceSuiteServerAction,
+  updateServiceSuiteStatusServerAction,
+  updateServiceSuiteSlugServerAction,
+  deleteServiceSuiteServerAction,
+  ServiceSuitePayload,
+} from '../lib/server-actions/suite';
 import {
   getServiceItemsServerAction,
   getServiceItemByIdServerAction,
@@ -82,6 +101,10 @@ import {
   saveZoneAddOnConfigServerAction,
   deleteZoneAddOnConfigServerAction,
   ZoneAddOnConfigPayload,
+  getZoneSuiteConfigsServerAction,
+  saveZoneSuiteConfigServerAction,
+  deleteZoneSuiteConfigServerAction,
+  ZoneSuiteConfigPayload,
 } from '../lib/server-actions/zone';
 
 type ActionResponse = { ok: boolean; message?: string };
@@ -99,6 +122,11 @@ interface CatalogueContextType {
   selectedSubCategory: ServiceSubCategory | null;
   setSelectedSubCategory: (sub: ServiceSubCategory | null) => void;
 
+  // Global (not category-scoped) — see ServiceGender in catalog.prisma.
+  genders: ServiceGender[];
+  // Scoped to a ServiceCategory, same relationship shape as subCategories.
+  suites: ServiceSuite[];
+
   serviceItems: ServiceItem[];
   selectedServiceItem: ServiceItem | null;
   setSelectedServiceItem: (item: ServiceItem | null) => void;
@@ -112,6 +140,7 @@ interface CatalogueContextType {
   zoneDurationConfigs: ZoneDurationConfig[];
   zonePackageConfigs: ZonePackageConfig[];
   zoneAddOnConfigs: ZoneAddOnConfig[];
+  zoneSuiteConfigs: ZoneSuiteConfig[];
 
   // Durations/packages/add-ons are NOT embedded in the service-item list/detail response —
   // the backend requires a dedicated GET with serviceItemId for each. These track whichever
@@ -142,9 +171,12 @@ interface CatalogueContextType {
   // Modals state
   categoryModalOpen: boolean;
   setCategoryModalOpen: (open: boolean) => void;
-  categoryModalMode: 'category' | 'subcategory';
-  modalEditData: ServiceCategory | ServiceSubCategory | null;
-  openCategoryModal: (mode: 'category' | 'subcategory', data?: ServiceCategory | ServiceSubCategory | null) => void;
+  categoryModalMode: 'category' | 'subcategory' | 'gender' | 'suite';
+  modalEditData: ServiceCategory | ServiceSubCategory | ServiceGender | ServiceSuite | null;
+  openCategoryModal: (
+    mode: 'category' | 'subcategory' | 'gender' | 'suite',
+    data?: ServiceCategory | ServiceSubCategory | ServiceGender | ServiceSuite | null
+  ) => void;
 
   // Navigation
   navigateToServiceDetail: (subCategory: ServiceSubCategory) => void;
@@ -158,6 +190,16 @@ interface CatalogueContextType {
   saveSubCategory: (data: Partial<ServiceSubCategory>) => Promise<ActionResponse>;
   updateSubCategoryStatus: (id: string, isActive: boolean) => Promise<ActionResponse>;
   deleteSubCategory: (id: string) => Promise<ActionResponse>;
+
+  saveServiceGender: (data: Partial<ServiceGender>) => Promise<ActionResponse>;
+  updateServiceGenderStatus: (id: string, isActive: boolean) => Promise<ActionResponse>;
+  deleteServiceGender: (id: string) => Promise<ActionResponse>;
+
+  // Suite create/edit reads its categoryId off selectedCategory (same convention as
+  // saveSubCategory) rather than taking it as a form field.
+  saveServiceSuite: (data: Partial<ServiceSuite>) => Promise<ActionResponse>;
+  updateServiceSuiteStatus: (id: string, isActive: boolean) => Promise<ActionResponse>;
+  deleteServiceSuite: (id: string) => Promise<ActionResponse>;
 
   saveServiceItem: (data: Partial<ServiceItem>) => Promise<ActionResponse>;
   updateServiceItemStatus: (id: string, isActive: boolean) => Promise<ActionResponse>;
@@ -196,6 +238,8 @@ interface CatalogueContextType {
   deleteZonePackageConfig: (id: string) => Promise<ActionResponse>;
   saveZoneAddOnConfig: (id: string | null, data: ZoneAddOnConfigPayload) => Promise<ActionResponse>;
   deleteZoneAddOnConfig: (id: string) => Promise<ActionResponse>;
+  saveZoneSuiteConfig: (id: string | null, data: ZoneSuiteConfigPayload) => Promise<ActionResponse>;
+  deleteZoneSuiteConfig: (id: string) => Promise<ActionResponse>;
 }
 
 const CatalogueContext = createContext<CatalogueContextType | undefined>(undefined);
@@ -219,6 +263,9 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [subCategories, setSubCategories] = useState<ServiceSubCategory[]>([]);
   const [selectedSubCategory, setSelectedSubCategory] = useState<ServiceSubCategory | null>(null);
 
+  const [genders, setGenders] = useState<ServiceGender[]>([]);
+  const [suites, setSuites] = useState<ServiceSuite[]>([]);
+
   const [serviceItems, setServiceItems] = useState<ServiceItem[]>([]);
   const [selectedServiceItem, setSelectedServiceItem] = useState<ServiceItem | null>(null);
 
@@ -228,6 +275,7 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [zoneDurationConfigs, setZoneDurationConfigs] = useState<ZoneDurationConfig[]>([]);
   const [zonePackageConfigs, setZonePackageConfigs] = useState<ZonePackageConfig[]>([]);
   const [zoneAddOnConfigs, setZoneAddOnConfigs] = useState<ZoneAddOnConfig[]>([]);
+  const [zoneSuiteConfigs, setZoneSuiteConfigs] = useState<ZoneSuiteConfig[]>([]);
 
   const [serviceDurations, setServiceDurations] = useState<ServiceDuration[]>([]);
   const [servicePackages, setServicePackages] = useState<ServicePackage[]>([]);
@@ -245,8 +293,8 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   // Modals state
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
-  const [categoryModalMode, setCategoryModalMode] = useState<'category' | 'subcategory'>('category');
-  const [modalEditData, setModalEditData] = useState<ServiceCategory | ServiceSubCategory | null>(null);
+  const [categoryModalMode, setCategoryModalMode] = useState<'category' | 'subcategory' | 'gender' | 'suite'>('category');
+  const [modalEditData, setModalEditData] = useState<ServiceCategory | ServiceSubCategory | ServiceGender | ServiceSuite | null>(null);
 
   // Fetch real data from the backend
   const refreshData = async () => {
@@ -272,6 +320,13 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         return backendSubCats[0] || null;
       });
 
+      const [backendGenders, backendSuites] = await Promise.all([
+        getServiceGendersServerAction(),
+        getServiceSuitesServerAction(),
+      ]);
+      setGenders(backendGenders);
+      setSuites(backendSuites);
+
       const backendServices = await getServiceItemsServerAction();
       setServiceItems(backendServices);
       setSelectedServiceItem(prev => {
@@ -288,12 +343,14 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         backendZoneDurationConfigs,
         backendZonePackageConfigs,
         backendZoneAddOnConfigs,
+        backendZoneSuiteConfigs,
       ] = await Promise.all([
         getZonesServerAction(),
         getZoneServiceItemConfigsServerAction(),
         getZoneDurationConfigsServerAction(),
         getZonePackageConfigsServerAction(),
         getZoneAddOnConfigsServerAction(),
+        getZoneSuiteConfigsServerAction(),
       ]);
       setZones(backendZones);
       setSelectedZone(prev => (prev ? backendZones.find(z => z.id === prev.id) || prev : prev));
@@ -301,6 +358,7 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       setZoneDurationConfigs(backendZoneDurationConfigs);
       setZonePackageConfigs(backendZonePackageConfigs);
       setZoneAddOnConfigs(backendZoneAddOnConfigs);
+      setZoneSuiteConfigs(backendZoneSuiteConfigs);
     } catch (err) {
       console.error('Error fetching backend catalogue data:', err);
     } finally {
@@ -322,6 +380,8 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     } else {
       setCategories([]);
       setSubCategories([]);
+      setGenders([]);
+      setSuites([]);
       setServiceItems([]);
       setSelectedCategory(null);
       setSelectedSubCategory(null);
@@ -331,6 +391,7 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       setZoneDurationConfigs([]);
       setZonePackageConfigs([]);
       setZoneAddOnConfigs([]);
+      setZoneSuiteConfigs([]);
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -440,7 +501,10 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   }, []);
 
-  const openCategoryModal = (mode: 'category' | 'subcategory', data?: ServiceCategory | ServiceSubCategory | null) => {
+  const openCategoryModal = (
+    mode: 'category' | 'subcategory' | 'gender' | 'suite',
+    data?: ServiceCategory | ServiceSubCategory | ServiceGender | ServiceSuite | null
+  ) => {
     setCategoryModalMode(mode);
     setModalEditData(data || null);
     setCategoryModalOpen(true);
@@ -568,6 +632,121 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return { ok: false, message: res.message };
   };
 
+  // ---- Gender CRUD ----
+  // Global list (not scoped to a category). Status and slug changes on an existing gender go
+  // through their own dedicated endpoints rather than being bundled into the general update PATCH.
+  const saveServiceGender = async (data: Partial<ServiceGender>): Promise<ActionResponse> => {
+    const editData = modalEditData as ServiceGender | null;
+    const isNew = !editData?.id || editData.id.startsWith('gen-');
+    const editId = isNew ? null : editData!.id;
+
+    const payload: ServiceGenderPayload = {
+      name: data.name || '',
+      title: data.title || data.name || '',
+      subtitle: data.subtitle || undefined,
+      displayOrder: data.displayOrder !== undefined ? Number(data.displayOrder) : undefined,
+      iconKey: data.iconKey || undefined,
+      homeBannerKey: data.homeBannerKey || undefined,
+      homeBannerType: data.homeBannerType || undefined,
+      // code is only sent on create — it identifies the row (MALE/FEMALE) and the admin UI
+      // treats it as immutable afterward (see GenderModal fields in CategoryModal).
+      ...(isNew ? { code: data.code, slug: data.slug || undefined } : {}),
+    };
+
+    const res = await saveServiceGenderServerAction(editId, payload);
+    if (!res.ok) {
+      console.error('Failed to save gender:', res.message);
+      return { ok: false, message: res.message };
+    }
+
+    if (!isNew && data.slug && data.slug !== editData?.slug) {
+      const slugRes = await updateServiceGenderSlugServerAction(editId!, data.slug);
+      if (!slugRes.ok) return { ok: false, message: slugRes.message };
+    }
+    if (!isNew && data.isActive !== undefined && data.isActive !== editData?.isActive) {
+      const statusRes = await updateServiceGenderStatusServerAction(editId!, data.isActive);
+      if (!statusRes.ok) return { ok: false, message: statusRes.message };
+    }
+
+    await refreshData();
+    return { ok: true };
+  };
+
+  const updateServiceGenderStatus = async (id: string, isActive: boolean): Promise<ActionResponse> => {
+    const res = await updateServiceGenderStatusServerAction(id, isActive);
+    if (res.ok) {
+      await refreshData();
+      return { ok: true };
+    }
+    return { ok: false, message: res.message };
+  };
+
+  const deleteServiceGender = async (id: string): Promise<ActionResponse> => {
+    const res = await deleteServiceGenderServerAction(id);
+    if (res.ok) {
+      await refreshData();
+      return { ok: true };
+    }
+    return { ok: false, message: res.message };
+  };
+
+  // ---- Suite CRUD ----
+  // Scoped to the currently selected Category (same convention as saveSubCategory). Status and
+  // slug changes on an existing suite go through their own dedicated endpoints.
+  const saveServiceSuite = async (data: Partial<ServiceSuite>): Promise<ActionResponse> => {
+    const editData = modalEditData as ServiceSuite | null;
+    const isNew = !editData?.id || editData.id.startsWith('suite-');
+    const editId = isNew ? null : editData!.id;
+
+    const payload: ServiceSuitePayload = {
+      categoryId: selectedCategory?.id || categories[0]?.id || '',
+      name: data.name || '',
+      title: data.title || data.name || '',
+      subtitle: data.subtitle || undefined,
+      iconKey: data.iconKey || undefined,
+      homeBannerKey: data.homeBannerKey || undefined,
+      homeBannerType: data.homeBannerType || undefined,
+      displayOrder: data.displayOrder !== undefined ? Number(data.displayOrder) : undefined,
+      ...(isNew ? { slug: data.slug || undefined, isActive: data.isActive } : {}),
+    };
+
+    const res = await saveServiceSuiteServerAction(editId, payload);
+    if (!res.ok) {
+      console.error('Failed to save suite:', res.message);
+      return { ok: false, message: res.message };
+    }
+
+    if (!isNew && data.slug && data.slug !== editData?.slug) {
+      const slugRes = await updateServiceSuiteSlugServerAction(editId!, data.slug);
+      if (!slugRes.ok) return { ok: false, message: slugRes.message };
+    }
+    if (!isNew && data.isActive !== undefined && data.isActive !== editData?.isActive) {
+      const statusRes = await updateServiceSuiteStatusServerAction(editId!, data.isActive);
+      if (!statusRes.ok) return { ok: false, message: statusRes.message };
+    }
+
+    await refreshData();
+    return { ok: true };
+  };
+
+  const updateServiceSuiteStatus = async (id: string, isActive: boolean): Promise<ActionResponse> => {
+    const res = await updateServiceSuiteStatusServerAction(id, isActive);
+    if (res.ok) {
+      await refreshData();
+      return { ok: true };
+    }
+    return { ok: false, message: res.message };
+  };
+
+  const deleteServiceSuite = async (id: string): Promise<ActionResponse> => {
+    const res = await deleteServiceSuiteServerAction(id);
+    if (res.ok) {
+      await refreshData();
+      return { ok: true };
+    }
+    return { ok: false, message: res.message };
+  };
+
   // ---- Service Item CRUD ----
   // Status and slug changes on an existing service item go through their own dedicated
   // endpoints rather than being bundled into the general update PATCH. Publish/draft state
@@ -579,6 +758,8 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     const payload: ServiceItemPayload = {
       subCategoryId: data.subCategoryId || prev.subCategoryId || selectedSubCategory?.id || subCategories[0]?.id || '',
+      genderId: data.genderId || prev.genderId || genders[0]?.id || '',
+      suiteId: data.suiteId || prev.suiteId || suites[0]?.id || '',
       name: data.name !== undefined ? data.name : prev.name || '',
       thumbnailKey: data.thumbnailKey !== undefined ? data.thumbnailKey : prev.thumbnailKey,
       thumbnailType: (data.thumbnailType || prev.thumbnailType) as ServiceItemPayload['thumbnailType'],
@@ -707,6 +888,8 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
       const createRes = await saveServiceItemServerAction(null, {
         subCategoryId: overrideSubCategoryId || source.subCategoryId,
+        genderId: source.genderId,
+        suiteId: source.suiteId,
         name: `${source.name} (Copy)`,
         slug: `${source.slug}-copy-${Date.now()}`,
         thumbnailKey: source.thumbnailKey,
@@ -1102,6 +1285,24 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return { ok: false, message: res.message };
   };
 
+  const saveZoneSuiteConfig = async (id: string | null, data: ZoneSuiteConfigPayload): Promise<ActionResponse> => {
+    const res = await saveZoneSuiteConfigServerAction(id, data);
+    if (res.ok) {
+      await refreshData();
+      return { ok: true };
+    }
+    return { ok: false, message: res.message };
+  };
+
+  const deleteZoneSuiteConfig = async (id: string): Promise<ActionResponse> => {
+    const res = await deleteZoneSuiteConfigServerAction(id);
+    if (res.ok) {
+      await refreshData();
+      return { ok: true };
+    }
+    return { ok: false, message: res.message };
+  };
+
   return (
     <CatalogueContext.Provider value={{
       loading,
@@ -1113,6 +1314,8 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       subCategories,
       selectedSubCategory,
       setSelectedSubCategory,
+      genders,
+      suites,
       serviceItems,
       selectedServiceItem,
       setSelectedServiceItem,
@@ -1123,6 +1326,7 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       zoneDurationConfigs,
       zonePackageConfigs,
       zoneAddOnConfigs,
+      zoneSuiteConfigs,
       serviceDurations,
       servicePackages,
       serviceAddOns,
@@ -1151,6 +1355,12 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       saveSubCategory,
       updateSubCategoryStatus,
       deleteSubCategory,
+      saveServiceGender,
+      updateServiceGenderStatus,
+      deleteServiceGender,
+      saveServiceSuite,
+      updateServiceSuiteStatus,
+      deleteServiceSuite,
       saveServiceItem,
       updateServiceItemStatus,
       updateServiceItemPublishStatus,
@@ -1176,6 +1386,8 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       deleteZonePackageConfig,
       saveZoneAddOnConfig,
       deleteZoneAddOnConfig,
+      saveZoneSuiteConfig,
+      deleteZoneSuiteConfig,
     }}>
       {children}
     </CatalogueContext.Provider>

@@ -10,13 +10,14 @@ import { Card } from '../ui/card';
 import ZoneModal from './ZoneModal';
 import ZoneConfigModal from './ZoneConfigModal';
 
-type Tab = 'services' | 'durations' | 'packages' | 'addons';
+type Tab = 'services' | 'durations' | 'packages' | 'addons' | 'suites';
 
-const CONFIG_TYPE_FOR_TAB: Record<Tab, 'service' | 'duration' | 'package' | 'addon'> = {
+const CONFIG_TYPE_FOR_TAB: Record<Tab, 'service' | 'duration' | 'package' | 'addon' | 'suite'> = {
   services: 'service',
   durations: 'duration',
   packages: 'package',
   addons: 'addon',
+  suites: 'suite',
 };
 
 export default function ZoneDetailView() {
@@ -28,10 +29,12 @@ export default function ZoneDetailView() {
     zoneDurationConfigs,
     zonePackageConfigs,
     zoneAddOnConfigs,
+    zoneSuiteConfigs,
     deleteZoneServiceItemConfig,
     deleteZoneDurationConfig,
     deleteZonePackageConfig,
     deleteZoneAddOnConfig,
+    deleteZoneSuiteConfig,
   } = useCatalogue();
 
   const [tab, setTab] = useState<Tab>('services');
@@ -44,6 +47,7 @@ export default function ZoneDetailView() {
   const durations = zoneDurationConfigs.filter((c) => c.zoneId === selectedZone.id);
   const packages = zonePackageConfigs.filter((c) => c.zoneId === selectedZone.id);
   const addons = zoneAddOnConfigs.filter((c) => c.zoneId === selectedZone.id);
+  const suiteConfigs = zoneSuiteConfigs.filter((c) => c.zoneId === selectedZone.id);
 
   // Duration/package/add-on rows only carry the sub-entity's own label ("90 mins", "4 Sessions")
   // — resolve the parent service item's name too so two services sharing a label aren't confused.
@@ -55,6 +59,7 @@ export default function ZoneDetailView() {
     { key: 'durations', label: 'Durations', count: durations.length },
     { key: 'packages', label: 'Packages', count: packages.length },
     { key: 'addons', label: 'Add-ons', count: addons.length },
+    { key: 'suites', label: 'Suites', count: suiteConfigs.length },
   ];
 
   return (
@@ -177,6 +182,24 @@ export default function ZoneDetailView() {
                   subtitle={`₹${c.price.toLocaleString()}`}
                   onDelete={async () => {
                     const res = await deleteZoneAddOnConfig(c.id);
+                    if (res.ok) toast.success('Removed'); else toast.error(res.message || 'Failed to remove');
+                  }}
+                />
+              ))
+            )
+          )}
+
+          {tab === 'suites' && (
+            suiteConfigs.length === 0 ? (
+              <EmptyRow label="suite availability overrides" />
+            ) : (
+              suiteConfigs.map((c) => (
+                <ConfigRow
+                  key={c.id}
+                  title={c.suite?.name || c.suiteId}
+                  subtitle={c.isAvailable ? 'Available' : 'Unavailable'}
+                  onDelete={async () => {
+                    const res = await deleteZoneSuiteConfig(c.id);
                     if (res.ok) toast.success('Removed'); else toast.error(res.message || 'Failed to remove');
                   }}
                 />

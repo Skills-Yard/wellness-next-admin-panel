@@ -5,6 +5,7 @@ import { X, Upload, ChevronRight, Leaf, Loader2 } from 'lucide-react';
 import { useCatalogue } from '../../contexts/CatalogueContext';
 import { uploadFileToR2 } from '../../lib/uploadToR2';
 import { toast } from 'react-toastify';
+import { ServiceGenderCode } from '../../types/catalogue';
 
 // Matches the backend's slug regex for categories: lowercase alphanumeric, hyphen-separated.
 function slugify(input: string): string {
@@ -24,7 +25,10 @@ export default function CategoryModal() {
     categoryModalMode,
     modalEditData,
     saveCategory,
-    saveSubCategory
+    saveSubCategory,
+    saveServiceGender,
+    saveServiceSuite,
+    selectedCategory,
   } = useCatalogue();
 
   const [name, setName] = useState('');
@@ -38,6 +42,10 @@ export default function CategoryModal() {
   const [bannerType, setBannerType] = useState<'IMAGE' | 'VIDEO'>('IMAGE');
   const [uploadingField, setUploadingField] = useState<ImageField | null>(null);
   const [saving, setSaving] = useState(false);
+  // Gender-only: identifies the row (MALE/FEMALE) — see CreateServiceGenderDto.code. Locked to
+  // read-only once a gender exists (see the "code" select below) since flipping it would
+  // silently re-tag every ServiceItem already assigned to that row.
+  const [genderCode, setGenderCode] = useState<ServiceGenderCode>('MALE');
 
   const iconInputRef = useRef<HTMLInputElement | null>(null);
   const bannerInputRef = useRef<HTMLInputElement | null>(null);
@@ -53,6 +61,7 @@ export default function CategoryModal() {
       setIconUrl(modalEditData.iconKey || null);
       setBannerUrl(modalEditData.homeBannerKey || null);
       setBannerType(modalEditData.homeBannerType || 'IMAGE');
+      setGenderCode((modalEditData as any).code || 'MALE');
     } else {
       setName('');
       setSlug('');
@@ -63,14 +72,22 @@ export default function CategoryModal() {
       setIconUrl(null);
       setBannerUrl(null);
       setBannerType('IMAGE');
+      setGenderCode('MALE');
     }
   }, [modalEditData, categoryModalOpen]);
 
   if (!categoryModalOpen) return null;
 
   const isSubCategory = categoryModalMode === 'subcategory';
-  const modalTitle = isSubCategory ? 'Spa Services' : 'Eezit Services';
-  const moduleType = isSubCategory ? 'subcategories' : 'categories';
+  const isGender = categoryModalMode === 'gender';
+  const isSuite = categoryModalMode === 'suite';
+  const modalTitle =
+    isGender ? 'Service Gender' :
+    isSuite ? 'Service Suite' :
+    isSubCategory ? 'Spa Services' : 'Eezit Services';
+  const entityLabel = isGender ? 'Gender' : isSuite ? 'Suite' : isSubCategory ? 'Sub-Category' : 'Category';
+  const moduleType = isGender ? 'genders' : isSuite ? 'suites' : isSubCategory ? 'subcategories' : 'categories';
+  const isEditingExisting = !!modalEditData?.id;
 
   const handleNameChange = (value: string) => {
     setName(value);
@@ -120,16 +137,23 @@ export default function CategoryModal() {
       iconKey: iconUrl || undefined,
       homeBannerKey: bannerUrl || undefined,
       homeBannerType: bannerType,
+      ...(isGender ? { code: genderCode } : {}),
     };
 
     setSaving(true);
     try {
-      const res = isSubCategory ? await saveSubCategory(payload) : await saveCategory(payload);
+      const res = isGender
+        ? await saveServiceGender(payload)
+        : isSuite
+        ? await saveServiceSuite(payload)
+        : isSubCategory
+        ? await saveSubCategory(payload)
+        : await saveCategory(payload);
       if (res.ok) {
-        toast.success(`${isSubCategory ? 'Sub-category' : 'Category'} saved successfully!`);
+        toast.success(`${entityLabel} saved successfully!`);
         setCategoryModalOpen(false);
       } else {
-        toast.error(`Failed to save ${isSubCategory ? 'sub-category' : 'category'}: ${res.message || 'Server error'}`);
+        toast.error(`Failed to save ${entityLabel.toLowerCase()}: ${res.message || 'Server error'}`);
       }
     } catch (err: any) {
       toast.error(`Error: ${err.message || 'Operation failed'}`);
@@ -204,18 +228,49 @@ export default function CategoryModal() {
         </button>
 
         {/* Modal Title */}
-        <div className="flex items-center gap-2 mb-8">
-          <h2 className="text-2xl font-semibold text-gray-900 tracking-tight">
-            {modalTitle}
-          </h2>
-          {isSubCategory && (
-            <span className="text-[#C68A4C]">
-              <Leaf className="w-5 h-5 fill-current" />
-            </span>
+        <div className="mb-8">
+          <div className="flex items-center gap-2">
+            <h2 className="text-2xl font-semibold text-gray-900 tracking-tight">
+              {modalTitle}
+            </h2>
+            {(isSubCategory || isSuite) && (
+              <span className="text-[#C68A4C]">
+                <Leaf className="w-5 h-5 fill-current" />
+              </span>
+            )}
+          </div>
+          {isSuite && (
+            <p className="text-xs text-gray-400 mt-1">
+              Under {selectedCategory?.name || 'the selected category'}
+            </p>
           )}
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Gender Type — fixed MALE/FEMALE classification, immutable after creation */}
+          {isGender && (
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1.5 block">
+                Gender Type<span className="text-red-500">*</span>
+              </label>
+              <div className="relative">
+                <select
+                  value={genderCode}
+                  disabled={isEditingExisting}
+                  onChange={(e) => setGenderCode(e.target.value as ServiceGenderCode)}
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C] bg-white transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  <option value="MALE">Male</option>
+                  <option value="FEMALE">Female</option>
+                </select>
+                <ChevronRight className="w-4 h-4 text-gray-400 absolute right-4 top-1/2 -translate-y-1/2 rotate-90 pointer-events-none" />
+              </div>
+              {isEditingExisting && (
+                <p className="text-xs text-gray-400 mt-1.5">Can&apos;t be changed after creation.</p>
+              )}
+            </div>
+          )}
+
           {/* Two Image Upload Boxes: Logo (iconKey) & Banner (homeBannerKey) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             {renderUploadBox('iconKey', 'Logo', 'PNG, JPG up to 5MB', iconUrl, iconInputRef, 'image/*')}
@@ -324,7 +379,7 @@ export default function CategoryModal() {
               disabled={saving}
               className="px-6 py-2.5 rounded-xl bg-[#221812] text-white font-medium text-sm hover:bg-black transition-colors shadow-md disabled:opacity-60"
             >
-              {saving ? 'Saving...' : 'Save Service'}
+              {saving ? 'Saving...' : `Save ${entityLabel}`}
             </button>
           </div>
         </form>
