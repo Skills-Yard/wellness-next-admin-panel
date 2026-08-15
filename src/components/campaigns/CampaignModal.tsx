@@ -75,6 +75,7 @@ export default function CampaignModal() {
   const [zoneId, setZoneId] = useState('');
   const [title, setTitle] = useState('');
   const [subtitle, setSubtitle] = useState('');
+  const [highlightText, setHighlightText] = useState('');
   const [ctaText, setCtaText] = useState('');
   const [ctaDeeplink, setCtaDeeplink] = useState('');
   const [displayOrder, setDisplayOrder] = useState('0');
@@ -102,6 +103,7 @@ export default function CampaignModal() {
       setZoneId(editingCampaign.zoneId || '');
       setTitle(editingCampaign.title || '');
       setSubtitle(editingCampaign.subtitle || '');
+      setHighlightText(editingCampaign.highlightText || '');
       setCtaText(editingCampaign.ctaText || '');
       setCtaDeeplink(editingCampaign.ctaDeeplink || '');
       setDisplayOrder(String(editingCampaign.displayOrder ?? 0));
@@ -120,6 +122,7 @@ export default function CampaignModal() {
       setZoneId('');
       setTitle('');
       setSubtitle('');
+      setHighlightText('');
       setCtaText('');
       setCtaDeeplink('');
       setDisplayOrder('0');
@@ -209,6 +212,7 @@ export default function CampaignModal() {
         zoneId: zoneId || null,
         title: title || null,
         subtitle: subtitle || null,
+        highlightText: highlightText || null,
         mediaType,
         s3Key: mediaKey,
         cdnUrl: mediaUrl || null,
@@ -402,6 +406,21 @@ export default function CampaignModal() {
                 className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C]"
               />
             </div>
+          </div>
+
+          {/* Highlight Text — short text overlaid on the campaign media */}
+          <div>
+            <label className="text-sm font-medium text-gray-700 mb-1.5 block">
+              Highlight Text <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <input
+              type="text"
+              placeholder="e.g. 30% OFF"
+              value={highlightText}
+              onChange={(e) => setHighlightText(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C]"
+            />
+            <p className="text-xs text-gray-400 mt-1.5">Short badge/label overlaid on the campaign media</p>
           </div>
 
           {/* CTA */}

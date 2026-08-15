@@ -55,6 +55,7 @@ export interface CampaignPayload {
   zoneId?: string | null;
   title?: string | null;
   subtitle?: string | null;
+  highlightText?: string | null;
   mediaType: MediaType;
   s3Key: string;
   cdnUrl?: string | null;

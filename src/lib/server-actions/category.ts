@@ -61,6 +61,8 @@ export interface CategoryPayload {
   slug?: string;
   title: string;
   subtitle?: string;
+  sectionHeading?: string;
+  sectionSubheading?: string;
   displayOrder?: number;
   iconKey?: string;
   homeBannerKey?: string;

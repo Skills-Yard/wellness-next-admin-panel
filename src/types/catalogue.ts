@@ -137,6 +137,8 @@ export interface ServiceGender {
   slug: string;
   title: string;
   subtitle?: string;
+  sectionHeading?: string;
+  sectionSubheading?: string;
   iconKey?: string;
   homeBannerKey?: string;
   homeBannerType?: MediaType;
@@ -152,6 +154,8 @@ export interface ServiceSuite {
   slug: string;
   title: string;
   subtitle?: string;
+  sectionHeading?: string;
+  sectionSubheading?: string;
   iconKey?: string;
   homeBannerKey?: string;
   homeBannerType?: MediaType;
@@ -167,6 +171,8 @@ export interface ServiceSubCategory {
   slug: string;
   title: string;
   subtitle?: string;
+  sectionHeading?: string;
+  sectionSubheading?: string;
   iconKey?: string;
   homeBannerKey?: string;
   homeBannerType?: MediaType;
@@ -183,6 +189,8 @@ export interface ServiceCategory {
   slug: string;
   title: string;
   subtitle?: string;
+  sectionHeading?: string;
+  sectionSubheading?: string;
   iconKey?: string;
   homeBannerKey?: string;
   homeBannerType?: MediaType;
@@ -303,6 +311,7 @@ export interface PromotionalCampaign {
   zoneId?: string | null;
   title?: string | null;
   subtitle?: string | null;
+  highlightText?: string | null;
   mediaType: MediaType;
   s3Key: string;
   cdnUrl?: string | null;

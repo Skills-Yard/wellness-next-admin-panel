@@ -43,6 +43,8 @@ export interface SubCategoryPayload {
   slug?: string;
   title: string;
   subtitle?: string;
+  sectionHeading?: string;
+  sectionSubheading?: string;
   iconKey?: string;
   homeBannerKey?: string;
   homeBannerType?: 'IMAGE' | 'VIDEO';

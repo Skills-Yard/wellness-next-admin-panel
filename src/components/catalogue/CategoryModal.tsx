@@ -35,6 +35,8 @@ export default function CategoryModal() {
   const [slug, setSlug] = useState('');
   const [slugTouched, setSlugTouched] = useState(false);
   const [subtitle, setSubtitle] = useState('');
+  const [sectionHeading, setSectionHeading] = useState('');
+  const [sectionSubheading, setSectionSubheading] = useState('');
   const [displayOrder, setDisplayOrder] = useState('1');
   const [status, setStatus] = useState('Active');
   const [iconUrl, setIconUrl] = useState<string | null>(null);
@@ -56,6 +58,8 @@ export default function CategoryModal() {
       setSlug(modalEditData.slug || '');
       setSlugTouched(true);
       setSubtitle(modalEditData.subtitle || '');
+      setSectionHeading((modalEditData as any).sectionHeading || '');
+      setSectionSubheading((modalEditData as any).sectionSubheading || '');
       setDisplayOrder(String(modalEditData.displayOrder ?? 1));
       setStatus(modalEditData.isActive !== false ? 'Active' : 'Inactive');
       setIconUrl(modalEditData.iconKey || null);
@@ -67,6 +71,8 @@ export default function CategoryModal() {
       setSlug('');
       setSlugTouched(false);
       setSubtitle('');
+      setSectionHeading('');
+      setSectionSubheading('');
       setDisplayOrder('1');
       setStatus('Active');
       setIconUrl(null);
@@ -132,6 +138,8 @@ export default function CategoryModal() {
       slug: slugify(slug || name),
       title: name,
       subtitle,
+      sectionHeading: sectionHeading || undefined,
+      sectionSubheading: sectionSubheading || undefined,
       displayOrder: Number(displayOrder) || 1,
       isActive: status === 'Active',
       iconKey: iconUrl || undefined,
@@ -328,6 +336,34 @@ export default function CategoryModal() {
               <span className="absolute bottom-3 right-4 text-xs text-gray-400 font-medium">
                 {subtitle.length}/150
               </span>
+            </div>
+          </div>
+
+          {/* Section Heading & Subheading — shown above this entity's section/listing */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1.5 block">
+                Section Heading <span className="text-gray-400 font-normal">(optional)</span>
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Explore our Spa services"
+                value={sectionHeading}
+                onChange={(e) => setSectionHeading(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C] bg-white transition-all placeholder:text-gray-300"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1.5 block">
+                Section Subheading <span className="text-gray-400 font-normal">(optional)</span>
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Hand-picked therapists, at your doorstep"
+                value={sectionSubheading}
+                onChange={(e) => setSectionSubheading(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C] bg-white transition-all placeholder:text-gray-300"
+              />
             </div>
           </div>
 
