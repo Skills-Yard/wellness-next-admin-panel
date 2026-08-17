@@ -30,11 +30,46 @@ export default function CategoriesView() {
   // Separate open/close state from the Sub-Categories section's dropdown below (even though
   // both just pick `selectedCategory`) so opening one doesn't also pop the other's menu open.
   const [suiteCategoryDropdownOpen, setSuiteCategoryDropdownOpen] = useState(false);
+  // Filters the Sub-Categories table (Section 2) down to sub-categories that have at least one
+  // service in the chosen suite — 'all' shows every sub-category for the active category.
+  const [subCategorySuiteFilter, setSubCategorySuiteFilter] = useState<string>('all');
+  const [subCategorySuiteFilterOpen, setSubCategorySuiteFilterOpen] = useState(false);
 
   // Filter subcategories by active category
   const currentSubCategories = subCategories.filter(
     s => s.categoryId === selectedCategory?.id
   );
+
+  // Sub-categories and suites are both scoped to a category but not to each other directly —
+  // the only link is via ServiceItem (each service has both a subCategoryId and a suiteId). Look
+  // up which suites a sub-category's services actually belong to from that join.
+  const suiteIdsForSubCategory = (subCategoryId: string) =>
+    Array.from(new Set(
+      serviceItems.filter(s => s.subCategoryId === subCategoryId).map(s => s.suiteId).filter(Boolean)
+    ));
+  const suitesForSubCategory = (subCategoryId: string) =>
+    suiteIdsForSubCategory(subCategoryId)
+      .map(id => suites.find(su => su.id === id))
+      .filter((s): s is typeof suites[number] => !!s);
+
+  // Suites for the active category (see ServiceSuite in catalog.prisma) — scoped the same way
+  // sub-categories are. Genders are global (no categoryId), so that table below isn't filtered.
+  const currentSuites = suites.filter(s => s.categoryId === selectedCategory?.id);
+
+  // A suiteId picked while viewing one category won't exist under another — fall back to "all"
+  // rather than filtering everything out (or needing an effect to reset the raw state) once the
+  // active category changes out from under a previously-picked suite.
+  const activeSuiteFilter = subCategorySuiteFilter !== 'all' && !currentSuites.some(s => s.id === subCategorySuiteFilter)
+    ? 'all'
+    : subCategorySuiteFilter;
+
+  const subCategorySuiteFilterLabel = activeSuiteFilter === 'all'
+    ? 'All Suites'
+    : suites.find(su => su.id === activeSuiteFilter)?.name || 'All Suites';
+
+  const filteredSubCategories = activeSuiteFilter === 'all'
+    ? currentSubCategories
+    : currentSubCategories.filter(sub => suiteIdsForSubCategory(sub.id).includes(activeSuiteFilter));
 
   // The backend doesn't return subCategoriesCount/servicesCount on category/sub-category
   // responses — compute them client-side from the already-loaded lists.
@@ -46,9 +81,6 @@ export default function CategoriesView() {
       .filter(s => s.categoryId === categoryId)
       .reduce((total, sub) => total + servicesCountBySubCategory(sub.id), 0);
 
-  // Suites for the active category (see ServiceSuite in catalog.prisma) — scoped the same way
-  // sub-categories are. Genders are global (no categoryId), so that table below isn't filtered.
-  const currentSuites = suites.filter(s => s.categoryId === selectedCategory?.id);
   const servicesCountBySuite = (suiteId: string) =>
     serviceItems.filter(s => s.suiteId === suiteId).length;
   const servicesCountByGender = (genderId: string) =>
@@ -539,13 +571,59 @@ export default function CategoriesView() {
             </p>
           </div>
 
-          <Button
-            onClick={() => openCategoryModal('subcategory')}
-            className="self-start sm:self-auto bg-[#1C1512] hover:bg-black text-white rounded-xl shadow-xs"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add Sub-Category</span>
-          </Button>
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            {/* Suite filter — only worth showing once the active category actually has suites to
+                filter by (see currentSuites, computed above for Section 1B). */}
+            {currentSuites.length > 0 && (
+              <div className="relative inline-block">
+                <button
+                  onClick={() => setSubCategorySuiteFilterOpen(!subCategorySuiteFilterOpen)}
+                  className="flex items-center gap-1.5 px-3 h-10 rounded-xl border border-gray-200 bg-white text-sm font-medium text-gray-700 hover:border-[#C68A4C] hover:text-[#C68A4C] transition-colors"
+                >
+                  <span>Suite: {subCategorySuiteFilterLabel}</span>
+                  <ChevronDown className="w-4 h-4" />
+                </button>
+
+                {subCategorySuiteFilterOpen && (
+                  <div className="absolute top-full right-0 sm:left-0 mt-2 w-56 bg-white border border-gray-100 rounded-xl shadow-xl z-20 py-1 max-h-72 overflow-y-auto">
+                    <button
+                      onClick={() => {
+                        setSubCategorySuiteFilter('all');
+                        setSubCategorySuiteFilterOpen(false);
+                      }}
+                      className={`w-full text-left px-4 py-2 text-sm font-medium hover:bg-[#FAF5F0] hover:text-[#C68A4C] ${
+                        activeSuiteFilter === 'all' ? 'text-[#C68A4C]' : 'text-gray-700'
+                      }`}
+                    >
+                      All Suites
+                    </button>
+                    {currentSuites.map((suite) => (
+                      <button
+                        key={suite.id}
+                        onClick={() => {
+                          setSubCategorySuiteFilter(suite.id);
+                          setSubCategorySuiteFilterOpen(false);
+                        }}
+                        className={`w-full text-left px-4 py-2 text-sm font-medium hover:bg-[#FAF5F0] hover:text-[#C68A4C] ${
+                          activeSuiteFilter === suite.id ? 'text-[#C68A4C]' : 'text-gray-700'
+                        }`}
+                      >
+                        {suite.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <Button
+              onClick={() => openCategoryModal('subcategory')}
+              className="bg-[#1C1512] hover:bg-black text-white rounded-xl shadow-xs"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Sub-Category</span>
+            </Button>
+          </div>
         </div>
 
         {/* Sub-Categories Table Card */}
@@ -572,6 +650,24 @@ export default function CategoriesView() {
                 + Create Sub-Category
               </Button>
             </div>
+          ) : filteredSubCategories.length === 0 ? (
+            <div className="py-14 flex flex-col items-center justify-center text-center p-6 space-y-3">
+              <div className="w-12 h-12 rounded-full bg-[#FAF5F0] text-[#C68A4C] flex items-center justify-center">
+                <FolderPlus className="w-6 h-6" />
+              </div>
+              <h3 className="text-base font-semibold text-gray-800">No Sub-Categories in This Suite</h3>
+              <p className="text-xs text-gray-500 max-w-sm">
+                None of {selectedCategory?.name || 'this category'}&apos;s sub-categories have a service in the &quot;{subCategorySuiteFilterLabel}&quot; suite.
+              </p>
+              <Button
+                onClick={() => setSubCategorySuiteFilter('all')}
+                size="sm"
+                variant="outline"
+                className="mt-2"
+              >
+                Clear Suite Filter
+              </Button>
+            </div>
           ) : (
             <>
               <div className="overflow-x-auto w-full">
@@ -580,14 +676,15 @@ export default function CategoriesView() {
                     <tr className="bg-[#FAF5F0] text-gray-700 text-xs font-semibold uppercase tracking-wider border-b border-[#F2E5D9]">
                       <th className="py-4 px-4 sm:px-6">Sub-Categories</th>
                       <th className="py-4 px-4 sm:px-6 text-center">Services</th>
+                      <th className="py-4 px-4 sm:px-6 text-center">Suites</th>
                       <th className="py-4 px-4 sm:px-6 text-center">Status</th>
                       <th className="py-4 px-4 sm:px-6 text-right">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 text-sm text-gray-700">
-                    {currentSubCategories.map((sub) => (
-                      <tr 
-                        key={sub.id} 
+                    {filteredSubCategories.map((sub) => (
+                      <tr
+                        key={sub.id}
                         className="hover:bg-[#FAF9F6]/80 transition-colors cursor-pointer"
                         onClick={() => navigateToServiceDetail(sub)}
                       >
@@ -611,6 +708,20 @@ export default function CategoriesView() {
                         {/* Services count */}
                         <td className="py-4 px-4 sm:px-6 text-center font-medium text-gray-600">
                           {servicesCountBySubCategory(sub.id)}
+                        </td>
+
+                        {/* Suites this sub-category's services belong to (derived via ServiceItem —
+                            see suitesForSubCategory above; there's no direct FK). */}
+                        <td className="py-4 px-4 sm:px-6" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex flex-wrap items-center justify-center gap-1.5">
+                            {suitesForSubCategory(sub.id).length === 0 ? (
+                              <span className="text-xs text-gray-400">—</span>
+                            ) : (
+                              suitesForSubCategory(sub.id).map((suite) => (
+                                <Badge key={suite.id} variant="secondary">{suite.name}</Badge>
+                              ))
+                            )}
+                          </div>
                         </td>
 
                         {/* Status Badge */}
@@ -650,7 +761,7 @@ export default function CategoriesView() {
 
               {/* Footer Pagination */}
               <div className="px-4 sm:px-6 py-4 bg-white border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
-                <span>Showing 1 to {currentSubCategories.length} of {currentSubCategories.length} sub-categories</span>
+                <span>Showing 1 to {filteredSubCategories.length} of {filteredSubCategories.length} sub-categories</span>
                 <div className="flex items-center gap-2">
                   <button className="w-8 h-8 rounded-full bg-gray-200 text-gray-400 flex items-center justify-center cursor-not-allowed">
                     <ChevronLeft className="w-4 h-4" />
