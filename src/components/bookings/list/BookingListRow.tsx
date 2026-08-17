@@ -69,7 +69,7 @@ export default function BookingListRow({
       <td className="py-3.5 px-5">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#1C1512] to-[#3B2D27] text-[#D4A373] shrink-0 font-bold flex items-center justify-center shadow-xs">
-            <Sparkles className="w-4 h-4 fill-current" />
+            <Sparkles className="w-4 h-4 fill-current stroke-none" />
           </div>
           <div>
             <Link href={`/bookings/${booking.id}`} className="font-bold text-gray-900 hover:text-[#D4A373] transition-colors leading-snug block">

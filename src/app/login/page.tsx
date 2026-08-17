@@ -86,7 +86,7 @@ export default function AdminLoginPage() {
         {/* Top Branding Section */}
         <div className="text-center mb-6 flex flex-col items-center">
           <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-[#1C1512] to-[#3D3028] flex items-center justify-center text-[#D4A373] shadow-lg mb-3.5 border border-[#3D3028]">
-            <Sparkles className="w-7 h-7 fill-current" />
+            <Sparkles className="w-7 h-7 fill-current stroke-none" />
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">
             Eezit Admin

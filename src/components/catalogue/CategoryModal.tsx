@@ -243,7 +243,7 @@ export default function CategoryModal() {
             </h2>
             {(isSubCategory || isSuite) && (
               <span className="text-[#C68A4C]">
-                <Leaf className="w-5 h-5 fill-current" />
+                <Leaf className="w-5 h-5 fill-current stroke-none" />
               </span>
             )}
           </div>

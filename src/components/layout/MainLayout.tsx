@@ -51,7 +51,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
     return (
       <div className="h-screen w-screen flex flex-col items-center justify-center bg-[#1C1512] text-white">
         <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[#D4A373] to-[#F4E3D3] flex items-center justify-center text-[#1C1512] shadow-xl mb-4 animate-bounce">
-          <Sparkles className="w-6 h-6 fill-current" />
+          <Sparkles className="w-6 h-6 fill-current stroke-none" />
         </div>
         <div className="flex items-center gap-2 text-sm text-[#A8988A] font-medium">
           <Loader2 className="w-4 h-4 animate-spin text-[#D4A373]" />
