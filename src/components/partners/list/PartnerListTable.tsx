@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { Search, Calendar as CalendarIcon, Download, Plus, ChevronLeft, ChevronRight, UserCheck } from 'lucide-react';
-import { Partner } from '../../../types/partner';
+import { Partner, PartnerStatus } from '../../../types/partner';
 import AddPartnerModal from './AddPartnerModal';
 import PartnerListMetrics from './PartnerListMetrics';
 import PartnerListRow from './PartnerListRow';
@@ -28,6 +28,15 @@ const STATUS_PRIORITY: Record<string, number> = {
   REJECTED: 7,
 };
 
+// A partner in any of these statuses still needs some admin action before going live. This is
+// the single definition of "Pending Approval" — used for both the metrics card above the table
+// and the status filter dropdown's "Pending Approval" option/count — so the two never disagree
+// on what that label means (they used to: the card summed all three, the dropdown option only
+// matched PENDING_APPROVAL itself, so e.g. a partner sitting in KYC_SUBMITTED counted toward
+// the card's "4" but not the dropdown's "0" for the exact same label).
+const PENDING_APPROVAL_STATUSES: PartnerStatus[] = ['PENDING_KYC', 'KYC_SUBMITTED', 'PENDING_APPROVAL'];
+const isPendingApproval = (status: PartnerStatus) => PENDING_APPROVAL_STATUSES.includes(status);
+
 export default function PartnerListTable({
   partners,
   onRefresh,
@@ -43,7 +52,7 @@ export default function PartnerListTable({
   const [actionMenuOpenId, setActionMenuOpenId] = useState<string | null>(null);
 
   const totalPartners = partners.length;
-  const pendingApprovalCount = partners.filter((p) => p.status === 'PENDING_APPROVAL' || p.status === 'KYC_SUBMITTED' || p.status === 'PENDING_KYC').length;
+  const pendingApprovalCount = partners.filter((p) => isPendingApproval(p.status)).length;
   const activePartnersCount = partners.filter((p) => p.status === 'APPROVED' && p.isActive).length;
   const suspendedCount = partners.filter((p) => p.status === 'SUSPENDED').length;
 
@@ -53,7 +62,8 @@ export default function PartnerListTable({
       (partner.email && partner.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
       (partner.city && partner.city.toLowerCase().includes(searchTerm.toLowerCase())) ||
       (partner.phone && partner.phone.includes(searchTerm));
-    const matchesStatus = selectedStatus === 'ALL' || partner.status === selectedStatus;
+    const matchesStatus = selectedStatus === 'ALL'
+      || (selectedStatus === 'PENDING_APPROVAL' ? isPendingApproval(partner.status) : partner.status === selectedStatus);
     return matchesSearch && matchesStatus;
   });
 
@@ -106,9 +116,14 @@ export default function PartnerListTable({
               <option value="ALL">All Status ({partners.length})</option>
               <option value="APPROVED">Approved ({partners.filter(p => p.status === 'APPROVED').length})</option>
               <option value="KYC_SUBMITTED">KYC Submitted ({partners.filter(p => p.status === 'KYC_SUBMITTED').length})</option>
-              <option value="PENDING_APPROVAL">Pending Approval ({partners.filter(p => p.status === 'PENDING_APPROVAL').length})</option>
+              {/* Same PENDING_KYC + KYC_SUBMITTED + PENDING_APPROVAL bucket as the metrics card
+                  above (isPendingApproval) — so this count and that card's never disagree. */}
+              <option value="PENDING_APPROVAL">Pending Approval ({partners.filter(p => isPendingApproval(p.status)).length})</option>
               <option value="SUSPENDED">Suspended ({partners.filter(p => p.status === 'SUSPENDED').length})</option>
               <option value="INCOMPLETE">Incomplete ({partners.filter(p => p.status === 'INCOMPLETE').length})</option>
+              <option value="TRAINING">Training ({partners.filter(p => p.status === 'TRAINING').length})</option>
+              <option value="REJECTED">Rejected ({partners.filter(p => p.status === 'REJECTED').length})</option>
+              <option value="DEACTIVATED">Deactivated ({partners.filter(p => p.status === 'DEACTIVATED').length})</option>
             </select>
             <div className="flex items-center gap-2 px-3 py-2 text-xs font-medium bg-gray-50 border border-gray-200 rounded-xl text-gray-600">
               <CalendarIcon className="w-3.5 h-3.5 text-gray-400" />

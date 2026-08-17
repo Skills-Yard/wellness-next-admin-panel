@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { MapPin, Phone, Mail, ChevronDown, Edit3, Eye, Smartphone, Activity } from 'lucide-react';
 import { User } from '../../../types/user';
 import { Avatar } from '../../ui/avatar';
+import { formatPhone } from '../../../lib/utils';
 
 interface UserHeaderProfileProps {
   user: User;
@@ -27,7 +28,7 @@ export default function UserHeaderProfile({ user, onSelectTab }: UserHeaderProfi
 
   const userName = user.name || 'Unknown User';
   const userIdFormatted = user.accountCode || `USR-${user.id.substring(0, 6).toUpperCase()}`;
-  const userPhone = user.phone ? `${user.countryCode || '+91'} ${user.phone}` : null;
+  const userPhone = user.phone ? formatPhone(user.phone, user.countryCode) : null;
   const userEmail = user.email || null;
   const userLocation =
     user.locationCity

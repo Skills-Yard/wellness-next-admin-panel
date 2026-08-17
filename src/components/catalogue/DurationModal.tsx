@@ -2,12 +2,18 @@
 
 import React, { useEffect, useState } from 'react';
 import { X, Loader2 } from 'lucide-react';
+import { toast } from 'react-toastify';
 import { ServiceDuration } from '../../types/catalogue';
+import { useCatalogue } from '../../contexts/CatalogueContext';
+import { saveZoneDurationConfigServerAction, deleteZoneDurationConfigServerAction } from '../../lib/server-actions/zone';
+import ZonePriceOverridesFields, { ZoneOverrideValue } from './ZonePriceOverridesFields';
 
 interface DurationModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAdd: (duration: Omit<ServiceDuration, 'id'>) => void | Promise<void>;
+  // Returning { id } lets a brand-new duration's zone price overrides (see zoneOverrides state
+  // below) be saved right after creation, before the id would otherwise be known.
+  onAdd: (duration: Omit<ServiceDuration, 'id'>) => (void | { id?: string }) | Promise<void | { id?: string }>;
   initialData?: ServiceDuration | null;
   // Cosmetic — every saved duration is already reusable across services via the Library (see
   // useLibrarySections), so there's no separate "private" state to gate on. Shown to match the
@@ -35,6 +41,9 @@ export default function DurationModal({
   const [saveToLibrary, setSaveToLibrary] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  const { zones, zoneDurationConfigs, refreshData } = useCatalogue();
+  const [zoneOverrides, setZoneOverrides] = useState<Record<string, ZoneOverrideValue>>({});
+
   useEffect(() => {
     if (isOpen) {
       setLabel(initialData?.label ?? '90 mins');
@@ -43,7 +52,25 @@ export default function DurationModal({
       setDiscountedPrice(initialData?.discountedPrice != null ? String(initialData.discountedPrice) : '');
       setSaveToLibrary(true);
       setSaving(false);
+
+      if (initialData?.id) {
+        const existing: Record<string, ZoneOverrideValue> = {};
+        zoneDurationConfigs
+          .filter((c) => c.serviceDurationId === initialData.id)
+          .forEach((c) => {
+            existing[c.zoneId] = {
+              price: String(c.price),
+              discountedPrice: c.discountedPrice != null ? String(c.discountedPrice) : '',
+            };
+          });
+        setZoneOverrides(existing);
+      } else {
+        setZoneOverrides({});
+      }
     }
+    // zoneDurationConfigs intentionally omitted — only re-derive when the modal (re)opens or
+    // switches which duration it's editing, not every time the list refreshes underneath it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, initialData]);
 
   if (!isOpen) return null;
@@ -59,17 +86,60 @@ export default function DurationModal({
   const savingsPercent = hasDiscount && originalNum > 0 ? Math.round((savingsAmount / originalNum) * 100) : 0;
   const canSubmit = hasOriginalPrice && !discountInvalid;
 
+  // Writes/clears one ZoneDurationConfig per zone based on zoneOverrides — blank price means
+  // "no override, use the price above". Only refetches (refreshData) if something actually
+  // changed, so a duration saved without touching zone pricing doesn't trigger the full reload.
+  const syncZoneOverrides = async (durationId: string) => {
+    const existingByZone = new Map(
+      zoneDurationConfigs.filter((c) => c.serviceDurationId === durationId).map((c) => [c.zoneId, c])
+    );
+    let changed = false;
+    let failed = 0;
+    await Promise.all(
+      zones.map(async (zone) => {
+        const val = zoneOverrides[zone.id];
+        const existing = existingByZone.get(zone.id);
+        const priceTrim = val?.price?.trim();
+        if (!priceTrim) {
+          if (existing) {
+            changed = true;
+            const res = await deleteZoneDurationConfigServerAction(existing.id);
+            if (!res.ok) failed += 1;
+          }
+          return;
+        }
+        const priceNum = Number(priceTrim);
+        if (!Number.isFinite(priceNum)) return;
+        const discountedTrim = val?.discountedPrice?.trim();
+        changed = true;
+        const res = await saveZoneDurationConfigServerAction(existing?.id ?? null, {
+          zoneId: zone.id,
+          serviceDurationId: durationId,
+          price: priceNum,
+          discountedPrice: discountedTrim ? Number(discountedTrim) : undefined,
+        });
+        if (!res.ok) failed += 1;
+      })
+    );
+    if (changed) {
+      await refreshData();
+      if (failed > 0) toast.error(`${failed} zone price${failed === 1 ? '' : 's'} failed to save.`);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit || saving) return;
     setSaving(true);
     try {
-      await onAdd({
+      const res = await onAdd({
         label,
         durationMinutes: Number(minutes) || 90,
         price: originalNum,
         discountedPrice: discountedNum ?? undefined,
       });
+      const durationId = initialData?.id ?? res?.id;
+      if (durationId) await syncZoneOverrides(durationId);
       onClose();
     } finally {
       setSaving(false);
@@ -136,6 +206,22 @@ export default function DurationModal({
         )}
       </div>
 
+      <div>
+        <label className="text-sm font-medium text-gray-700 mb-1 block">
+          Zone Pricing <span className="text-gray-400 font-normal">(optional)</span>
+        </label>
+        <p className="text-[11px] text-gray-400 mb-2">
+          Leave a zone blank to use the price above for it.
+        </p>
+        <ZonePriceOverridesFields
+          zones={zones}
+          values={zoneOverrides}
+          onChange={(zoneId, value) => setZoneOverrides((prev) => ({ ...prev, [zoneId]: value }))}
+          showDiscounted
+          basePrice={originalNum}
+        />
+      </div>
+
       {showLibraryCheckbox && !isEditing && (
         <label className="flex items-center gap-2 cursor-pointer select-none w-fit">
           <input
@@ -172,7 +258,7 @@ export default function DurationModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl relative border border-gray-100">
+      <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl relative border border-gray-100 max-h-[90vh] overflow-y-auto">
         <button
           onClick={onClose}
           className="absolute top-5 right-5 w-8 h-8 rounded-full bg-[#1C1512] text-white flex items-center justify-center hover:bg-black transition-colors"

@@ -11,6 +11,7 @@ import { Avatar } from '../../ui/avatar';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
+import { stripCountryCode } from '../../../lib/utils';
 
 interface UserEditTabProps {
   user: User;
@@ -25,7 +26,10 @@ export default function UserEditTab({ user, onSave }: UserEditTabProps) {
     name: user.name ?? '',
     email: user.email ?? '',
     countryCode: user.countryCode ?? '+91',
-    phone: user.phone ?? '',
+    // user.phone comes back from the backend as countryCode+digits already concatenated (see
+    // formatPhone's doc comment in lib/utils.ts) — strip the prefix so this local-number field
+    // shows just the digits, matching the country-code dropdown right next to it.
+    phone: stripCountryCode(user.phone, user.countryCode),
     dateOfBirth: user.dateOfBirth
       ? user.dateOfBirth.split('T')[0]   // ISO → "YYYY-MM-DD" for <input type="date">
       : '',

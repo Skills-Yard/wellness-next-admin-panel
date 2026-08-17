@@ -1,12 +1,14 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Plus, Edit3, Trash2, ChevronDown, ChevronLeft, ChevronRight, Loader2, FolderPlus } from 'lucide-react';
+import { Plus, Edit3, Trash2, ChevronDown, ChevronLeft, ChevronRight, Loader2, FolderPlus, MapPin } from 'lucide-react';
 import { useCatalogue } from '../../contexts/CatalogueContext';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Card } from '../ui/card';
 import { toast } from 'react-toastify';
+import SuiteZoneAvailabilityModal from './SuiteZoneAvailabilityModal';
+import { ServiceSuite } from '../../types/catalogue';
 
 export default function CategoriesView() {
   const {
@@ -34,6 +36,10 @@ export default function CategoriesView() {
   // service in the chosen suite — 'all' shows every sub-category for the active category.
   const [subCategorySuiteFilter, setSubCategorySuiteFilter] = useState<string>('all');
   const [subCategorySuiteFilterOpen, setSubCategorySuiteFilterOpen] = useState(false);
+  // Suite selected for the "Zone Availability" modal (see ZoneSuiteConfig in catalogue.ts) —
+  // separate from modalEditData/openCategoryModal since this isn't a category-modal edit flow.
+  const [suiteForZoneModal, setSuiteForZoneModal] = useState<ServiceSuite | null>(null);
+  const [zoneModalOpen, setZoneModalOpen] = useState(false);
 
   // Filter subcategories by active category
   const currentSubCategories = subCategories.filter(
@@ -509,6 +515,14 @@ export default function CategoriesView() {
                           <Button
                             variant="outline"
                             size="icon"
+                            onClick={() => { setSuiteForZoneModal(suite); setZoneModalOpen(true); }}
+                            title="Zone Availability"
+                          >
+                            <MapPin className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="icon"
                             onClick={() => openCategoryModal('suite', suite)}
                             title="Edit Suite"
                           >
@@ -776,6 +790,11 @@ export default function CategoriesView() {
         </Card>
       </div>
 
+      <SuiteZoneAvailabilityModal
+        isOpen={zoneModalOpen}
+        onClose={() => { setZoneModalOpen(false); setSuiteForZoneModal(null); }}
+        suite={suiteForZoneModal}
+      />
     </div>
   );
 }

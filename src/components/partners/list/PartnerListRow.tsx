@@ -6,6 +6,7 @@ import { Star, MoreVertical, Eye, ShieldCheck, AlertCircle, Trash2 } from 'lucid
 import { Partner, PartnerStatus } from '../../../types/partner';
 import { Avatar } from '../../ui/avatar';
 import { Badge } from '../../ui/badge';
+import { formatPhone } from '../../../lib/utils';
 
 interface PartnerListRowProps {
   partner: Partner;
@@ -25,7 +26,7 @@ export default function PartnerListRow({
   onDelete,
 }: PartnerListRowProps) {
   const partnerName = partner.name || 'Unnamed Partner';
-  const partnerPhone = partner.phone || partner.countryCode || '+91';
+  const partnerPhone = formatPhone(partner.phone, partner.countryCode);
   const partnerCity = partner.city || partner.state || 'N/A';
   const partnerType = partner.type || 'INDIVIDUAL';
   const ratingVal = partner.averageRating ? partner.averageRating.toFixed(1) : '0.0';
@@ -39,8 +40,10 @@ export default function PartnerListRow({
       case 'KYC_SUBMITTED': return <Badge className="bg-amber-50 text-amber-700 border-amber-200">KYC Submitted</Badge>;
       case 'PENDING_APPROVAL': return <Badge className="bg-orange-50 text-orange-700 border-orange-200">Pending Approval</Badge>;
       case 'PENDING_KYC': return <Badge className="bg-blue-50 text-blue-700 border-blue-200">Pending KYC</Badge>;
+      case 'TRAINING': return <Badge className="bg-purple-50 text-purple-700 border-purple-200">Training</Badge>;
       case 'SUSPENDED': return <Badge variant="destructive">Suspended</Badge>;
       case 'REJECTED': return <Badge className="bg-red-50 text-red-700 border-red-200">Rejected</Badge>;
+      case 'DEACTIVATED': return <Badge variant="inactive">Deactivated</Badge>;
       default: return <Badge variant="inactive">Incomplete</Badge>;
     }
   };

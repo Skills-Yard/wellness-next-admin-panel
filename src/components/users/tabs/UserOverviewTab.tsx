@@ -6,6 +6,7 @@ import { Copy, Check, Edit3, PhoneCall, UserX, Smartphone } from 'lucide-react';
 import { User } from '../../../types/user';
 import { Card } from '../../ui/card';
 import { Button } from '../../ui/button';
+import { formatPhone } from '../../../lib/utils';
 
 interface UserOverviewTabProps {
   user: User;
@@ -64,7 +65,7 @@ export default function UserOverviewTab({
           <div>
             <p className="text-gray-400 font-medium mb-1">Phone</p>
             <p className="font-semibold text-gray-900">
-              {user.phone ? `${user.countryCode || '+91'} ${user.phone}` : '—'}
+              {formatPhone(user.phone, user.countryCode)}
             </p>
           </div>
           <div>

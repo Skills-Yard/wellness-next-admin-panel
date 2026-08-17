@@ -7,6 +7,7 @@ import { MoreHorizontal, CheckCircle2, AlertCircle, Eye, Edit3, Smartphone, Acti
 import { User } from '../../../types/user';
 import { Avatar } from '../../ui/avatar';
 import { Badge } from '../../ui/badge';
+import { formatPhone } from '../../../lib/utils';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -39,7 +40,7 @@ export default function UserListRow({ user, onDeactivate }: UserListRowProps) {
 
   const userIdFormatted = user.accountCode || `USR-${user.id.substring(0, 6).toUpperCase()}`;
   const userName = user.name || 'Unknown User';
-  const userPhone = user.phone ? `${user.countryCode || '+91'}+${user.phone}` : '—';
+  const userPhone = formatPhone(user.phone, user.countryCode);
   const userEmail = user.email || '—';
   const isVerified = user.isPhoneVerified ?? false;
   const isActive = user.isActive ?? false;

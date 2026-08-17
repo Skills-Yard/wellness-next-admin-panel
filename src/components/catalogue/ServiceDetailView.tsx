@@ -1109,6 +1109,7 @@ export default function ServiceDetailView() {
                       const res = await addDurationToService(selectedServiceItem.id, dur);
                       if (res.ok) toast.success('Duration timeslot added!');
                       else toast.error(`Failed to add timeslot: ${res.message || 'Error occurred'}`);
+                      return res;
                     }}
                   />
                 ))}
@@ -1235,6 +1236,7 @@ export default function ServiceDetailView() {
                       const res = await addPackageToService(selectedServiceItem.id, pkg);
                       if (res.ok) toast.success('Session pack added!');
                       else toast.error(`Failed to add session pack: ${res.message || 'Error occurred'}`);
+                      return res;
                     }}
                   />
                 ))}
@@ -2469,6 +2471,7 @@ export default function ServiceDetailView() {
                 toast.error(`Failed to ${editingDuration ? 'update' : 'add'} timeslot: ${res.message || 'Error occurred'}`);
               }
               setEditingDuration(null);
+              return res;
             }}
           />
 
@@ -2487,6 +2490,7 @@ export default function ServiceDetailView() {
                 toast.error(`Failed to ${editingPack ? 'update' : 'add'} session pack: ${res.message || 'Error occurred'}`);
               }
               setEditingPack(null);
+              return res;
             }}
           />
 

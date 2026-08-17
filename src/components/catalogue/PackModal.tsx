@@ -2,12 +2,18 @@
 
 import React, { useEffect, useState } from 'react';
 import { X, Loader2 } from 'lucide-react';
+import { toast } from 'react-toastify';
 import { ServiceDuration, ServicePackage } from '../../types/catalogue';
+import { useCatalogue } from '../../contexts/CatalogueContext';
+import { saveZonePackageConfigServerAction, deleteZonePackageConfigServerAction } from '../../lib/server-actions/zone';
+import ZonePriceOverridesFields, { ZoneOverrideValue } from './ZonePriceOverridesFields';
 
 interface PackModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAdd: (pkg: Omit<ServicePackage, 'id'>) => void | Promise<void>;
+  // Returning { id } lets a brand-new pack's zone price overrides (see zoneOverrides state
+  // below) be saved right after creation, before the id would otherwise be known.
+  onAdd: (pkg: Omit<ServicePackage, 'id'>) => (void | { id?: string }) | Promise<void | { id?: string }>;
   initialData?: ServicePackage | null;
   // This service's own durations. No manual "which duration" picker — a pack's base price is
   // always sessions x the service's default duration price (same rule everywhere), adjusted by
@@ -41,6 +47,9 @@ export default function PackModal({
   const [saveToLibrary, setSaveToLibrary] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  const { zones, zonePackageConfigs, zoneDurationConfigs, refreshData } = useCatalogue();
+  const [zoneOverrides, setZoneOverrides] = useState<Record<string, ZoneOverrideValue>>({});
+
   useEffect(() => {
     if (isOpen) {
       setSaveToLibrary(true);
@@ -56,7 +65,26 @@ export default function PackModal({
         setSessions('1');
         setDiscountPercent('0');
       }
+
+      if (initialData?.id) {
+        // Zone rows store a flat price/originalPrice (same as the base pack), so re-derive the
+        // Discount Percent the same way the base pack's own field is derived above.
+        const existing: Record<string, ZoneOverrideValue> = {};
+        zonePackageConfigs
+          .filter((c) => c.servicePackageId === initialData.id)
+          .forEach((c) => {
+            const base = c.originalPrice ?? c.price;
+            const percent = base > 0 ? Math.round(((c.price - base) / base) * 100) : 0;
+            existing[c.zoneId] = { discountPercent: String(Math.max(0, percent)) };
+          });
+        setZoneOverrides(existing);
+      } else {
+        setZoneOverrides({});
+      }
     }
+    // zonePackageConfigs intentionally omitted — only re-derive when the modal (re)opens or
+    // switches which pack it's editing, not every time the list refreshes underneath it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, initialData]);
 
   if (!isOpen) return null;
@@ -73,12 +101,84 @@ export default function PackModal({
   const pricePerSession = sessionsNum > 0 ? Math.round(finalPrice / sessionsNum) : 0;
   const canSubmit = !!baseDuration && sessionsNum > 0;
 
+  // A zone's own duration price override (if any) is the reference rate for that zone — falls
+  // back to the service-wide baseDuration price, same as the pack's own preview above.
+  const getZoneDurationPrice = (zoneId: string): number => {
+    if (!baseDuration) return 0;
+    const override = zoneDurationConfigs.find(
+      (c) => c.zoneId === zoneId && c.serviceDurationId === baseDuration.id
+    );
+    return override ? override.price : baseDuration.price;
+  };
+
+  // Live preview of what each zone's typed Discount Percent resolves to, so the admin can see
+  // the actual rupee amount even though the input itself is a percent.
+  const zoneHints: Record<string, string> = {};
+  zones.forEach((zone) => {
+    const percentTrim = zoneOverrides[zone.id]?.discountPercent?.trim();
+    if (!percentTrim) return;
+    const percentNum = Number(percentTrim);
+    if (!Number.isFinite(percentNum)) return;
+    const zoneDurationPrice = getZoneDurationPrice(zone.id);
+    const zoneBasePrice = zoneDurationPrice * sessionsNum;
+    const zoneFinalPrice = Math.round(zoneBasePrice * (1 + Math.max(0, percentNum) / 100));
+    zoneHints[zone.id] = `≈ ₹${zoneFinalPrice} (×${sessionsNum || 0} @ ₹${zoneDurationPrice})`;
+  });
+
+  // Writes/clears one ZonePackageConfig per zone based on zoneOverrides — blank Discount Percent
+  // means "no override, use the pack's own Discount Percent above". The backend still stores a
+  // flat price/originalPrice per zone (mirrors the base pack), so the typed percent is resolved
+  // against that zone's own duration price before saving. Only refetches (refreshData) if
+  // something actually changed, so a pack saved without touching zone pricing doesn't trigger
+  // the full reload.
+  const syncZoneOverrides = async (packageId: string) => {
+    const existingByZone = new Map(
+      zonePackageConfigs.filter((c) => c.servicePackageId === packageId).map((c) => [c.zoneId, c])
+    );
+    let changed = false;
+    let failed = 0;
+    await Promise.all(
+      zones.map(async (zone) => {
+        const val = zoneOverrides[zone.id];
+        const existing = existingByZone.get(zone.id);
+        const percentTrim = val?.discountPercent?.trim();
+        if (!percentTrim) {
+          if (existing) {
+            changed = true;
+            const res = await deleteZonePackageConfigServerAction(existing.id);
+            if (!res.ok) failed += 1;
+          }
+          return;
+        }
+        const percentNum = Number(percentTrim);
+        if (!Number.isFinite(percentNum)) return;
+        const zoneDiscountNum = Math.max(0, percentNum);
+        const zoneDurationPrice = getZoneDurationPrice(zone.id);
+        const zoneBasePrice = zoneDurationPrice * sessionsNum;
+        const zoneFinalPrice = Math.round(zoneBasePrice * (1 + zoneDiscountNum / 100));
+        changed = true;
+        const res = await saveZonePackageConfigServerAction(existing?.id ?? null, {
+          zoneId: zone.id,
+          servicePackageId: packageId,
+          price: zoneFinalPrice,
+          originalPrice: zoneBasePrice,
+          savingsPercent: zoneDiscountNum,
+        });
+        if (!res.ok) failed += 1;
+      })
+    );
+    if (changed) {
+      await refreshData();
+      if (failed > 0) toast.error(`${failed} zone price${failed === 1 ? '' : 's'} failed to save.`);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit || saving) return;
     setSaving(true);
     try {
-      await onAdd({
+      const res = await onAdd({
         label: label.trim() || `${sessionsNum} Session${sessionsNum === 1 ? '' : 's'}`,
         sessions: sessionsNum,
         // price/pricePerSession/originalPrice are only computed here to satisfy ServicePackage's
@@ -90,6 +190,8 @@ export default function PackModal({
         savings: undefined,
         savingsPercent: discountNum,
       });
+      const packageId = initialData?.id ?? res?.id;
+      if (packageId) await syncZoneOverrides(packageId);
       onClose();
     } finally {
       setSaving(false);
@@ -165,6 +267,24 @@ export default function PackModal({
         Applies to whichever duration this pack is booked with{durations.length > 1 ? ` — this service has ${durations.length} durations` : ''}.
       </p>
 
+      <div>
+        <label className="text-sm font-medium text-gray-700 mb-1 block">
+          Zone Pricing <span className="text-gray-400 font-normal">(optional)</span>
+        </label>
+        <p className="text-[11px] text-gray-400 mb-2">
+          Leave a zone blank to use the Discount Percent above for it. Packages don&apos;t have a flat
+          price, so zone overrides are a percent too — applied to that zone&apos;s own duration price.
+        </p>
+        <ZonePriceOverridesFields
+          zones={zones}
+          values={zoneOverrides}
+          onChange={(zoneId, value) => setZoneOverrides((prev) => ({ ...prev, [zoneId]: value }))}
+          mode="discount"
+          defaultDiscountPercent={discountNum}
+          hints={zoneHints}
+        />
+      </div>
+
       {showLibraryCheckbox && !isEditing && (
         <label className="flex items-center gap-2 cursor-pointer select-none w-fit">
           <input
@@ -201,7 +321,7 @@ export default function PackModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl relative border border-gray-100">
+      <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl relative border border-gray-100 max-h-[90vh] overflow-y-auto">
         <button
           onClick={onClose}
           className="absolute top-5 right-5 w-8 h-8 rounded-full bg-[#1C1512] text-white flex items-center justify-center hover:bg-black transition-colors"

@@ -7,8 +7,14 @@ import Header from './Header';
 import { useAuth } from '../../contexts/AuthContext';
 import { Loader2, Sparkles } from 'lucide-react';
 
+const SIDEBAR_COLLAPSED_STORAGE_KEY = 'eezit-admin-sidebar-collapsed';
+
 export default function MainLayout({ children }: { children: React.ReactNode }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  // Desktop-only "minimize" state for the sidebar — mobile always uses the full-width drawer
+  // (see the Sidebar instance below), so this never applies there. Persisted so the admin's
+  // choice survives a reload/new tab instead of resetting to expanded every time.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
   const { isAuthenticated, isLoading } = useAuth();
@@ -22,6 +28,18 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
       }
     }
   }, [isLoading, isAuthenticated, isLoginPage, router]);
+
+  useEffect(() => {
+    setSidebarCollapsed(localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === 'true');
+  }, []);
+
+  const toggleSidebarCollapsed = () => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, String(next));
+      return next;
+    });
+  };
 
   // If viewing the login page, render child component directly
   if (isLoginPage) {
@@ -52,8 +70,8 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
     <div className="flex h-screen w-screen max-w-full bg-[#FAF9F6] text-gray-800 font-sans antialiased overflow-hidden">
       
       {/* Desktop Fixed Sidebar - Fixed 100% Height, Never Scrolls with Content */}
-      <div className="hidden lg:block h-screen flex-shrink-0 w-64 border-r border-[#2D231E]">
-        <Sidebar />
+      <div className={`hidden lg:block h-screen flex-shrink-0 border-r border-[#2D231E] transition-all duration-300 ${sidebarCollapsed ? 'w-20' : 'w-64'}`}>
+        <Sidebar collapsed={sidebarCollapsed} onToggleCollapse={toggleSidebarCollapsed} />
       </div>
 
       {/* Mobile Drawer Overlay (< 1024px) */}

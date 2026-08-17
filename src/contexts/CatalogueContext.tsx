@@ -107,7 +107,11 @@ import {
   ZoneSuiteConfigPayload,
 } from '../lib/server-actions/zone';
 
-type ActionResponse = { ok: boolean; message?: string };
+// `id` is only populated by actions that create/update a single entity with a server-known id
+// (e.g. addDurationToService) — callers that need to immediately reference the saved row (for
+// example to attach a zone price override to a brand-new duration/package) can read it back
+// instead of re-deriving it from a refetched list.
+type ActionResponse = { ok: boolean; message?: string; id?: string };
 
 interface CatalogueContextType {
   loading: boolean;
@@ -1051,7 +1055,7 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         await createDefaultPackIfMissing(serviceId);
         await loadServicePackagesList(serviceId);
       }
-      return { ok: true };
+      return { ok: true, id: res.data?.id };
     }
     return { ok: false, message: res.message };
   };
@@ -1072,7 +1076,7 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     });
     if (res.ok) {
       await Promise.all([loadServiceDurationsList(serviceId), loadAllServiceDurations()]);
-      return { ok: true };
+      return { ok: true, id: res.data?.id ?? durationId };
     }
     return { ok: false, message: res.message };
   };
@@ -1101,7 +1105,7 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     });
     if (res.ok) {
       await Promise.all([loadServicePackagesList(serviceId), loadAllServicePackages()]);
-      return { ok: true };
+      return { ok: true, id: res.data?.id };
     }
     return { ok: false, message: res.message };
   };
@@ -1119,7 +1123,7 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     });
     if (res.ok) {
       await Promise.all([loadServicePackagesList(serviceId), loadAllServicePackages()]);
-      return { ok: true };
+      return { ok: true, id: res.data?.id ?? packageId };
     }
     return { ok: false, message: res.message };
   };

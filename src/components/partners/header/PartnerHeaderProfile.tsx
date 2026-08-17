@@ -6,6 +6,7 @@ import { Partner } from '../../../types/partner';
 import { Avatar } from '../../ui/avatar';
 import { Badge } from '../../ui/badge';
 import { Button } from '../../ui/button';
+import { formatPhone } from '../../../lib/utils';
 
 interface PartnerHeaderProfileProps {
   partner: Partner;
@@ -25,7 +26,7 @@ export default function PartnerHeaderProfile({
   const partnerName = partner.name || 'Unnamed Partner';
   const partnerIdDisplay = `PR_${partner.id.slice(-6).toUpperCase()}`;
   const partnerLocation = partner.city || partner.state || 'N/A';
-  const partnerPhone = partner.phone || partner.countryCode || 'N/A';
+  const partnerPhone = partner.phone ? formatPhone(partner.phone, partner.countryCode) : 'N/A';
   const partnerEmail = partner.email || 'N/A';
   const partnerType = partner.type || 'INDIVIDUAL';
   const isOnline = partner.isOnline;

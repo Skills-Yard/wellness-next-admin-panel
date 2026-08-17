@@ -115,11 +115,27 @@ export async function rejectPartnerKycServerAction(id: string, reason: string): 
   }
 }
 
-export async function getPartnerKycDocUrlsServerAction(id: string): Promise<Record<string, string>> {
+// Short-lived presigned GET URLs for a partner's KYC documents, keyed by document label
+// (aadhaarFront, aadhaarBack, pan, selfie, video, businessLicense, businessPan,
+// cancelledCheque) plus a `certificates` array — see PartnerKycService.getKycDocumentUrls
+// on the backend. Values expire after a while; callers should offer a way to re-fetch.
+export interface PartnerKycDocUrls {
+  aadhaarFront?: string;
+  aadhaarBack?: string;
+  pan?: string;
+  selfie?: string;
+  video?: string;
+  businessLicense?: string;
+  businessPan?: string;
+  cancelledCheque?: string;
+  certificates?: string[];
+}
+
+export async function getPartnerKycDocUrlsServerAction(id: string): Promise<PartnerKycDocUrls> {
   try {
     const headers = await getAuthHeaders();
     const response = await axiosInstance.get(`/admin/partners/${id}/kyc/document-urls`, { headers });
-    return unwrap<Record<string, string>>(response.data, {});
+    return unwrap<PartnerKycDocUrls>(response.data, {});
   } catch (error: any) {
     console.error('[getPartnerKycDocUrlsServerAction]', error?.response?.data || error.message);
     return {};
