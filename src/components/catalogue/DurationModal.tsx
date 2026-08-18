@@ -22,6 +22,12 @@ interface DurationModalProps {
   // Renders just the form (no backdrop/card/close button/title) for use inside AddSectionModal's
   // "Create" tab. Standalone (non-embedded) use — the Edit flow — is unaffected.
   embedded?: boolean;
+  // Hides the built-in "Zone Pricing" block — used by ServiceZoneCard (Zones -> Services tab),
+  // which offers its own simpler "This zone / All zones" toggle instead of this per-zone list.
+  // Purely visual: zoneOverrides state (and the resulting syncZoneOverrides call on submit) is
+  // untouched, so it stays a harmless no-op there (nothing typed into a hidden field) instead of
+  // fighting the caller's own zone-price sync.
+  hideZonePricing?: boolean;
 }
 
 export default function DurationModal({
@@ -31,6 +37,7 @@ export default function DurationModal({
   initialData,
   showLibraryCheckbox = true,
   embedded = false,
+  hideZonePricing = false,
 }: DurationModalProps) {
   const [label, setLabel] = useState('90 mins');
   const [minutes, setMinutes] = useState('90');
@@ -139,7 +146,10 @@ export default function DurationModal({
         discountedPrice: discountedNum ?? undefined,
       });
       const durationId = initialData?.id ?? res?.id;
-      if (durationId) await syncZoneOverrides(durationId);
+      // hideZonePricing means the caller owns zone pricing entirely (see ServiceZoneCard) — skip
+      // this modal's own sync too, not just its UI, so a caller-driven zone-price write isn't
+      // immediately followed by this stale-closure sync silently re-saving/overwriting it.
+      if (!hideZonePricing && durationId) await syncZoneOverrides(durationId);
       onClose();
     } finally {
       setSaving(false);
@@ -206,21 +216,23 @@ export default function DurationModal({
         )}
       </div>
 
-      <div>
-        <label className="text-sm font-medium text-gray-700 mb-1 block">
-          Zone Pricing <span className="text-gray-400 font-normal">(optional)</span>
-        </label>
-        <p className="text-[11px] text-gray-400 mb-2">
-          Leave a zone blank to use the price above for it.
-        </p>
-        <ZonePriceOverridesFields
-          zones={zones}
-          values={zoneOverrides}
-          onChange={(zoneId, value) => setZoneOverrides((prev) => ({ ...prev, [zoneId]: value }))}
-          showDiscounted
-          basePrice={originalNum}
-        />
-      </div>
+      {!hideZonePricing && (
+        <div>
+          <label className="text-sm font-medium text-gray-700 mb-1 block">
+            Zone Pricing <span className="text-gray-400 font-normal">(optional)</span>
+          </label>
+          <p className="text-[11px] text-gray-400 mb-2">
+            Leave a zone blank to use the price above for it.
+          </p>
+          <ZonePriceOverridesFields
+            zones={zones}
+            values={zoneOverrides}
+            onChange={(zoneId, value) => setZoneOverrides((prev) => ({ ...prev, [zoneId]: value }))}
+            showDiscounted
+            basePrice={originalNum}
+          />
+        </div>
+      )}
 
       {showLibraryCheckbox && !isEditing && (
         <label className="flex items-center gap-2 cursor-pointer select-none w-fit">

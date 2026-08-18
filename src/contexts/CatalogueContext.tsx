@@ -1161,7 +1161,7 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     });
     if (res.ok) {
       await Promise.all([loadServiceAddOnsList(serviceId), loadAllServiceAddOns()]);
-      return { ok: true };
+      return { ok: true, id: res.data?.id };
     }
     return { ok: false, message: res.message };
   };

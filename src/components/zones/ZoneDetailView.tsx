@@ -9,6 +9,7 @@ import { Badge } from '../ui/badge';
 import { Card } from '../ui/card';
 import ZoneModal from './ZoneModal';
 import ZoneConfigModal from './ZoneConfigModal';
+import ServiceZoneCard, { PanelKind } from './ServiceZoneCard';
 
 type Tab = 'services' | 'durations' | 'packages' | 'addons' | 'suites';
 
@@ -24,7 +25,11 @@ export default function ZoneDetailView() {
   const {
     selectedZone,
     setSelectedZone,
+    categories,
+    subCategories,
     serviceItems,
+    suites,
+    setSelectedServiceItem,
     zoneServiceItemConfigs,
     zoneDurationConfigs,
     zonePackageConfigs,
@@ -41,6 +46,22 @@ export default function ZoneDetailView() {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [configModalOpen, setConfigModalOpen] = useState(false);
 
+  // Which service card's Duration/Package/Add-on panel is expanded — only one at a time (see
+  // ServiceZoneCard's note: they all read off CatalogueContext's single-slot selectedServiceItem).
+  const [openServiceId, setOpenServiceId] = useState<string | null>(null);
+  const [openPanel, setOpenPanel] = useState<PanelKind | null>(null);
+
+  const togglePanel = (serviceItemId: string, panel: PanelKind) => {
+    if (openServiceId === serviceItemId && openPanel === panel) {
+      setOpenServiceId(null);
+      setOpenPanel(null);
+      return;
+    }
+    setOpenServiceId(serviceItemId);
+    setOpenPanel(panel);
+    setSelectedServiceItem(serviceItems.find((s) => s.id === serviceItemId) ?? null);
+  };
+
   if (!selectedZone) return null;
 
   const services = zoneServiceItemConfigs.filter((c) => c.zoneId === selectedZone.id);
@@ -53,6 +74,32 @@ export default function ZoneDetailView() {
   // — resolve the parent service item's name too so two services sharing a label aren't confused.
   const serviceNameFor = (serviceItemId?: string) =>
     serviceItems.find((s) => s.id === serviceItemId)?.name;
+
+  // A service's suite (ServiceItem.suiteId) — resolved here so ServiceZoneCard's Suite button
+  // doesn't need its own copy of `suites` just to look up one name.
+  const suiteForServiceItem = (serviceItemId?: string) => {
+    const svc = serviceItems.find((s) => s.id === serviceItemId);
+    if (!svc) return undefined;
+    return suites.find((s) => s.id === svc.suiteId);
+  };
+
+  // Group the Services tab's rows by category (same "category-wise <select>" grouping as
+  // ZoneConfigModal) so the tab reads as a catalogue browse instead of a flat, unordered list.
+  const serviceCategoryGroups = categories
+    .map((cat) => ({
+      categoryName: cat.name,
+      configs: services.filter((c) => {
+        const svc = serviceItems.find((s) => s.id === c.serviceItemId);
+        const subCat = svc && subCategories.find((sc) => sc.id === svc.subCategoryId);
+        return subCat?.categoryId === cat.id;
+      }),
+    }))
+    .filter((group) => group.configs.length > 0);
+  const groupedConfigIds = new Set(serviceCategoryGroups.flatMap((g) => g.configs.map((c) => c.id)));
+  const ungroupedConfigs = services.filter((c) => !groupedConfigIds.has(c.id));
+  if (ungroupedConfigs.length > 0) {
+    serviceCategoryGroups.push({ categoryName: 'Other', configs: ungroupedConfigs });
+  }
 
   const tabs: { key: Tab; label: string; count: number }[] = [
     { key: 'services', label: 'Services', count: services.length },
@@ -121,17 +168,37 @@ export default function ZoneDetailView() {
             services.length === 0 ? (
               <EmptyRow label="service availability overrides" />
             ) : (
-              services.map((c) => (
-                <ConfigRow
-                  key={c.id}
-                  title={c.serviceItem?.name || c.serviceItemId}
-                  subtitle={`${c.isAvailable ? 'Available' : 'Unavailable'} · ${c.surgeMultiplier}x surge`}
-                  onDelete={async () => {
-                    const res = await deleteZoneServiceItemConfig(c.id);
-                    if (res.ok) toast.success('Removed'); else toast.error(res.message || 'Failed to remove');
-                  }}
-                />
-              ))
+              <div className="p-4 sm:p-6 space-y-6">
+                {serviceCategoryGroups.map((group) => (
+                  <div key={group.categoryName}>
+                    <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
+                      {group.categoryName} <span className="text-gray-300">({group.configs.length})</span>
+                    </h3>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                      {group.configs.map((c) => {
+                        const suite = suiteForServiceItem(c.serviceItemId);
+                        return (
+                          <ServiceZoneCard
+                            key={c.id}
+                            config={c}
+                            serviceName={c.serviceItem?.name || serviceNameFor(c.serviceItemId) || c.serviceItemId}
+                            zoneId={selectedZone.id}
+                            zoneName={selectedZone.name}
+                            suiteId={suite?.id}
+                            suiteName={suite?.name}
+                            openPanel={openServiceId === c.serviceItemId ? openPanel : null}
+                            onTogglePanel={(panel) => togglePanel(c.serviceItemId, panel)}
+                            onDelete={async () => {
+                              const res = await deleteZoneServiceItemConfig(c.id);
+                              if (res.ok) toast.success('Removed'); else toast.error(res.message || 'Failed to remove');
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
             )
           )}
 

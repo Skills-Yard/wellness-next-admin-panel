@@ -1,7 +1,12 @@
+// Widened with `| (string & {})` on both types below — /admin/bookings/all has been observed
+// returning values not in these lists (e.g. status "NO_PARTNER_FOUND"), so treating this as a
+// closed enum silently mis-groups anything new. The named literals still drive autocomplete;
+// unknown values just fall through typed as string instead of erroring.
 export type BookingStatus =
   | 'PENDING_PAYMENT'
   | 'CONFIRMED'
   | 'ASSIGNING_PARTNER'
+  | 'NO_PARTNER_FOUND'
   | 'PARTNER_ASSIGNED'
   | 'PARTNER_EN_ROUTE'
   | 'PARTNER_ARRIVED'
@@ -9,10 +14,14 @@ export type BookingStatus =
   | 'COMPLETED'
   | 'CANCELLED'
   | 'EXPIRED'
-  | 'REFUNDED';
+  | 'REFUNDED'
+  | (string & {});
 
 export type BookingType = 'ON_DEMAND' | 'SCHEDULED' | 'RECURRING_INSTANCE';
-export type PaymentStatus = 'PENDING' | 'COMPLETED' | 'FAILED' | 'REFUNDED';
+// Gateway-reported status on BookingPayment.status (Razorpay-style: PENDING/CAPTURED/FAILED/
+// REFUNDED, not the COMPLETED/FAILED/REFUNDED guess this used to be) — kept only as a loose
+// reference; nothing on Booking itself carries a top-level paymentStatus (see below).
+export type PaymentStatus = 'PENDING' | 'CAPTURED' | 'AUTHORIZED' | 'FAILED' | 'REFUNDED' | (string & {});
 
 export interface BookingUser {
   id: string;
@@ -81,18 +90,31 @@ export interface Booking {
   userId: string;
   partnerId?: string | null;
   partnerEmployeeId?: string | null;
+  // Real field name on /admin/bookings/all (partnerEmployeeId above isn't actually sent there) —
+  // added alongside rather than renaming, so this doesn't move whatever partnerEmployeeId's
+  // existing callers already reference elsewhere.
+  assignedEmployeeId?: string | null;
   addressId?: string | null;
   scheduledDate: string;
   scheduledTime: string;
   bookingType: BookingType;
   status: BookingStatus;
-  paymentStatus: PaymentStatus;
+  // NOT actually present on /admin/bookings/all's rows (confirmed against a real response) —
+  // whether money was collected lives on `payment.status` instead (see BookingPayment below).
+  // Left optional rather than removed in case some other endpoint does populate it.
+  paymentStatus?: PaymentStatus;
   subtotal: number;
   discountAmount: number;
-  taxes: number;
+  // Also not present on /admin/bookings/all — that endpoint sends platformFee instead. Left
+  // optional for the same reason as paymentStatus above.
+  taxes?: number;
+  platformFee?: number;
+  partnerEarning?: number;
   totalAmount: number;
   estimatedDurationMinutes: number;
   rating?: number | null;
+  completedAt?: string | null;
+  cancelledAt?: string | null;
   createdAt: string;
   updatedAt: string;
 

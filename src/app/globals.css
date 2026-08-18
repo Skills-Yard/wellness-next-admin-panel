@@ -18,3 +18,18 @@ body {
   font-family: var(--font-plus-jakarta), "Plus Jakarta Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   letter-spacing: -0.015em;
 }
+
+/* Used via the arbitrary-value `animate-[fadeSlideIn_...]` utility (no animate plugin is
+   installed, so Tailwind's own `animate-in`/`fade-in` classes elsewhere in this codebase are
+   inert — this keyframe is defined by hand instead). Content re-keyed on category/filter switch
+   replays this to fade the new content in rather than popping it. */
+@keyframes fadeSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

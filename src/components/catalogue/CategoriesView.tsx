@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useLayoutEffect, useEffect } from 'react';
 import { Plus, Edit3, Trash2, ChevronDown, ChevronLeft, ChevronRight, Loader2, FolderPlus, MapPin } from 'lucide-react';
 import { useCatalogue } from '../../contexts/CatalogueContext';
 import { Button } from '../ui/button';
@@ -8,7 +8,73 @@ import { Badge } from '../ui/badge';
 import { Card } from '../ui/card';
 import { toast } from 'react-toastify';
 import SuiteZoneAvailabilityModal from './SuiteZoneAvailabilityModal';
-import { ServiceSuite } from '../../types/catalogue';
+import { ServiceCategory, ServiceSuite } from '../../types/catalogue';
+
+// Category "chip" tabs — replaces the old click-to-open dropdown so every category is visible at
+// a glance and switching is a single click. Shared by Section 1B (suites) and Section 2
+// (sub-categories) below, both of which just want to change the same `selectedCategory`. The
+// active pill is a single absolutely-positioned div that slides/resizes to the selected tab's
+// measured position instead of the highlight just popping from one tab to another.
+function CategoryTabs({
+  categories,
+  selectedId,
+  onSelect,
+}: {
+  categories: ServiceCategory[];
+  selectedId?: string;
+  onSelect: (category: ServiceCategory) => void;
+}) {
+  const tabRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const [indicator, setIndicator] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+
+  const measure = () => {
+    const el = selectedId ? tabRefs.current.get(selectedId) : null;
+    setIndicator(el ? { left: el.offsetLeft, top: el.offsetTop, width: el.offsetWidth, height: el.offsetHeight } : null);
+  };
+
+  // Recompute whenever the selection or the tab list itself changes (categories are rarely
+  // added/removed live, but this keeps the indicator honest if they are).
+  useLayoutEffect(measure, [selectedId, categories]);
+
+  // Tab widths can reflow at responsive breakpoints even though the selection didn't change.
+  useEffect(() => {
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, categories]);
+
+  if (categories.length === 0) return null;
+
+  return (
+    <div className="relative flex items-center gap-1.5 overflow-x-auto py-1">
+      {/* Sliding active-tab pill — sits behind the tab labels (z-10 below) and eases toward
+          whichever one is selected instead of jumping. */}
+      {indicator && (
+        <div
+          className="absolute rounded-full bg-[#1C1512] shadow-xs transition-all duration-300 ease-out"
+          style={{ left: indicator.left, top: indicator.top, width: indicator.width, height: indicator.height }}
+        />
+      )}
+      {categories.map((cat) => (
+        <button
+          key={cat.id}
+          ref={(el) => {
+            if (el) tabRefs.current.set(cat.id, el);
+            else tabRefs.current.delete(cat.id);
+          }}
+          onClick={() => onSelect(cat)}
+          className={`relative z-10 shrink-0 px-4 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap transition-colors duration-300 ${
+            selectedId === cat.id
+              ? 'text-white'
+              : 'bg-[#FAF5F0] text-gray-600 hover:text-[#C68A4C] hover:bg-[#F2E5D9]'
+          }`}
+        >
+          {cat.name}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export default function CategoriesView() {
   const {
@@ -28,14 +94,14 @@ export default function CategoriesView() {
     deleteServiceSuite
   } = useCatalogue();
 
-  const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
-  // Separate open/close state from the Sub-Categories section's dropdown below (even though
-  // both just pick `selectedCategory`) so opening one doesn't also pop the other's menu open.
-  const [suiteCategoryDropdownOpen, setSuiteCategoryDropdownOpen] = useState(false);
   // Filters the Sub-Categories table (Section 2) down to sub-categories that have at least one
   // service in the chosen suite — 'all' shows every sub-category for the active category.
   const [subCategorySuiteFilter, setSubCategorySuiteFilter] = useState<string>('all');
   const [subCategorySuiteFilterOpen, setSubCategorySuiteFilterOpen] = useState(false);
+  // Same idea as the suite filter above, but keyed off gender instead (genders are global — see
+  // currentGenders below for how the active-category set is derived).
+  const [subCategoryGenderFilter, setSubCategoryGenderFilter] = useState<string>('all');
+  const [subCategoryGenderFilterOpen, setSubCategoryGenderFilterOpen] = useState(false);
   // Suite selected for the "Zone Availability" modal (see ZoneSuiteConfig in catalogue.ts) —
   // separate from modalEditData/openCategoryModal since this isn't a category-modal edit flow.
   const [suiteForZoneModal, setSuiteForZoneModal] = useState<ServiceSuite | null>(null);
@@ -46,9 +112,10 @@ export default function CategoriesView() {
     s => s.categoryId === selectedCategory?.id
   );
 
-  // Sub-categories and suites are both scoped to a category but not to each other directly —
-  // the only link is via ServiceItem (each service has both a subCategoryId and a suiteId). Look
-  // up which suites a sub-category's services actually belong to from that join.
+  // Sub-categories, suites and genders are all scoped to a category but not to each other
+  // directly — the only link is via ServiceItem (each service has a subCategoryId plus a
+  // suiteId/genderId). Look up which suites/genders a sub-category's services actually belong to
+  // from that join.
   const suiteIdsForSubCategory = (subCategoryId: string) =>
     Array.from(new Set(
       serviceItems.filter(s => s.subCategoryId === subCategoryId).map(s => s.suiteId).filter(Boolean)
@@ -58,24 +125,55 @@ export default function CategoriesView() {
       .map(id => suites.find(su => su.id === id))
       .filter((s): s is typeof suites[number] => !!s);
 
+  const genderIdsForSubCategory = (subCategoryId: string) =>
+    Array.from(new Set(
+      serviceItems.filter(s => s.subCategoryId === subCategoryId).map(s => s.genderId).filter(Boolean)
+    ));
+  const gendersForSubCategory = (subCategoryId: string) =>
+    genderIdsForSubCategory(subCategoryId)
+      .map(id => genders.find(g => g.id === id))
+      .filter((g): g is typeof genders[number] => !!g);
+
   // Suites for the active category (see ServiceSuite in catalog.prisma) — scoped the same way
-  // sub-categories are. Genders are global (no categoryId), so that table below isn't filtered.
+  // sub-categories are.
   const currentSuites = suites.filter(s => s.categoryId === selectedCategory?.id);
 
-  // A suiteId picked while viewing one category won't exist under another — fall back to "all"
-  // rather than filtering everything out (or needing an effect to reset the raw state) once the
-  // active category changes out from under a previously-picked suite.
+  // Genders are global (no categoryId) — "current" here means whichever genders are actually in
+  // use by a service under one of the active category's sub-categories, not every gender that
+  // exists globally.
+  const currentGenders = genders.filter(g =>
+    currentSubCategories.some(sub => genderIdsForSubCategory(sub.id).includes(g.id))
+  );
+
+  // A suiteId/genderId picked while viewing one category won't exist under another — fall back
+  // to "all" rather than filtering everything out (or needing an effect to reset the raw state)
+  // once the active category changes out from under a previously-picked filter.
   const activeSuiteFilter = subCategorySuiteFilter !== 'all' && !currentSuites.some(s => s.id === subCategorySuiteFilter)
     ? 'all'
     : subCategorySuiteFilter;
+  const activeGenderFilter = subCategoryGenderFilter !== 'all' && !currentGenders.some(g => g.id === subCategoryGenderFilter)
+    ? 'all'
+    : subCategoryGenderFilter;
 
   const subCategorySuiteFilterLabel = activeSuiteFilter === 'all'
     ? 'All Suites'
     : suites.find(su => su.id === activeSuiteFilter)?.name || 'All Suites';
+  const subCategoryGenderFilterLabel = activeGenderFilter === 'all'
+    ? 'All Genders'
+    : genders.find(g => g.id === activeGenderFilter)?.name || 'All Genders';
 
-  const filteredSubCategories = activeSuiteFilter === 'all'
-    ? currentSubCategories
-    : currentSubCategories.filter(sub => suiteIdsForSubCategory(sub.id).includes(activeSuiteFilter));
+  const filteredSubCategories = currentSubCategories.filter(sub => {
+    const suiteOk = activeSuiteFilter === 'all' || suiteIdsForSubCategory(sub.id).includes(activeSuiteFilter);
+    const genderOk = activeGenderFilter === 'all' || genderIdsForSubCategory(sub.id).includes(activeGenderFilter);
+    return suiteOk && genderOk;
+  });
+
+  // Human-readable summary of whichever filters are currently narrowing the table, used by the
+  // "no matches" empty state below.
+  const activeFilterDescriptions = [
+    activeSuiteFilter !== 'all' ? `the "${subCategorySuiteFilterLabel}" suite` : null,
+    activeGenderFilter !== 'all' ? `the "${subCategoryGenderFilterLabel}" gender` : null,
+  ].filter((d): d is string => !!d).join(' and ');
 
   // The backend doesn't return subCategoriesCount/servicesCount on category/sub-category
   // responses — compute them client-side from the already-loaded lists.
@@ -404,36 +502,9 @@ export default function CategoriesView() {
         {/* Section Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-xl md:text-2xl font-bold text-gray-400 tracking-tight">Suites for</h2>
-              <div className="relative inline-block">
-                <button
-                  onClick={() => setSuiteCategoryDropdownOpen(!suiteCategoryDropdownOpen)}
-                  className="flex items-center gap-1.5 text-xl md:text-2xl font-bold text-gray-900 tracking-tight hover:text-[#C68A4C] transition-colors"
-                >
-                  <span>{selectedCategory?.name || 'Category'}</span>
-                  <ChevronDown className="w-4 h-4 text-gray-600" />
-                </button>
-
-                {/* Category selector dropdown */}
-                {suiteCategoryDropdownOpen && (
-                  <div className="absolute top-full left-0 mt-2 w-56 bg-white border border-gray-100 rounded-xl shadow-xl z-20 py-1">
-                    {categories.map((cat) => (
-                      <button
-                        key={cat.id}
-                        onClick={() => {
-                          setSelectedCategory(cat);
-                          setSuiteCategoryDropdownOpen(false);
-                        }}
-                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-[#FAF5F0] hover:text-[#C68A4C] font-medium"
-                      >
-                        {cat.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
+            <h2 className="text-xl md:text-2xl font-bold text-gray-900 tracking-tight">
+              Suites for <span className="text-[#C68A4C]">{selectedCategory?.name || 'Category'}</span>
+            </h2>
             <p className="text-xs md:text-sm text-gray-500 mt-0.5">
               Manage the suites (e.g. Classic, Premium) services under this category can belong to
             </p>
@@ -447,6 +518,10 @@ export default function CategoriesView() {
             <span>Add Suite</span>
           </Button>
         </div>
+
+        {/* Category switcher — tabs instead of a dropdown so every category is reachable in one
+            glance (see CategoryTabs above); drives the same selectedCategory used by Section 2. */}
+        <CategoryTabs categories={categories} selectedId={selectedCategory?.id} onSelect={setSelectedCategory} />
 
         {/* Suites Table Card */}
         <Card className="w-full">
@@ -474,7 +549,9 @@ export default function CategoriesView() {
               </Button>
             </div>
           ) : (
-            <div className="overflow-x-auto w-full">
+            // Re-keyed on the active category so switching tabs replays the fade-in instead of
+            // the new rows just appearing (see @keyframes fadeSlideIn in globals.css).
+            <div key={selectedCategory?.id} className="overflow-x-auto w-full animate-[fadeSlideIn_0.3s_ease-out]">
               <table className="w-full text-left border-collapse min-w-[500px]">
                 <thead>
                   <tr className="bg-[#FAF5F0] text-gray-700 text-xs font-semibold uppercase tracking-wider border-b border-[#F2E5D9]">
@@ -553,53 +630,52 @@ export default function CategoriesView() {
         {/* Section Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <div className="relative inline-block">
-              <button 
-                onClick={() => setCategoryDropdownOpen(!categoryDropdownOpen)}
-                className="flex items-center gap-2 text-2xl md:text-3xl font-bold text-gray-900 tracking-tight hover:text-[#C68A4C] transition-colors"
-              >
-                <span>{selectedCategory?.name || 'Category'}</span>
-                <ChevronDown className="w-5 h-5 text-gray-600" />
-              </button>
-
-              {/* Category selector dropdown */}
-              {categoryDropdownOpen && (
-                <div className="absolute top-full left-0 mt-2 w-56 bg-white border border-gray-100 rounded-xl shadow-xl z-20 py-1">
-                  {categories.map((cat) => (
-                    <button
-                      key={cat.id}
-                      onClick={() => {
-                        setSelectedCategory(cat);
-                        setCategoryDropdownOpen(false);
-                      }}
-                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-[#FAF5F0] hover:text-[#C68A4C] font-medium"
-                    >
-                      {cat.name}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            <h1 className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight">
+              {selectedCategory?.name || 'Category'}
+            </h1>
             <p className="text-xs md:text-sm text-gray-500 mt-0.5">
               Manage {selectedCategory?.name ? selectedCategory.name.toLowerCase() : 'category'} sub-categories
             </p>
           </div>
+          <Button
+            onClick={() => openCategoryModal('subcategory')}
+            className="self-start sm:self-auto bg-[#1C1512] hover:bg-black text-white rounded-xl shadow-xs"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Sub-Category</span>
+          </Button>
+        </div>
 
-          <div className="flex items-center gap-2 self-start sm:self-auto">
-            {/* Suite filter — only worth showing once the active category actually has suites to
-                filter by (see currentSuites, computed above for Section 1B). */}
-            {currentSuites.length > 0 && (
-              <div className="relative inline-block">
-                <button
-                  onClick={() => setSubCategorySuiteFilterOpen(!subCategorySuiteFilterOpen)}
-                  className="flex items-center gap-1.5 px-3 h-10 rounded-xl border border-gray-200 bg-white text-sm font-medium text-gray-700 hover:border-[#C68A4C] hover:text-[#C68A4C] transition-colors"
-                >
-                  <span>Suite: {subCategorySuiteFilterLabel}</span>
-                  <ChevronDown className="w-4 h-4" />
-                </button>
+        {/* Category switcher + Suite/Gender filters, flexed onto one line sitting right above the
+            table they control (see CategoryTabs above for the tabs' sliding indicator; the filter
+            dropdowns below fade/scale in via subCategorySuiteFilterOpen/subCategoryGenderFilterOpen
+            instead of just popping open). */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <CategoryTabs categories={categories} selectedId={selectedCategory?.id} onSelect={setSelectedCategory} />
 
-                {subCategorySuiteFilterOpen && (
-                  <div className="absolute top-full right-0 sm:left-0 mt-2 w-56 bg-white border border-gray-100 rounded-xl shadow-xl z-20 py-1 max-h-72 overflow-y-auto">
+          {(currentSuites.length > 0 || currentGenders.length > 0) && (
+            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap self-start sm:self-auto">
+              {/* Suite filter — only worth showing once the active category actually has suites
+                  to filter by (see currentSuites, computed above for Section 1B). */}
+              {currentSuites.length > 0 && (
+                <div className="relative inline-block">
+                  <button
+                    onClick={() => { setSubCategorySuiteFilterOpen(!subCategorySuiteFilterOpen); setSubCategoryGenderFilterOpen(false); }}
+                    className="flex items-center gap-1.5 px-3 h-10 rounded-xl border border-gray-200 bg-white text-sm font-medium text-gray-700 hover:border-[#C68A4C] hover:text-[#C68A4C] transition-colors"
+                  >
+                    <span>Suite: {subCategorySuiteFilterLabel}</span>
+                    <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${subCategorySuiteFilterOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {/* Always mounted (rather than only while open) so the fade/scale below can
+                      transition on close too, not just pop out of existence. */}
+                  <div
+                    className={`absolute top-full right-0 sm:left-0 mt-2 w-56 origin-top bg-white border border-gray-100 rounded-xl shadow-xl z-20 py-1 max-h-72 overflow-y-auto transition-all duration-150 ease-out ${
+                      subCategorySuiteFilterOpen
+                        ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto'
+                        : 'opacity-0 scale-95 -translate-y-1 pointer-events-none'
+                    }`}
+                  >
                     <button
                       onClick={() => {
                         setSubCategorySuiteFilter('all');
@@ -626,18 +702,58 @@ export default function CategoriesView() {
                       </button>
                     ))}
                   </div>
-                )}
-              </div>
-            )}
+                </div>
+              )}
 
-            <Button
-              onClick={() => openCategoryModal('subcategory')}
-              className="bg-[#1C1512] hover:bg-black text-white rounded-xl shadow-xs"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Add Sub-Category</span>
-            </Button>
-          </div>
+              {/* Gender filter — same pattern as the suite filter above, only shown once the
+                  active category actually has gender-tagged services to filter by. */}
+              {currentGenders.length > 0 && (
+                <div className="relative inline-block">
+                  <button
+                    onClick={() => { setSubCategoryGenderFilterOpen(!subCategoryGenderFilterOpen); setSubCategorySuiteFilterOpen(false); }}
+                    className="flex items-center gap-1.5 px-3 h-10 rounded-xl border border-gray-200 bg-white text-sm font-medium text-gray-700 hover:border-[#C68A4C] hover:text-[#C68A4C] transition-colors"
+                  >
+                    <span>Gender: {subCategoryGenderFilterLabel}</span>
+                    <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${subCategoryGenderFilterOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  <div
+                    className={`absolute top-full right-0 sm:left-0 mt-2 w-56 origin-top bg-white border border-gray-100 rounded-xl shadow-xl z-20 py-1 max-h-72 overflow-y-auto transition-all duration-150 ease-out ${
+                      subCategoryGenderFilterOpen
+                        ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto'
+                        : 'opacity-0 scale-95 -translate-y-1 pointer-events-none'
+                    }`}
+                  >
+                    <button
+                      onClick={() => {
+                        setSubCategoryGenderFilter('all');
+                        setSubCategoryGenderFilterOpen(false);
+                      }}
+                      className={`w-full text-left px-4 py-2 text-sm font-medium hover:bg-[#FAF5F0] hover:text-[#C68A4C] ${
+                        activeGenderFilter === 'all' ? 'text-[#C68A4C]' : 'text-gray-700'
+                      }`}
+                    >
+                      All Genders
+                    </button>
+                    {currentGenders.map((gender) => (
+                      <button
+                        key={gender.id}
+                        onClick={() => {
+                          setSubCategoryGenderFilter(gender.id);
+                          setSubCategoryGenderFilterOpen(false);
+                        }}
+                        className={`w-full text-left px-4 py-2 text-sm font-medium hover:bg-[#FAF5F0] hover:text-[#C68A4C] ${
+                          activeGenderFilter === gender.id ? 'text-[#C68A4C]' : 'text-gray-700'
+                        }`}
+                      >
+                        {gender.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Sub-Categories Table Card */}
@@ -669,28 +785,31 @@ export default function CategoriesView() {
               <div className="w-12 h-12 rounded-full bg-[#FAF5F0] text-[#C68A4C] flex items-center justify-center">
                 <FolderPlus className="w-6 h-6" />
               </div>
-              <h3 className="text-base font-semibold text-gray-800">No Sub-Categories in This Suite</h3>
+              <h3 className="text-base font-semibold text-gray-800">No Sub-Categories Match These Filters</h3>
               <p className="text-xs text-gray-500 max-w-sm">
-                None of {selectedCategory?.name || 'this category'}&apos;s sub-categories have a service in the &quot;{subCategorySuiteFilterLabel}&quot; suite.
+                None of {selectedCategory?.name || 'this category'}&apos;s sub-categories have a service in {activeFilterDescriptions}.
               </p>
               <Button
-                onClick={() => setSubCategorySuiteFilter('all')}
+                onClick={() => { setSubCategorySuiteFilter('all'); setSubCategoryGenderFilter('all'); }}
                 size="sm"
                 variant="outline"
                 className="mt-2"
               >
-                Clear Suite Filter
+                Clear Filters
               </Button>
             </div>
           ) : (
-            <>
+            // Re-keyed on the active category + filters so switching either replays the fade-in
+            // instead of the new rows just appearing (see @keyframes fadeSlideIn in globals.css).
+            <div key={`${selectedCategory?.id}-${activeSuiteFilter}-${activeGenderFilter}`} className="animate-[fadeSlideIn_0.3s_ease-out]">
               <div className="overflow-x-auto w-full">
-                <table className="w-full text-left border-collapse min-w-[500px]">
+                <table className="w-full text-left border-collapse min-w-[640px]">
                   <thead>
                     <tr className="bg-[#FAF5F0] text-gray-700 text-xs font-semibold uppercase tracking-wider border-b border-[#F2E5D9]">
                       <th className="py-4 px-4 sm:px-6">Sub-Categories</th>
                       <th className="py-4 px-4 sm:px-6 text-center">Services</th>
                       <th className="py-4 px-4 sm:px-6 text-center">Suites</th>
+                      <th className="py-4 px-4 sm:px-6 text-center">Genders</th>
                       <th className="py-4 px-4 sm:px-6 text-center">Status</th>
                       <th className="py-4 px-4 sm:px-6 text-right">Action</th>
                     </tr>
@@ -733,6 +852,20 @@ export default function CategoriesView() {
                             ) : (
                               suitesForSubCategory(sub.id).map((suite) => (
                                 <Badge key={suite.id} variant="secondary">{suite.name}</Badge>
+                              ))
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Genders this sub-category's services are tagged with (derived the same
+                            way as suites, via ServiceItem — see gendersForSubCategory above). */}
+                        <td className="py-4 px-4 sm:px-6" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex flex-wrap items-center justify-center gap-1.5">
+                            {gendersForSubCategory(sub.id).length === 0 ? (
+                              <span className="text-xs text-gray-400">—</span>
+                            ) : (
+                              gendersForSubCategory(sub.id).map((gender) => (
+                                <Badge key={gender.id} variant="secondary">{gender.name}</Badge>
                               ))
                             )}
                           </div>
@@ -785,7 +918,7 @@ export default function CategoriesView() {
                   </button>
                 </div>
               </div>
-            </>
+            </div>
           )}
         </Card>
       </div>

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { X } from 'lucide-react';
+import { X, Check, Plus } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useCatalogue } from '../../contexts/CatalogueContext';
 import { getServiceDurationsServerAction } from '../../lib/server-actions/duration';
@@ -46,6 +46,28 @@ function optionLabel(opt: SubOption): string {
   return 'label' in opt ? opt.label : opt.name;
 }
 
+// Duration cards show minutes, package cards show session count — add-ons have no such extra field.
+function optionMeta(opt: SubOption, configType: ConfigType): string | undefined {
+  if (configType === 'duration') return `${(opt as ServiceDuration).durationMinutes} min`;
+  if (configType === 'package') {
+    const sessions = (opt as ServicePackage).sessions;
+    return `${sessions} session${sessions === 1 ? '' : 's'}`;
+  }
+  return undefined;
+}
+
+// Normalized shape of "this sub-option already has a zone override" — pulled from whichever of
+// the three config arrays matches configType, keyed by the sub-option's own id, so a card can be
+// themed (and its price shown) without caring which concrete config type it came from.
+interface SubConfigInfo {
+  id: string;
+  price: number;
+  discountedPrice?: number | null;
+  originalPrice?: number | null;
+  savings?: number | null;
+  savingsPercent?: number | null;
+}
+
 interface CategoryGroup {
   categoryName: string;
   services: ServiceItem[];
@@ -73,6 +95,9 @@ export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }:
     saveZonePackageConfig,
     saveZoneAddOnConfig,
     saveZoneSuiteConfig,
+    deleteZoneDurationConfig,
+    deleteZonePackageConfig,
+    deleteZoneAddOnConfig,
     refreshData,
   } = useCatalogue();
 
@@ -125,6 +150,31 @@ export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }:
   const [subOptions, setSubOptions] = useState<SubOption[]>([]);
   const [subId, setSubId] = useState('');
   const [loadingSub, setLoadingSub] = useState(false);
+  // Set only when the picked sub-option already has a config row for this zone — carries that
+  // row's id so submit PATCHes it instead of POSTing a duplicate.
+  const [editingConfigId, setEditingConfigId] = useState<string | null>(null);
+  const [deletingSubConfigId, setDeletingSubConfigId] = useState<string | null>(null);
+
+  // Every duration/package/add-on belonging to the selected service, cross-referenced against
+  // this zone's existing config rows — lets the card grid theme "already added" (with its price)
+  // vs "empty" for the whole service at a glance, not just whatever one entry happens to be open.
+  const subConfigMap = new Map<string, SubConfigInfo>();
+  if (configType === 'duration') {
+    zoneDurationConfigs
+      .filter((c) => c.zoneId === zoneId)
+      .forEach((c) => subConfigMap.set(c.serviceDurationId, { id: c.id, price: c.price, discountedPrice: c.discountedPrice }));
+  } else if (configType === 'package') {
+    zonePackageConfigs
+      .filter((c) => c.zoneId === zoneId)
+      .forEach((c) => subConfigMap.set(c.servicePackageId, {
+        id: c.id, price: c.price, originalPrice: c.originalPrice, savings: c.savings, savingsPercent: c.savingsPercent,
+      }));
+  } else if (configType === 'addon') {
+    zoneAddOnConfigs
+      .filter((c) => c.zoneId === zoneId)
+      .forEach((c) => subConfigMap.set(c.serviceAddOnId, { id: c.id, price: c.price }));
+  }
+  const selectedSubOption = subOptions.find((o) => o.id === subId);
 
   const [isAvailable, setIsAvailable] = useState(true);
   const [surgeMultiplier, setSurgeMultiplier] = useState('1');
@@ -142,6 +192,7 @@ export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }:
       setSuiteId('');
       setSubOptions([]);
       setSubId('');
+      setEditingConfigId(null);
       setIsAvailable(true);
       setSurgeMultiplier('1');
       setPrice('');
@@ -157,6 +208,7 @@ export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }:
     if (!serviceItemId || !needsSub) {
       setSubOptions([]);
       setSubId('');
+      setEditingConfigId(null);
       return;
     }
     let cancelled = false;
@@ -169,6 +221,12 @@ export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }:
       if (cancelled) return;
       setSubOptions(items);
       setSubId('');
+      setEditingConfigId(null);
+      setPrice('');
+      setDiscountedPrice('');
+      setOriginalPrice('');
+      setSavings('');
+      setSavingsPercent('');
       setLoadingSub(false);
     });
     return () => {
@@ -177,6 +235,59 @@ export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }:
   }, [serviceItemId, configType, needsSub]);
 
   if (!isOpen) return null;
+
+  // Picking a card either opens an existing zone override for editing (price fields prefill from
+  // it, submit will PATCH) or starts a fresh one (fields clear, submit will POST).
+  const handleSelectSubOption = (opt: SubOption) => {
+    setSubId(opt.id);
+    const existing = subConfigMap.get(opt.id);
+    if (existing) {
+      setEditingConfigId(existing.id);
+      setPrice(String(existing.price ?? ''));
+      setDiscountedPrice(existing.discountedPrice != null ? String(existing.discountedPrice) : '');
+      setOriginalPrice(existing.originalPrice != null ? String(existing.originalPrice) : '');
+      setSavings(existing.savings != null ? String(existing.savings) : '');
+      setSavingsPercent(existing.savingsPercent != null ? String(existing.savingsPercent) : '');
+    } else {
+      setEditingConfigId(null);
+      setPrice('');
+      setDiscountedPrice('');
+      setOriginalPrice('');
+      setSavings('');
+      setSavingsPercent('');
+    }
+  };
+
+  // Lets the admin drop a zone override right from its card without leaving this modal — the
+  // little checkmark badge on an "already added" card doubles as this delete button on hover.
+  const handleQuickDelete = async (optId: string) => {
+    const existing = subConfigMap.get(optId);
+    if (!existing) return;
+    setDeletingSubConfigId(existing.id);
+    try {
+      const deleter =
+        configType === 'duration' ? deleteZoneDurationConfig
+          : configType === 'package' ? deleteZonePackageConfig
+            : deleteZoneAddOnConfig;
+      const res = await deleter(existing.id);
+      if (res.ok) {
+        toast.success('Removed from this zone');
+        if (editingConfigId === existing.id) {
+          setEditingConfigId(null);
+          setSubId('');
+          setPrice('');
+          setDiscountedPrice('');
+          setOriginalPrice('');
+          setSavings('');
+          setSavingsPercent('');
+        }
+      } else {
+        toast.error(res.message || 'Failed to remove');
+      }
+    } finally {
+      setDeletingSubConfigId(null);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -215,14 +326,14 @@ export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }:
       } else if (configType === 'suite') {
         res = await saveZoneSuiteConfig(null, { zoneId, suiteId, isAvailable });
       } else if (configType === 'duration') {
-        res = await saveZoneDurationConfig(null, {
+        res = await saveZoneDurationConfig(editingConfigId, {
           zoneId,
           serviceDurationId: subId,
           price: Number(price),
           discountedPrice: discountedPrice.trim() ? Number(discountedPrice) : undefined,
         });
       } else if (configType === 'package') {
-        res = await saveZonePackageConfig(null, {
+        res = await saveZonePackageConfig(editingConfigId, {
           zoneId,
           servicePackageId: subId,
           price: Number(price),
@@ -231,11 +342,11 @@ export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }:
           savingsPercent: savingsPercent.trim() ? Number(savingsPercent) : undefined,
         });
       } else {
-        res = await saveZoneAddOnConfig(null, { zoneId, serviceAddOnId: subId, price: Number(price) });
+        res = await saveZoneAddOnConfig(editingConfigId, { zoneId, serviceAddOnId: subId, price: Number(price) });
       }
 
       if (res.ok) {
-        toast.success('Saved!');
+        toast.success(editingConfigId ? 'Updated!' : 'Saved!');
         onClose();
       } else {
         toast.error(res.message || 'Failed to save');
@@ -328,7 +439,7 @@ export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }:
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl relative border border-gray-100">
+      <div className={`bg-white rounded-3xl w-full p-6 shadow-2xl relative border border-gray-100 max-h-[90vh] overflow-y-auto ${needsSub ? 'max-w-2xl' : 'max-w-md'}`}>
         <button
           onClick={onClose}
           className="absolute top-5 right-5 w-8 h-8 rounded-full bg-[#1C1512] text-white flex items-center justify-center hover:bg-black transition-colors"
@@ -407,18 +518,52 @@ export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }:
 
           {needsSub && (
             <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">{SUB_LABELS[configType]}</label>
-              <select
-                value={subId}
-                onChange={(e) => setSubId(e.target.value)}
-                disabled={!serviceItemId || loadingSub}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C] disabled:opacity-50"
-              >
-                <option value="">{loadingSub ? 'Loading...' : `Select a ${SUB_LABELS[configType].toLowerCase()}...`}</option>
-                {subOptions.map((opt) => (
-                  <option key={opt.id} value={opt.id}>{optionLabel(opt)}</option>
-                ))}
-              </select>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-sm font-medium text-gray-700 block">{SUB_LABELS[configType]}</label>
+                {serviceItemId && !loadingSub && subOptions.length > 0 && (
+                  <span className="text-[11px] text-gray-400">
+                    {subOptions.filter((o) => subConfigMap.has(o.id)).length} of {subOptions.length} added in this zone
+                  </span>
+                )}
+              </div>
+
+              {!serviceItemId && (
+                <p className="text-xs text-gray-400 border border-dashed border-gray-200 rounded-xl p-4 text-center">
+                  Select a service above to see its {SUB_LABELS[configType].toLowerCase()}s.
+                </p>
+              )}
+              {serviceItemId && loadingSub && (
+                <p className="text-xs text-gray-400 border border-gray-100 rounded-xl p-4 text-center">Loading...</p>
+              )}
+              {serviceItemId && !loadingSub && subOptions.length === 0 && (
+                <p className="text-xs text-gray-400 border border-dashed border-gray-200 rounded-xl p-4 text-center">
+                  This service has no {SUB_LABELS[configType].toLowerCase()}s yet.
+                </p>
+              )}
+              {serviceItemId && !loadingSub && subOptions.length > 0 && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-64 overflow-y-auto pr-1 -mr-1">
+                  {subOptions.map((opt) => (
+                    <SubOptionCard
+                      key={opt.id}
+                      option={opt}
+                      configType={configType}
+                      isSelected={subId === opt.id}
+                      existing={subConfigMap.get(opt.id)}
+                      onSelect={() => handleSelectSubOption(opt)}
+                      onDelete={() => handleQuickDelete(opt.id)}
+                      deleting={deletingSubConfigId === subConfigMap.get(opt.id)?.id}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {subId && (
+                <p className={`text-xs mt-2 font-medium ${editingConfigId ? 'text-[#2E7D32]' : 'text-[#C68A4C]'}`}>
+                  {editingConfigId
+                    ? 'Already added to this zone — update the price below and save.'
+                    : `New override for "${selectedSubOption ? optionLabel(selectedSubOption) : ''}" — set its zone price below.`}
+                </p>
+              )}
             </div>
           )}
 
@@ -450,27 +595,30 @@ export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }:
           )}
 
           {needsSub && (
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Price (₹)</label>
-              <input
-                type="number"
-                required
-                value={price}
-                onChange={(e) => setPrice(e.target.value)}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C]"
-              />
-            </div>
-          )}
-
-          {configType === 'duration' && (
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Discounted Price (₹)</label>
-              <input
-                type="number"
-                value={discountedPrice}
-                onChange={(e) => setDiscountedPrice(e.target.value)}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C]"
-              />
+            <div className={configType === 'duration' ? 'grid grid-cols-2 gap-3' : ''}>
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-1 block">
+                  Price {selectedSubOption ? `for "${optionLabel(selectedSubOption)}"` : ''} (₹)
+                </label>
+                <input
+                  type="number"
+                  required
+                  value={price}
+                  onChange={(e) => setPrice(e.target.value)}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C]"
+                />
+              </div>
+              {configType === 'duration' && (
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-1 block">Discounted Price (₹)</label>
+                  <input
+                    type="number"
+                    value={discountedPrice}
+                    onChange={(e) => setDiscountedPrice(e.target.value)}
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/30 focus:border-[#C68A4C]"
+                  />
+                </div>
+              )}
             </div>
           )}
 
@@ -535,10 +683,95 @@ export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }:
               disabled={saving}
               className="px-5 py-2 rounded-xl bg-[#221812] text-white text-sm font-medium hover:bg-black disabled:opacity-60"
             >
-              {saving ? 'Saving...' : applyToAllZones ? 'Apply to All Zones' : 'Save'}
+              {saving
+                ? 'Saving...'
+                : applyToAllZones
+                  ? 'Apply to All Zones'
+                  : editingConfigId
+                    ? 'Update'
+                    : 'Save'}
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+function SubOptionCard({
+  option,
+  configType,
+  isSelected,
+  existing,
+  onSelect,
+  onDelete,
+  deleting,
+}: {
+  option: SubOption;
+  configType: ConfigType;
+  isSelected: boolean;
+  existing?: SubConfigInfo;
+  onSelect: () => void;
+  onDelete: () => void;
+  deleting: boolean;
+}) {
+  const isConfigured = !!existing;
+  const meta = optionMeta(option, configType);
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
+      className={`relative text-left p-3 rounded-2xl border cursor-pointer transition-all ${
+        isSelected
+          ? 'border-[#C68A4C] ring-2 ring-[#C68A4C]/30 bg-[#FFF9F2]'
+          : isConfigured
+            ? 'border-[#C8E6C9] bg-[#E8F5E9] hover:border-[#A5D6A7]'
+            : 'border-dashed border-gray-200 bg-white hover:border-[#D4A373] hover:bg-[#FAF5F0]/40'
+      }`}
+    >
+      {isConfigured && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          disabled={deleting}
+          title="Remove from this zone"
+          className="group/del absolute top-2 right-2 w-5 h-5 rounded-full bg-[#2E7D32] text-white flex items-center justify-center hover:bg-red-500 transition-colors disabled:opacity-60"
+        >
+          {deleting ? (
+            <span className="w-2.5 h-2.5 border-2 border-white/60 border-t-white rounded-full animate-spin" />
+          ) : (
+            <>
+              <Check className="w-2.5 h-2.5 group-hover/del:hidden" />
+              <X className="w-2.5 h-2.5 hidden group-hover/del:block" />
+            </>
+          )}
+        </button>
+      )}
+
+      <div className={`text-sm font-semibold pr-5 truncate ${isConfigured ? 'text-[#1B5E20]' : 'text-gray-800'}`}>
+        {optionLabel(option)}
+      </div>
+      {meta && <div className="text-[11px] text-gray-400 mt-0.5">{meta}</div>}
+
+      <div className="mt-1.5">
+        {isConfigured ? (
+          <span className="text-xs font-bold text-[#2E7D32]">₹{existing!.price.toLocaleString()}</span>
+        ) : (
+          <span className="text-[11px] text-gray-400 inline-flex items-center gap-1">
+            <Plus className="w-3 h-3" /> Not added
+          </span>
+        )}
       </div>
     </div>
   );
