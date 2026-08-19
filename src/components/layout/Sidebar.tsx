@@ -56,7 +56,7 @@ export default function Sidebar({
 
   return (
     <aside
-      className={`relative w-full h-full bg-[#1C1512] text-[#E5D5C5] flex flex-col justify-between flex-shrink-0 transition-all duration-300 overflow-y-auto overflow-x-hidden select-none ${collapsed ? "p-3" : "p-4"}`}
+      className={`relative w-full h-full bg-[#1C1512] text-[#E5D5C5] flex flex-col justify-between shrink-0 transition-all duration-300 overflow-y-auto overflow-x-hidden select-none ${collapsed ? "p-3" : "p-4"}`}
     >
       {/* Minimize/expand toggle — floats on the sidebar's edge so it stays reachable whether
           expanded or collapsed. Desktop-only (onToggleCollapse is never passed to the mobile
@@ -65,7 +65,7 @@ export default function Sidebar({
         <button
           onClick={onToggleCollapse}
           title={collapsed ? "Expand sidebar" : "Minimize sidebar"}
-          className="hidden lg:flex absolute top-[57px] right-3 w-7 h-7 rounded-full bg-[#1C1512] border border-[#3D3028] items-center justify-center text-[#D4A373] hover:bg-[#2D221C] hover:text-white transition-colors z-20 cursor-pointer shadow-md"
+          className="hidden lg:flex absolute top-14.25 right-3 w-7 h-7 rounded-full bg-[#1C1512] border border-[#3D3028] items-center justify-center text-[#D4A373] hover:bg-[#2D221C] hover:text-white transition-colors z-20 cursor-pointer shadow-md"
         >
           {collapsed ? (
             <ChevronRight className="w-3.5 h-3.5" />
@@ -81,7 +81,7 @@ export default function Sidebar({
           className={`flex items-center mb-6 border-b border-[#2D231E] ${collapsed ? "justify-center px-1 py-5" : "justify-between px-4 py-5"}`}
         >
           <div className={`flex items-center ${collapsed ? "" : "gap-3"}`}>
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#D4A373] to-[#F4E3D3] flex items-center justify-center text-[#1C1512] shadow-md flex-shrink-0">
+            <div className="w-9 h-9 rounded-xl bg-linear-to-tr from-[#D4A373] to-[#F4E3D3] flex items-center justify-center text-[#1C1512] shadow-md shrink-0">
               <Sparkles className="w-5 h-5 fill-current stroke-none" />
             </div>
             {!collapsed && (
@@ -123,7 +123,7 @@ export default function Sidebar({
                 }`}
               >
                 <Icon
-                  className={`w-5 h-5 flex-shrink-0 ${isActive ? "text-[#D4A373]" : "text-[#A8988A]"}`}
+                  className={`w-5 h-5 shrink-0 ${isActive ? "text-[#D4A373]" : "text-[#A8988A]"}`}
                 />
                 {!collapsed && <span>{item.label}</span>}
               </Link>
@@ -145,7 +145,7 @@ export default function Sidebar({
             fallback={fallbackInitials}
             src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&q=80"
             alt={displayName}
-            className="w-9 h-9 border-[#D4A373]/40 flex-shrink-0"
+            className="w-9 h-9 border-[#D4A373]/40 shrink-0"
           />
           {!collapsed && (
             <div className="flex flex-col min-w-0 flex-1">
@@ -165,7 +165,7 @@ export default function Sidebar({
           title={collapsed ? "Logout" : undefined}
           className={`w-full flex items-center rounded-xl text-sm text-[#A8988A] hover:bg-[#251D19] hover:text-red-400 transition-all cursor-pointer ${collapsed ? "justify-center py-2.5" : "gap-3 px-3 py-2.5"}`}
         >
-          <LogOut className="w-4 h-4 text-red-400/80 flex-shrink-0" />
+          <LogOut className="w-4 h-4 text-red-400/80 shrink-0" />
           {!collapsed && <span className="font-medium">Logout</span>}
         </button>
       </div>
