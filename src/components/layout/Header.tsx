@@ -6,14 +6,15 @@ import { usePathname } from 'next/navigation';
 import { Search, Bell, ChevronDown, Menu, LogOut, User as UserIcon, Shield, Settings } from 'lucide-react';
 import { useCatalogue } from '../../contexts/CatalogueContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { useBreadcrumb } from '../../contexts/BreadcrumbContext';
 import { Avatar } from '../ui/avatar';
-import { 
-  DropdownMenu, 
-  DropdownMenuTrigger, 
-  DropdownMenuContent, 
-  DropdownMenuItem, 
-  DropdownMenuLabel, 
-  DropdownMenuSeparator 
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator
 } from '../ui/dropdown-menu';
 
 interface HeaderProps {
@@ -23,6 +24,7 @@ interface HeaderProps {
 export default function Header({ onOpenMobileMenu }: HeaderProps) {
   const { activeView, setActiveView, selectedSubCategory } = useCatalogue();
   const { user, logout } = useAuth();
+  const { label: breadcrumbLabel } = useBreadcrumb();
   const pathname = usePathname();
 
   const getBreadcrumb = () => {
@@ -55,6 +57,26 @@ export default function Header({ onOpenMobileMenu }: HeaderProps) {
         </>
       );
     }
+    if (pathname.startsWith('/partners/')) {
+      return (
+        <>
+          <Link
+            href="/partners"
+            className="text-gray-500 hover:text-gray-800 transition-colors"
+          >
+            Partners
+          </Link>
+          <span className="text-gray-300 font-light">&gt;</span>
+          {/* breadcrumbLabel is set by the partner detail page once it has loaded the partner
+              (see BreadcrumbContext) — show a neutral placeholder instead of the raw id from
+              the URL while that fetch is still in flight. */}
+          <span className="text-[#C68A4C] font-semibold truncate max-w-40 sm:max-w-none">
+            {breadcrumbLabel || 'Partner Details'}
+          </span>
+        </>
+      );
+    }
+
     // Fallback: capitalize pathname
     const page = pathname.replace('/', '');
     return <span className="text-[#C68A4C] font-semibold capitalize">{page}</span>;
@@ -66,7 +88,7 @@ export default function Header({ onOpenMobileMenu }: HeaderProps) {
 
   return (
     <header className="w-full bg-white border-b border-gray-100 px-4 md:px-8 py-3.5 flex items-center justify-between shadow-xs sticky top-0 z-30 flex-shrink-0">
-      
+
       {/* Left side: Hamburger button + Breadcrumbs */}
       <div className="flex items-center gap-3 min-w-0">
         {/* Hamburger Button for mobile/tablet screens */}
@@ -86,7 +108,7 @@ export default function Header({ onOpenMobileMenu }: HeaderProps) {
 
       {/* Right Tools: Search, Notification, Profile Dropdown */}
       <div className="flex items-center gap-3 sm:gap-6">
-        
+
         {/* Search Bar */}
         <div className="relative hidden md:block">
           <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -134,7 +156,7 @@ export default function Header({ onOpenMobileMenu }: HeaderProps) {
                 <p className="text-xs leading-none text-gray-500 truncate">{user?.email || 'admin@eezit.com'}</p>
               </div>
             </DropdownMenuLabel>
-            
+
             <DropdownMenuSeparator />
 
             <DropdownMenuItem className="gap-2.5">
@@ -154,7 +176,7 @@ export default function Header({ onOpenMobileMenu }: HeaderProps) {
 
             <DropdownMenuSeparator />
 
-            <DropdownMenuItem 
+            <DropdownMenuItem
               onClick={logout}
               className="gap-2.5 text-red-600 focus:bg-red-50 focus:text-red-700 font-medium"
             >

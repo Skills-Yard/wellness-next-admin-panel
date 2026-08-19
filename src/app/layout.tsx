@@ -4,6 +4,7 @@ import "./globals.css";
 import 'react-toastify/dist/ReactToastify.css';
 import { CatalogueProvider } from "../contexts/CatalogueContext";
 import { AuthProvider } from "../contexts/AuthContext";
+import { BreadcrumbProvider } from "../contexts/BreadcrumbContext";
 import MainLayout from "../components/layout/MainLayout";
 import { ToastContainer } from "react-toastify";
 import { ConfirmProvider } from "../components/ui/confirm-dialog";
@@ -38,9 +39,11 @@ export default function RootLayout({
         <ConfirmProvider>
           <AuthProvider>
             <CatalogueProvider>
-              <MainLayout>
-                {children}
-              </MainLayout>
+              <BreadcrumbProvider>
+                <MainLayout>
+                  {children}
+                </MainLayout>
+              </BreadcrumbProvider>
             </CatalogueProvider>
           </AuthProvider>
         </ConfirmProvider>

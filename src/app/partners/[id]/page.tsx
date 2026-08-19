@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { useBreadcrumb } from '../../../contexts/BreadcrumbContext';
 import {
   PartnerHeaderCard,
   PartnerOverviewTab,
@@ -43,6 +44,7 @@ export default function PartnerDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = params?.id as string;
+  const { setLabel: setBreadcrumbLabel } = useBreadcrumb();
 
   const [partner, setPartner] = useState<Partner | null>(null);
   const [services, setServices] = useState<PartnerServiceItem[]>([]);
@@ -82,6 +84,14 @@ export default function PartnerDetailPage() {
   useEffect(() => {
     fetchPartnerDetails();
   }, [id]);
+
+  // Feeds the loaded partner's name to Header's breadcrumb (see BreadcrumbContext) — cleared
+  // whenever `id` changes or this page unmounts so a stale name never flashes for the next
+  // partner/page while the new one is still loading.
+  useEffect(() => {
+    setBreadcrumbLabel(partner?.name || null);
+    return () => setBreadcrumbLabel(null);
+  }, [partner, setBreadcrumbLabel]);
 
   if (loading) {
     return (
