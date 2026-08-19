@@ -5,8 +5,9 @@ import { ArrowLeft, Edit3, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useCatalogue } from '../../contexts/CatalogueContext';
 import { Button } from '../ui/button';
-import { Badge } from '../ui/badge';
 import { Card } from '../ui/card';
+import { StatusToggle } from '../ui/status-toggle';
+import { useConfirm } from '../ui/confirm-dialog';
 import ZoneModal from './ZoneModal';
 import ZoneConfigModal from './ZoneConfigModal';
 import ServiceZoneCard, { PanelKind } from './ServiceZoneCard';
@@ -40,11 +41,14 @@ export default function ZoneDetailView() {
     deleteZonePackageConfig,
     deleteZoneAddOnConfig,
     deleteZoneSuiteConfig,
+    updateZone,
   } = useCatalogue();
+  const confirm = useConfirm();
 
   const [tab, setTab] = useState<Tab>('services');
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [configModalOpen, setConfigModalOpen] = useState(false);
+  const [togglingStatus, setTogglingStatus] = useState(false);
 
   // Which service card's Duration/Package/Add-on panel is expanded — only one at a time (see
   // ServiceZoneCard's note: they all read off CatalogueContext's single-slot selectedServiceItem).
@@ -125,9 +129,21 @@ export default function ZoneDetailView() {
             {selectedZone.city} &middot; {selectedZone.hexes?.length ?? 0} hex cells
           </p>
         </div>
-        <Badge variant={selectedZone.isActive !== false ? 'active' : 'inactive'}>
-          {selectedZone.isActive !== false ? 'Active' : 'Inactive'}
-        </Badge>
+        <StatusToggle
+          isActive={selectedZone.isActive !== false}
+          busy={togglingStatus}
+          onToggle={async () => {
+            const nextActive = !(selectedZone.isActive !== false);
+            setTogglingStatus(true);
+            try {
+              const res = await updateZone(selectedZone.id, { isActive: nextActive });
+              if (res.ok) toast.success(`Zone marked ${nextActive ? 'active' : 'inactive'}`);
+              else toast.error(res.message || 'Failed to update status');
+            } finally {
+              setTogglingStatus(false);
+            }
+          }}
+        />
         <Button variant="outline" size="icon" onClick={() => setEditModalOpen(true)} title="Edit Zone">
           <Edit3 className="w-3.5 h-3.5" />
         </Button>
@@ -189,6 +205,11 @@ export default function ZoneDetailView() {
                             openPanel={openServiceId === c.serviceItemId ? openPanel : null}
                             onTogglePanel={(panel) => togglePanel(c.serviceItemId, panel)}
                             onDelete={async () => {
+                              const ok = await confirm({
+                                title: 'Remove this service from the zone?',
+                                description: `Availability, surge and every duration/package price override for "${c.serviceItem?.name || serviceNameFor(c.serviceItemId) || 'this service'}" in "${selectedZone.name}" will be removed. This can't be undone.`,
+                              });
+                              if (!ok) return;
                               const res = await deleteZoneServiceItemConfig(c.id);
                               if (res.ok) toast.success('Removed'); else toast.error(res.message || 'Failed to remove');
                             }}
@@ -296,6 +317,14 @@ function EmptyRow({ label }: { label: string }) {
 }
 
 function ConfigRow({ title, subtitle, onDelete }: { title: string; subtitle: string; onDelete: () => void }) {
+  const confirm = useConfirm();
+  const handleDelete = async () => {
+    const ok = await confirm({
+      title: 'Remove this override?',
+      description: `"${title}" will be removed from this zone. This can't be undone.`,
+    });
+    if (ok) onDelete();
+  };
   return (
     <div className="px-4 sm:px-6 py-4 flex items-center justify-between">
       <div className="min-w-0">
@@ -305,7 +334,7 @@ function ConfigRow({ title, subtitle, onDelete }: { title: string; subtitle: str
       <Button
         variant="destructive"
         size="icon"
-        onClick={onDelete}
+        onClick={handleDelete}
         className="w-7 h-7 bg-red-50 text-red-500 hover:bg-red-100 border-none flex-shrink-0"
       >
         <Trash2 className="w-3.5 h-3.5" />

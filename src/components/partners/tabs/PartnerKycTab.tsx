@@ -6,6 +6,7 @@ import { Partner } from '../../../types/partner';
 import { Card } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { Button } from '../../ui/button';
+import { Skeleton } from '../../ui/skeleton';
 import { getPartnerKycDocUrlsServerAction, PartnerKycDocUrls } from '../../../lib/server-actions/partner';
 
 interface PartnerKycTabProps {
@@ -143,7 +144,7 @@ export default function PartnerKycTab({ partner, onApproveKyc, onRejectKyc }: Pa
                       className={`aspect-4/3 w-full bg-gray-100 rounded-lg overflow-hidden flex items-center justify-center border border-gray-200 text-gray-400 ${canPreview ? 'cursor-zoom-in hover:opacity-90' : ''}`}
                     >
                       {urlsLoading && !url ? (
-                        <Loader2 className="w-6 h-6 animate-spin text-gray-300" />
+                        <Skeleton className="w-full h-full rounded-none" />
                       ) : canPreview ? (
                         doc.kind === 'video' ? (
                           <video src={url} className="w-full h-full object-cover" muted />
@@ -201,9 +202,7 @@ export default function PartnerKycTab({ partner, onApproveKyc, onRejectKyc }: Pa
               ))}
 
               {certificateCount > 0 && certificateUrls.length === 0 && urlsLoading && (
-                <div className="rounded-xl border border-gray-200 p-3 bg-gray-50/50 aspect-4/3 flex items-center justify-center">
-                  <Loader2 className="w-6 h-6 animate-spin text-gray-300" />
-                </div>
+                <Skeleton className="rounded-xl aspect-4/3" />
               )}
             </div>
           </>

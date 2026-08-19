@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Skeleton, SkeletonCard } from '../components/ui/skeleton';
 import { getUsersServerAction } from '../lib/server-actions/user';
 import { getBookingsServerAction } from '../lib/server-actions/booking';
 import { getPartnersServerAction } from '../lib/server-actions/partner';
@@ -47,9 +47,17 @@ export default function DashboardPage() {
       </div>
 
       {loading ? (
-        <div className="py-24 flex flex-col items-center justify-center text-gray-500 gap-3">
-          <Loader2 className="w-8 h-8 animate-spin text-[#D4A373]" />
-          <span className="text-xs font-semibold">Loading platform data...</span>
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <SkeletonCard key={i} />
+            ))}
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <Skeleton className="h-72 rounded-2xl lg:col-span-2" />
+            <Skeleton className="h-72 rounded-2xl" />
+          </div>
+          <Skeleton className="h-64 rounded-2xl" />
         </div>
       ) : (
         <DashboardView users={users} bookings={bookings} partners={partners} />

@@ -187,6 +187,11 @@ interface CatalogueContextType {
 
   // Server Actions CRUD returning { ok: boolean, message?: string }
   refreshData: () => Promise<void>;
+  // Lighter-weight counterpart to refreshData() — refetches only the 5 zone-config lists, doesn't
+  // touch `loading`. For bulk "apply to all zones" flows that write via the raw server actions
+  // directly instead of the single-row save*ZoneConfig setters below (see refreshZoneConfigs'
+  // own comment in the provider for why those need it).
+  refreshZoneConfigs: () => Promise<void>;
   saveCategory: (data: Partial<ServiceCategory>) => Promise<ActionResponse>;
   updateCategoryStatus: (id: string, isActive: boolean) => Promise<ActionResponse>;
   deleteCategory: (id: string) => Promise<ActionResponse>;
@@ -531,7 +536,11 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // Status and slug changes on an existing category go through their own dedicated endpoints
   // (PATCH .../status, PATCH .../slug) rather than being bundled into the general update PATCH.
   const saveCategory = async (data: Partial<ServiceCategory>): Promise<ActionResponse> => {
-    const isNew = !modalEditData?.id || modalEditData.id.startsWith('cat-');
+    // Was also treating a real, already-saved id as "new" whenever it happened to start with
+    // 'cat-' (a draft-id convention that's never actually used for categories — only ServiceItem
+    // drafts use a prefix, see isDraftId/'srv-' below). That silently POSTed a duplicate instead
+    // of PATCHing the row being edited, which then 409'd on the unique slug constraint.
+    const isNew = !modalEditData?.id;
     const editId = isNew ? null : modalEditData!.id;
 
     const payload: CategoryPayload = {
@@ -555,24 +564,34 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       return { ok: false, message: res.message };
     }
 
+    // Slug/status only ever change via their own dedicated endpoint (see the payload comment
+    // above), so their response is merged into the row locally rather than trusted wholesale —
+    // that keeps this a single extra PATCH each, with no risk of a partial response from those
+    // endpoints clobbering fields the main PATCH above already returned correctly.
+    let saved: ServiceCategory = res.data;
     if (!isNew && data.slug && data.slug !== modalEditData?.slug) {
       const slugRes = await updateCategorySlugServerAction(editId!, data.slug);
       if (!slugRes.ok) return { ok: false, message: slugRes.message };
+      saved = { ...saved, slug: data.slug };
     }
     if (!isNew && data.isActive !== undefined && data.isActive !== modalEditData?.isActive) {
       const statusRes = await updateCategoryStatusServerAction(editId!, data.isActive);
       if (!statusRes.ok) return { ok: false, message: statusRes.message };
+      saved = { ...saved, isActive: data.isActive };
     }
 
-    if (res.data) setSelectedCategory(res.data);
-    await refreshData();
+    // Patch just this row locally instead of refetching every catalogue list — nothing else on
+    // the page changed.
+    setCategories(prev => (isNew ? [...prev, saved] : prev.map(c => (c.id === saved.id ? saved : c))));
+    setSelectedCategory(saved);
     return { ok: true };
   };
 
   const updateCategoryStatus = async (id: string, isActive: boolean): Promise<ActionResponse> => {
     const res = await updateCategoryStatusServerAction(id, isActive);
     if (res.ok) {
-      await refreshData();
+      setCategories(prev => prev.map(c => (c.id === id ? { ...c, isActive } : c)));
+      setSelectedCategory(prev => (prev?.id === id ? { ...prev, isActive } : prev));
       return { ok: true };
     }
     return { ok: false, message: res.message };
@@ -581,7 +600,15 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const deleteCategory = async (id: string): Promise<ActionResponse> => {
     const res = await deleteCategoryServerAction(id);
     if (res.ok) {
-      await refreshData();
+      // Direct children (sub-categories/suites) go with it — the backend cascades the delete, so
+      // drop them here too rather than leaving orphaned rows in local state.
+      setSubCategories(prev => prev.filter(s => s.categoryId !== id));
+      setSuites(prev => prev.filter(s => s.categoryId !== id));
+      setCategories(prev => {
+        const next = prev.filter(c => c.id !== id);
+        setSelectedCategory(sel => (sel?.id === id ? next[0] || null : sel));
+        return next;
+      });
       return { ok: true };
     }
     return { ok: false, message: res.message };
@@ -591,7 +618,8 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // Status and slug changes on an existing sub-category go through their own dedicated
   // endpoints rather than being bundled into the general update PATCH.
   const saveSubCategory = async (data: Partial<ServiceSubCategory>): Promise<ActionResponse> => {
-    const isNew = !modalEditData?.id || modalEditData.id.startsWith('sub-');
+    // See the comment on saveCategory's isNew above — same dead-prefix bug, same fix.
+    const isNew = !modalEditData?.id;
     const editId = isNew ? null : modalEditData!.id;
 
     const payload: SubCategoryPayload = {
@@ -614,24 +642,28 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       return { ok: false, message: res.message };
     }
 
+    let saved: ServiceSubCategory = res.data;
     if (!isNew && data.slug && data.slug !== modalEditData?.slug) {
       const slugRes = await updateSubCategorySlugServerAction(editId!, data.slug);
       if (!slugRes.ok) return { ok: false, message: slugRes.message };
+      saved = { ...saved, slug: data.slug };
     }
     if (!isNew && data.isActive !== undefined && data.isActive !== modalEditData?.isActive) {
       const statusRes = await updateSubCategoryStatusServerAction(editId!, data.isActive);
       if (!statusRes.ok) return { ok: false, message: statusRes.message };
+      saved = { ...saved, isActive: data.isActive };
     }
 
-    if (res.data) setSelectedSubCategory(res.data);
-    await refreshData();
+    setSubCategories(prev => (isNew ? [...prev, saved] : prev.map(s => (s.id === saved.id ? saved : s))));
+    setSelectedSubCategory(saved);
     return { ok: true };
   };
 
   const updateSubCategoryStatus = async (id: string, isActive: boolean): Promise<ActionResponse> => {
     const res = await updateSubCategoryStatusServerAction(id, isActive);
     if (res.ok) {
-      await refreshData();
+      setSubCategories(prev => prev.map(s => (s.id === id ? { ...s, isActive } : s)));
+      setSelectedSubCategory(prev => (prev?.id === id ? { ...prev, isActive } : prev));
       return { ok: true };
     }
     return { ok: false, message: res.message };
@@ -640,7 +672,11 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const deleteSubCategory = async (id: string): Promise<ActionResponse> => {
     const res = await deleteSubCategoryServerAction(id);
     if (res.ok) {
-      await refreshData();
+      setSubCategories(prev => {
+        const next = prev.filter(s => s.id !== id);
+        setSelectedSubCategory(sel => (sel?.id === id ? next[0] || null : sel));
+        return next;
+      });
       return { ok: true };
     }
     return { ok: false, message: res.message };
@@ -651,7 +687,8 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // through their own dedicated endpoints rather than being bundled into the general update PATCH.
   const saveServiceGender = async (data: Partial<ServiceGender>): Promise<ActionResponse> => {
     const editData = modalEditData as ServiceGender | null;
-    const isNew = !editData?.id || editData.id.startsWith('gen-');
+    // See the comment on saveCategory's isNew above — same dead-prefix bug, same fix.
+    const isNew = !editData?.id;
     const editId = isNew ? null : editData!.id;
 
     const payload: ServiceGenderPayload = {
@@ -675,23 +712,26 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       return { ok: false, message: res.message };
     }
 
+    let saved: ServiceGender = res.data;
     if (!isNew && data.slug && data.slug !== editData?.slug) {
       const slugRes = await updateServiceGenderSlugServerAction(editId!, data.slug);
       if (!slugRes.ok) return { ok: false, message: slugRes.message };
+      saved = { ...saved, slug: data.slug };
     }
     if (!isNew && data.isActive !== undefined && data.isActive !== editData?.isActive) {
       const statusRes = await updateServiceGenderStatusServerAction(editId!, data.isActive);
       if (!statusRes.ok) return { ok: false, message: statusRes.message };
+      saved = { ...saved, isActive: data.isActive };
     }
 
-    await refreshData();
+    setGenders(prev => (isNew ? [...prev, saved] : prev.map(g => (g.id === saved.id ? saved : g))));
     return { ok: true };
   };
 
   const updateServiceGenderStatus = async (id: string, isActive: boolean): Promise<ActionResponse> => {
     const res = await updateServiceGenderStatusServerAction(id, isActive);
     if (res.ok) {
-      await refreshData();
+      setGenders(prev => prev.map(g => (g.id === id ? { ...g, isActive } : g)));
       return { ok: true };
     }
     return { ok: false, message: res.message };
@@ -700,7 +740,7 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const deleteServiceGender = async (id: string): Promise<ActionResponse> => {
     const res = await deleteServiceGenderServerAction(id);
     if (res.ok) {
-      await refreshData();
+      setGenders(prev => prev.filter(g => g.id !== id));
       return { ok: true };
     }
     return { ok: false, message: res.message };
@@ -711,7 +751,12 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // slug changes on an existing suite go through their own dedicated endpoints.
   const saveServiceSuite = async (data: Partial<ServiceSuite>): Promise<ActionResponse> => {
     const editData = modalEditData as ServiceSuite | null;
-    const isNew = !editData?.id || editData.id.startsWith('suite-');
+    // This was the "editing a suite calls save/create instead of edit/update" bug: a real,
+    // already-saved suite id starting with 'suite-' (nothing generates a client-side draft with
+    // this prefix — that convention is only real for ServiceItem drafts, see isDraftId/'srv-'
+    // below) was misread as "new", so editing POSTed a duplicate with the same slug as the row
+    // already in the DB instead of PATCHing it — hence the slug unique-constraint error.
+    const isNew = !editData?.id;
     const editId = isNew ? null : editData!.id;
 
     const payload: ServiceSuitePayload = {
@@ -734,23 +779,26 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       return { ok: false, message: res.message };
     }
 
+    let saved: ServiceSuite = res.data;
     if (!isNew && data.slug && data.slug !== editData?.slug) {
       const slugRes = await updateServiceSuiteSlugServerAction(editId!, data.slug);
       if (!slugRes.ok) return { ok: false, message: slugRes.message };
+      saved = { ...saved, slug: data.slug };
     }
     if (!isNew && data.isActive !== undefined && data.isActive !== editData?.isActive) {
       const statusRes = await updateServiceSuiteStatusServerAction(editId!, data.isActive);
       if (!statusRes.ok) return { ok: false, message: statusRes.message };
+      saved = { ...saved, isActive: data.isActive };
     }
 
-    await refreshData();
+    setSuites(prev => (isNew ? [...prev, saved] : prev.map(s => (s.id === saved.id ? saved : s))));
     return { ok: true };
   };
 
   const updateServiceSuiteStatus = async (id: string, isActive: boolean): Promise<ActionResponse> => {
     const res = await updateServiceSuiteStatusServerAction(id, isActive);
     if (res.ok) {
-      await refreshData();
+      setSuites(prev => prev.map(s => (s.id === id ? { ...s, isActive } : s)));
       return { ok: true };
     }
     return { ok: false, message: res.message };
@@ -759,7 +807,10 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const deleteServiceSuite = async (id: string): Promise<ActionResponse> => {
     const res = await deleteServiceSuiteServerAction(id);
     if (res.ok) {
-      await refreshData();
+      setSuites(prev => prev.filter(s => s.id !== id));
+      // The backend cascades this suite's zone-availability rows too — drop them locally so a
+      // deleted suite doesn't linger in any zone's "suites" tab.
+      setZoneSuiteConfigs(prev => prev.filter(c => c.suiteId !== id));
       return { ok: true };
     }
     return { ok: false, message: res.message };
@@ -817,28 +868,36 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       return { ok: false, message: res.message };
     }
 
+    let saved: ServiceItem = res.data;
     if (!isNew && data.slug && data.slug !== prev.slug) {
       const slugRes = await updateServiceItemSlugServerAction(editId!, data.slug);
       if (!slugRes.ok) return { ok: false, message: slugRes.message };
+      saved = { ...saved, slug: data.slug };
     }
     if (!isNew && data.isActive !== undefined && data.isActive !== prev.isActive) {
       const statusRes = await updateServiceItemStatusServerAction(editId!, data.isActive);
       if (!statusRes.ok) return { ok: false, message: statusRes.message };
+      saved = { ...saved, isActive: data.isActive };
     }
     if (!isNew && data.isPublished !== undefined && data.isPublished !== prev.isPublished) {
       const pubRes = await updateServiceItemPublishStatusServerAction(editId!, data.isPublished);
       if (!pubRes.ok) return { ok: false, message: pubRes.message };
+      saved = { ...saved, isPublished: data.isPublished };
     }
 
-    if (res.data) setSelectedServiceItem(res.data);
-    await refreshData();
+    // A brand-new item's local draft (see handleCreateNewService in ServiceDetailView) never
+    // made it into `serviceItems` — only `selectedServiceItem` — so this is always an append, not
+    // a replace, the first time a draft is saved.
+    setServiceItems(prevItems => (isNew ? [...prevItems, saved] : prevItems.map(s => (s.id === saved.id ? saved : s))));
+    setSelectedServiceItem(saved);
     return { ok: true };
   };
 
   const updateServiceItemStatus = async (id: string, isActive: boolean): Promise<ActionResponse> => {
     const res = await updateServiceItemStatusServerAction(id, isActive);
     if (res.ok) {
-      await refreshData();
+      setServiceItems(prev => prev.map(s => (s.id === id ? { ...s, isActive } : s)));
+      setSelectedServiceItem(prev => (prev?.id === id ? { ...prev, isActive } : prev));
       return { ok: true };
     }
     return { ok: false, message: res.message };
@@ -847,8 +906,8 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const updateServiceItemPublishStatus = async (id: string, isPublished: boolean): Promise<ActionResponse> => {
     const res = await updateServiceItemPublishStatusServerAction(id, isPublished);
     if (res.ok) {
-      if (res.data) setSelectedServiceItem(res.data);
-      await refreshData();
+      setServiceItems(prev => prev.map(s => (s.id === id ? { ...s, isPublished } : s)));
+      setSelectedServiceItem(prev => (prev?.id === id ? { ...prev, isPublished } : prev));
       return { ok: true };
     }
     return { ok: false, message: res.message };
@@ -863,7 +922,10 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
     const res = await deleteServiceItemServerAction(id);
     if (res.ok) {
-      await refreshData();
+      setServiceItems(prev => prev.filter(s => s.id !== id));
+      setSelectedServiceItem(prev => (prev?.id === id ? null : prev));
+      // The backend cascades this service's own zone-availability rows too.
+      setZoneServiceItemConfigs(prev => prev.filter(c => c.serviceItemId !== id));
       return { ok: true };
     }
     return { ok: false, message: res.message };
@@ -1022,8 +1084,20 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         })
       );
 
-      await refreshData();
+      // Only the new service item plus the three zone-config lists actually touched above changed
+      // — categories/sub-categories/genders/suites/zones didn't, so there's no need to refetch
+      // them. The new item's own durations/packages/add-ons load automatically via the
+      // selectedServiceItem effect below (see loadServiceDetail).
+      setServiceItems(prev => [...prev, createRes.data]);
       setSelectedServiceItem(createRes.data);
+      const [freshItemConfigs, freshDurationConfigs, freshPackageConfigs] = await Promise.all([
+        getZoneServiceItemConfigsServerAction(),
+        getZoneDurationConfigsServerAction(),
+        getZonePackageConfigsServerAction(),
+      ]);
+      setZoneServiceItemConfigs(freshItemConfigs);
+      setZoneDurationConfigs(freshDurationConfigs);
+      setZonePackageConfigs(freshPackageConfigs);
       return { ok: true };
     } catch (err: any) {
       console.error('[duplicateServiceItem]', err);
@@ -1228,8 +1302,10 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const createZone = async (data: CreateZoneWithPolygonPayload): Promise<ActionResponse> => {
     const res = await createZoneWithPolygonServerAction(data);
     if (res.ok) {
-      if (res.data) setSelectedZone(res.data);
-      await refreshData();
+      if (res.data) {
+        setZones(prev => [...prev, res.data as OperationalZone]);
+        setSelectedZone(res.data);
+      }
       return { ok: true };
     }
     return { ok: false, message: res.message };
@@ -1238,7 +1314,9 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const updateZone = async (id: string, data: UpdateZonePayload): Promise<ActionResponse> => {
     const res = await updateZoneServerAction(id, data);
     if (res.ok) {
-      await refreshData();
+      const merged = (prevZone: OperationalZone) => ({ ...prevZone, ...data });
+      setZones(prev => prev.map(z => (z.id === id ? merged(z) : z)));
+      setSelectedZone(prev => (prev?.id === id ? merged(prev) : prev));
       return { ok: true };
     }
     return { ok: false, message: res.message };
@@ -1248,20 +1326,26 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const res = await deleteZoneServerAction(id);
     if (res.ok) {
       if (selectedZone?.id === id) setSelectedZone(null);
-      await refreshData();
+      setZones(prev => prev.filter(z => z.id !== id));
+      // The backend cascades every per-zone availability/price override too.
+      setZoneServiceItemConfigs(prev => prev.filter(c => c.zoneId !== id));
+      setZoneDurationConfigs(prev => prev.filter(c => c.zoneId !== id));
+      setZonePackageConfigs(prev => prev.filter(c => c.zoneId !== id));
+      setZoneAddOnConfigs(prev => prev.filter(c => c.zoneId !== id));
+      setZoneSuiteConfigs(prev => prev.filter(c => c.zoneId !== id));
       return { ok: true };
     }
     return { ok: false, message: res.message };
   };
 
   // ---- Zone availability & pricing overrides ----
-  // All four config lists are refetched in full after every write (same cost as the rest of
-  // refreshData) since the backend has no per-entity filter to refetch just one slice.
+  // Each save/delete below patches just its own list locally from the response the write already
+  // returns — one API call in, one array patched, nothing else on the page refetches or reloads.
   const saveZoneServiceItemConfig = async (id: string | null, data: ZoneServiceItemConfigPayload): Promise<ActionResponse> => {
     const res = await saveZoneServiceItemConfigServerAction(id, data);
     if (res.ok) {
-      await refreshData();
-      return { ok: true };
+      setZoneServiceItemConfigs(prev => (id ? prev.map(c => (c.id === id ? res.data : c)) : [...prev, res.data]));
+      return { ok: true, id: res.data.id };
     }
     return { ok: false, message: res.message };
   };
@@ -1269,7 +1353,7 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const deleteZoneServiceItemConfig = async (id: string): Promise<ActionResponse> => {
     const res = await deleteZoneServiceItemConfigServerAction(id);
     if (res.ok) {
-      await refreshData();
+      setZoneServiceItemConfigs(prev => prev.filter(c => c.id !== id));
       return { ok: true };
     }
     return { ok: false, message: res.message };
@@ -1278,8 +1362,8 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const saveZoneDurationConfig = async (id: string | null, data: ZoneDurationConfigPayload): Promise<ActionResponse> => {
     const res = await saveZoneDurationConfigServerAction(id, data);
     if (res.ok) {
-      await refreshData();
-      return { ok: true };
+      setZoneDurationConfigs(prev => (id ? prev.map(c => (c.id === id ? res.data : c)) : [...prev, res.data]));
+      return { ok: true, id: res.data.id };
     }
     return { ok: false, message: res.message };
   };
@@ -1287,7 +1371,7 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const deleteZoneDurationConfig = async (id: string): Promise<ActionResponse> => {
     const res = await deleteZoneDurationConfigServerAction(id);
     if (res.ok) {
-      await refreshData();
+      setZoneDurationConfigs(prev => prev.filter(c => c.id !== id));
       return { ok: true };
     }
     return { ok: false, message: res.message };
@@ -1296,8 +1380,8 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const saveZonePackageConfig = async (id: string | null, data: ZonePackageConfigPayload): Promise<ActionResponse> => {
     const res = await saveZonePackageConfigServerAction(id, data);
     if (res.ok) {
-      await refreshData();
-      return { ok: true };
+      setZonePackageConfigs(prev => (id ? prev.map(c => (c.id === id ? res.data : c)) : [...prev, res.data]));
+      return { ok: true, id: res.data.id };
     }
     return { ok: false, message: res.message };
   };
@@ -1305,7 +1389,7 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const deleteZonePackageConfig = async (id: string): Promise<ActionResponse> => {
     const res = await deleteZonePackageConfigServerAction(id);
     if (res.ok) {
-      await refreshData();
+      setZonePackageConfigs(prev => prev.filter(c => c.id !== id));
       return { ok: true };
     }
     return { ok: false, message: res.message };
@@ -1314,8 +1398,8 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const saveZoneAddOnConfig = async (id: string | null, data: ZoneAddOnConfigPayload): Promise<ActionResponse> => {
     const res = await saveZoneAddOnConfigServerAction(id, data);
     if (res.ok) {
-      await refreshData();
-      return { ok: true };
+      setZoneAddOnConfigs(prev => (id ? prev.map(c => (c.id === id ? res.data : c)) : [...prev, res.data]));
+      return { ok: true, id: res.data.id };
     }
     return { ok: false, message: res.message };
   };
@@ -1323,7 +1407,7 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const deleteZoneAddOnConfig = async (id: string): Promise<ActionResponse> => {
     const res = await deleteZoneAddOnConfigServerAction(id);
     if (res.ok) {
-      await refreshData();
+      setZoneAddOnConfigs(prev => prev.filter(c => c.id !== id));
       return { ok: true };
     }
     return { ok: false, message: res.message };
@@ -1332,8 +1416,8 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const saveZoneSuiteConfig = async (id: string | null, data: ZoneSuiteConfigPayload): Promise<ActionResponse> => {
     const res = await saveZoneSuiteConfigServerAction(id, data);
     if (res.ok) {
-      await refreshData();
-      return { ok: true };
+      setZoneSuiteConfigs(prev => (id ? prev.map(c => (c.id === id ? res.data : c)) : [...prev, res.data]));
+      return { ok: true, id: res.data.id };
     }
     return { ok: false, message: res.message };
   };
@@ -1341,10 +1425,39 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const deleteZoneSuiteConfig = async (id: string): Promise<ActionResponse> => {
     const res = await deleteZoneSuiteConfigServerAction(id);
     if (res.ok) {
-      await refreshData();
+      setZoneSuiteConfigs(prev => prev.filter(c => c.id !== id));
       return { ok: true };
     }
     return { ok: false, message: res.message };
+  };
+
+  // Targeted counterpart to refreshData() for the bulk "apply to all zones" flows (ZoneConfigModal,
+  // ServiceZoneCard, DurationModal, PackModal, ZoneOverrideModal's fanOutToAllZones) — those write
+  // N rows via the raw server actions directly (bypassing the single-row setters above, since
+  // patching N results in one array update each is more churn than it's worth), so they need
+  // *some* resync afterward. This only refetches the 5 zone-config lists — never categories/
+  // sub-categories/genders/suites/service-items/zones, none of which a zone override ever changes
+  // — and doesn't touch `loading`, so it can't trigger the page-wide skeleton the way refreshData
+  // does.
+  const refreshZoneConfigs = async () => {
+    const [
+      freshItemConfigs,
+      freshDurationConfigs,
+      freshPackageConfigs,
+      freshAddOnConfigs,
+      freshSuiteConfigs,
+    ] = await Promise.all([
+      getZoneServiceItemConfigsServerAction(),
+      getZoneDurationConfigsServerAction(),
+      getZonePackageConfigsServerAction(),
+      getZoneAddOnConfigsServerAction(),
+      getZoneSuiteConfigsServerAction(),
+    ]);
+    setZoneServiceItemConfigs(freshItemConfigs);
+    setZoneDurationConfigs(freshDurationConfigs);
+    setZonePackageConfigs(freshPackageConfigs);
+    setZoneAddOnConfigs(freshAddOnConfigs);
+    setZoneSuiteConfigs(freshSuiteConfigs);
   };
 
   return (
@@ -1393,6 +1506,7 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       openCategoryModal,
       navigateToServiceDetail,
       refreshData,
+      refreshZoneConfigs,
       saveCategory,
       updateCategoryStatus,
       deleteCategory,

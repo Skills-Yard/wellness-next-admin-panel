@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Check, Trash2, Loader2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useCatalogue } from '../../contexts/CatalogueContext';
+import { useConfirm } from '../ui/confirm-dialog';
 import { OperationalZone, ServiceItem } from '../../types/catalogue';
 import {
   saveZoneServiceItemConfigServerAction,
@@ -68,7 +69,7 @@ export default function ZoneOverrideModal({ isOpen, onClose, zone, serviceItem }
     deleteZonePackageConfig,
     saveZoneAddOnConfig,
     deleteZoneAddOnConfig,
-    refreshData,
+    refreshZoneConfigs,
   } = useCatalogue();
 
   const itemConfig = zone && serviceItem
@@ -102,7 +103,7 @@ export default function ZoneOverrideModal({ isOpen, onClose, zone, serviceItem }
           isAvailable,
           surgeMultiplier: Number(surgeMultiplier) || 1,
         }),
-        refreshData,
+        refreshZoneConfigs,
       );
       setSavingAvailability(false);
       return;
@@ -201,7 +202,7 @@ export default function ZoneOverrideModal({ isOpen, onClose, zone, serviceItem }
                 zoneDurationConfigs,
                 (c) => c.serviceDurationId === durationId,
                 (zoneId) => saveZoneDurationConfigServerAction(null, { zoneId, serviceDurationId: durationId, price, discountedPrice }),
-                refreshData,
+                refreshZoneConfigs,
               );
               return;
             }
@@ -236,7 +237,7 @@ export default function ZoneOverrideModal({ isOpen, onClose, zone, serviceItem }
                 zonePackageConfigs,
                 (c) => c.servicePackageId === packageId,
                 (zoneId) => saveZonePackageConfigServerAction(null, { zoneId, servicePackageId: packageId, price }),
-                refreshData,
+                refreshZoneConfigs,
               );
               return;
             }
@@ -270,7 +271,7 @@ export default function ZoneOverrideModal({ isOpen, onClose, zone, serviceItem }
                 zoneAddOnConfigs,
                 (c) => c.serviceAddOnId === addOnId,
                 (zoneId) => saveZoneAddOnConfigServerAction(null, { zoneId, serviceAddOnId: addOnId, price }),
-                refreshData,
+                refreshZoneConfigs,
               );
               return;
             }
@@ -362,6 +363,7 @@ function PriceOverrideRow({
   const [discountedPrice, setDiscountedPrice] = useState(row.cfg?.discountedPrice != null ? String(row.cfg.discountedPrice) : '');
   const [saving, setSaving] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const confirm = useConfirm();
 
   useEffect(() => {
     setPrice(row.cfg ? String(row.cfg.price) : '');
@@ -381,6 +383,11 @@ function PriceOverrideRow({
 
   const handleClear = async () => {
     if (!row.cfg) return;
+    const ok = await confirm({
+      title: 'Remove this price override?',
+      description: `"${row.label}" reverts to its base price in this zone. This can't be undone.`,
+    });
+    if (!ok) return;
     setClearing(true);
     await onClear(row.cfg.id);
     setClearing(false);

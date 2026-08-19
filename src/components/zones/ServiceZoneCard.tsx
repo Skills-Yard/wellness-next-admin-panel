@@ -1,10 +1,11 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Loader2, Plus, ChevronDown, Trash2, X } from 'lucide-react';
+import { Plus, ChevronDown, Trash2, X } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useCatalogue } from '../../contexts/CatalogueContext';
 import { Button } from '../ui/button';
+import { Skeleton } from '../ui/skeleton';
 import DurationModal from '../catalogue/DurationModal';
 import PackModal from '../catalogue/PackModal';
 import AddOnModal from '../catalogue/AddOnModal';
@@ -82,7 +83,7 @@ export default function ServiceZoneCard({
     updatePackageInService,
     addAddOnToService,
     updateAddOnInService,
-    refreshData,
+    refreshZoneConfigs,
   } = useCatalogue();
 
   const [formMode, setFormMode] = useState<FormMode | null>(null);
@@ -140,11 +141,13 @@ export default function ServiceZoneCard({
   // existing override there), unlike ZoneConfigModal's "Apply to all zones" which only fills gaps.
   //
   // Calls the RAW server actions here (not the saveZone*Config context wrappers) so N target
-  // zones cost exactly one refreshData() at the end instead of N — same reasoning as
+  // zones cost exactly one refreshZoneConfigs() at the end instead of N — same reasoning as
   // ZoneConfigModal's handleApplyToAllZones. Going through the wrappers was the actual bug behind
   // "adding calls the API so many times" and the "have to refresh to see what I added" staleness:
   // N concurrent wrapper calls meant N concurrent full-app refetches racing each other, and
   // whichever one happened to resolve last (not necessarily the one reading the newest data) won.
+  // refreshZoneConfigs() only refetches the 5 zone-config lists (not categories/sub-categories/
+  // genders/suites/service-items/zones, and without flipping the page-wide `loading` flag).
   const syncDurationZonePrice = async (durationId: string, price: number, discountedPrice?: number | null) => {
     const targets = applyScope === 'all' ? zones : zones.filter((z) => z.id === zoneId);
     const results = await Promise.all(
@@ -158,7 +161,7 @@ export default function ServiceZoneCard({
         });
       })
     );
-    await refreshData();
+    await refreshZoneConfigs();
     const failed = results.filter((r) => !r.ok).length;
     if (failed > 0) toast.error(`Zone price failed for ${failed} of ${targets.length} zone${targets.length === 1 ? '' : 's'}.`);
   };
@@ -182,7 +185,7 @@ export default function ServiceZoneCard({
         });
       })
     );
-    await refreshData();
+    await refreshZoneConfigs();
     const failed = results.filter((r) => !r.ok).length;
     if (failed > 0) toast.error(`Zone price failed for ${failed} of ${targets.length} zone${targets.length === 1 ? '' : 's'}.`);
   };
@@ -195,7 +198,7 @@ export default function ServiceZoneCard({
         return saveZoneAddOnConfigServerAction(existing?.id ?? null, { zoneId: z.id, serviceAddOnId: addonId, price });
       })
     );
-    await refreshData();
+    await refreshZoneConfigs();
     const failed = results.filter((r) => !r.ok).length;
     if (failed > 0) toast.error(`Zone price failed for ${failed} of ${targets.length} zone${targets.length === 1 ? '' : 's'}.`);
   };
@@ -258,7 +261,7 @@ export default function ServiceZoneCard({
           return saveZoneSuiteConfigServerAction(existing?.id ?? null, { zoneId: z.id, suiteId, isAvailable });
         })
       );
-      await refreshData();
+      await refreshZoneConfigs();
       const failed = results.filter((r) => !r.ok).length;
       if (failed > 0) {
         toast.error(`Zone suite availability failed for ${failed} of ${targets.length} zone${targets.length === 1 ? '' : 's'}.`);
@@ -479,8 +482,10 @@ export default function ServiceZoneCard({
 
 function LoadingRow({ label }: { label: string }) {
   return (
-    <div className="flex items-center gap-2 text-xs text-gray-400 py-2">
-      <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading {label}...
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2" aria-label={`Loading ${label}...`}>
+      {Array.from({ length: 3 }).map((_, i) => (
+        <Skeleton key={i} className="h-14 rounded-xl" />
+      ))}
     </div>
   );
 }

@@ -4,7 +4,8 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { UserListMetrics, UserListTable } from '../../components/users';
 import { getUsersServerAction, deleteUserServerAction, updateUserServerAction } from '../../lib/server-actions/user';
 import { User, CreateUserPayload } from '../../types/user';
-import { Loader2 } from 'lucide-react';
+import { Card } from '../../components/ui/card';
+import { SkeletonTableRows } from '../../components/ui/skeleton';
 
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
@@ -37,7 +38,8 @@ export default function UsersPage() {
   const handleDeactivateUser = async (userId: string, reason?: string) => {
     const res = await updateUserServerAction(userId, { isActive: false });
     if (res.ok) {
-      await fetchUsers(true);
+      // Patch just this row locally instead of refetching (and skeleton-flashing) the whole list.
+      setUsers(prev => prev.map(u => (u.id === userId ? { ...u, ...(res.data ?? { isActive: false }) } : u)));
     } else {
       alert(res.message || 'Failed to deactivate user');
     }
@@ -50,10 +52,27 @@ export default function UsersPage() {
 
       {/* Users Table */}
       {loading ? (
-        <div className="py-20 flex flex-col items-center justify-center text-gray-400 gap-3">
-          <Loader2 className="w-8 h-8 animate-spin text-[#D4A373]" />
-          <span className="text-xs font-semibold">Loading users list...</span>
-        </div>
+        <Card className="rounded-2xl border border-gray-100 shadow-xs overflow-hidden bg-white">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-gray-50/70 border-b border-gray-100 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
+                  <th className="py-3 px-4">User</th>
+                  <th className="py-3 px-4">Contact</th>
+                  <th className="py-3 px-4">Phone Verified</th>
+                  <th className="py-3 px-4">Joined</th>
+                  <th className="py-3 px-4">Status</th>
+                  <th className="py-3 px-4">Last Seen</th>
+                  <th className="py-3 px-4">Booking</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                <SkeletonTableRows rows={6} columns={5} />
+              </tbody>
+            </table>
+          </div>
+        </Card>
       ) : (
         <UserListTable
           users={users}

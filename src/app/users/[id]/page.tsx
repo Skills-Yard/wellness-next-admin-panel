@@ -21,7 +21,7 @@ import {
   updateUserDeviceTokenServerAction,
 } from '../../../lib/server-actions/user';
 import { User, UserNotificationPreference } from '../../../types/user';
-import { Loader2 } from 'lucide-react';
+import { Skeleton, SkeletonCircle, SkeletonText } from '../../../components/ui/skeleton';
 
 export default function UserDetailPage() {
   const params = useParams();
@@ -36,11 +36,15 @@ export default function UserDetailPage() {
   const [showDeactivateModal, setShowDeactivateModal] = useState(false);
   const fetchedRef = useRef(false);
 
-  const fetchUserDetails = useCallback(async (isRefresh = false) => {
+  // `silent` re-fetches this one user without flipping `loading` — used after an action on a
+  // sub-resource (address/device) whose response isn't a reliably-shaped row to patch in locally,
+  // so a fresh fetch of the user is still needed, but re-flashing the whole page's skeleton over
+  // it is worse than a quiet in-place update.
+  const fetchUserDetails = useCallback(async (isRefresh = false, silent = false) => {
     if (!id) return;
     if (fetchedRef.current && !isRefresh) return;
     fetchedRef.current = true;
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const data = await getUserByIdServerAction(id);
       setUser(data || null);
@@ -48,7 +52,7 @@ export default function UserDetailPage() {
       console.error('Error fetching user details:', err);
       setUser(null);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [id]);
 
@@ -63,9 +67,27 @@ export default function UserDetailPage() {
 
   if (loading) {
     return (
-      <div className="py-24 flex flex-col items-center justify-center text-gray-400 gap-3">
-        <Loader2 className="w-8 h-8 animate-spin text-[#D4A373]" />
-        <span className="text-xs font-semibold">Loading user profile from database...</span>
+      <div className="space-y-6">
+        <div className="flex items-center gap-4">
+          <SkeletonCircle className="w-14 h-14" />
+          <div className="space-y-2">
+            <SkeletonText className="w-40 h-5" />
+            <SkeletonText className="w-28" />
+          </div>
+        </div>
+        <div className="flex items-center gap-2 border-b border-gray-100 pb-px">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-8 w-24 rounded-t-lg" />
+          ))}
+        </div>
+        <div className="rounded-2xl border border-gray-100 bg-white p-6 space-y-4">
+          <SkeletonText className="w-40 h-5" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-16 rounded-xl" />
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
@@ -88,7 +110,8 @@ export default function UserDetailPage() {
   const handleDeactivate = async (userId: string, reason?: string) => {
     const res = await updateUserServerAction(userId, { isActive: false });
     if (res.ok) {
-      await fetchUserDetails(true);
+      // The write already returns the updated row — patch it straight in, no refetch needed.
+      setUser(prev => (prev ? { ...prev, ...(res.data ?? { isActive: false }) } : prev));
     } else {
       alert(res.message || 'Failed to deactivate user');
     }
@@ -96,19 +119,19 @@ export default function UserDetailPage() {
 
   const handleAddAddress = async (dto: any) => {
     const res = await addUserAddressServerAction(id, dto);
-    if (res.ok) await fetchUserDetails(true);
+    if (res.ok) await fetchUserDetails(true, true);
     else alert(res.message || 'Failed to add address');
   };
 
   const handleUpdateAddress = async (addressId: string, dto: any) => {
     const res = await updateUserAddressServerAction(addressId, dto);
-    if (res.ok) await fetchUserDetails(true);
+    if (res.ok) await fetchUserDetails(true, true);
     else alert(res.message || 'Failed to update address');
   };
 
   const handleDeleteAddress = async (addressId: string) => {
     const res = await deleteUserAddressServerAction(addressId);
-    if (res.ok) await fetchUserDetails(true);
+    if (res.ok) await fetchUserDetails(true, true);
     else alert(res.message || 'Failed to delete address');
   };
 
@@ -119,7 +142,7 @@ export default function UserDetailPage() {
 
   const handleRevokeDevice = async (tokenId: string) => {
     const res = await updateUserDeviceTokenServerAction(tokenId, { isActive: false });
-    if (res.ok) await fetchUserDetails(true);
+    if (res.ok) await fetchUserDetails(true, true);
     else alert(res.message || 'Failed to revoke device token');
   };
 

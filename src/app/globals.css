@@ -19,6 +19,15 @@ body {
   letter-spacing: -0.015em;
 }
 
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 /* Used via the arbitrary-value `animate-[fadeSlideIn_...]` utility (no animate plugin is
    installed, so Tailwind's own `animate-in`/`fade-in` classes elsewhere in this codebase are
    inert — this keyframe is defined by hand instead). Content re-keyed on category/filter switch
@@ -28,8 +37,22 @@ body {
     opacity: 0;
     transform: translateY(6px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+/* Used via the arbitrary-value `animate-[shimmer_...]` utility by <Skeleton> (see
+   src/components/ui/skeleton.tsx) — the moving highlight swept across every loading placeholder
+   in the app. Same "no animate plugin, hand-write the keyframe" reasoning as fadeSlideIn above. */
+@keyframes shimmer {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(100%);
   }
 }

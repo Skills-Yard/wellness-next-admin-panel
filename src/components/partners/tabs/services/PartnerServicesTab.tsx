@@ -11,7 +11,6 @@ import { Button } from '../../../ui/button';
 interface PartnerServicesTabProps {
   partner: Partner;
   services: PartnerServiceItem[];
-  onRefresh: () => void;
   onUpdateService?: (serviceItemId: string, payload: { customPrice?: number; isActive?: boolean }) => Promise<void>;
   onRemoveService?: (serviceItemId: string) => Promise<void>;
   onSetServices?: (serviceItemIds: string[]) => Promise<void>;
@@ -20,7 +19,6 @@ interface PartnerServicesTabProps {
 export default function PartnerServicesTab({
   partner,
   services,
-  onRefresh,
   onUpdateService,
   onRemoveService,
   onSetServices,
@@ -79,7 +77,9 @@ export default function PartnerServicesTab({
           partnerId={partner.id}
           existingServices={services}
           onClose={() => setIsAddModalOpen(false)}
-          onSuccess={() => { setIsAddModalOpen(false); onRefresh(); }}
+          // onSetServices (called by the modal itself) already patches `services` state from its
+          // own response — no separate refresh needed here.
+          onSuccess={() => setIsAddModalOpen(false)}
           onSetServices={onSetServices}
         />
       )}

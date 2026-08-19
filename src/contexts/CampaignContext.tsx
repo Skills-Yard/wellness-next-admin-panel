@@ -77,10 +77,12 @@ export const CampaignProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setEditingCampaign(null);
   };
 
+  // Each patches just this one campaign locally from the response the write already returns —
+  // no refetch of the whole list, and no page-wide skeleton flash from `loading` flipping.
   const saveCampaign = async (id: string | null, payload: CampaignPayload): Promise<ActionResponse> => {
     const res = await saveCampaignServerAction(id, payload);
     if (res.ok) {
-      await refreshCampaigns();
+      setCampaigns(prev => (id ? prev.map(c => (c.id === id ? res.data : c)) : [...prev, res.data]));
       return { ok: true };
     }
     return { ok: false, message: res.message };
@@ -89,7 +91,7 @@ export const CampaignProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const updateCampaignStatus = async (id: string, isActive: boolean): Promise<ActionResponse> => {
     const res = await updateCampaignStatusServerAction(id, isActive);
     if (res.ok) {
-      await refreshCampaigns();
+      setCampaigns(prev => prev.map(c => (c.id === id ? { ...c, isActive } : c)));
       return { ok: true };
     }
     return { ok: false, message: res.message };
@@ -98,7 +100,7 @@ export const CampaignProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const deleteCampaign = async (id: string): Promise<ActionResponse> => {
     const res = await deleteCampaignServerAction(id);
     if (res.ok) {
-      await refreshCampaigns();
+      setCampaigns(prev => prev.filter(c => c.id !== id));
       return { ok: true };
     }
     return { ok: false, message: res.message };

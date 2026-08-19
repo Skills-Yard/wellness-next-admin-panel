@@ -6,6 +6,7 @@ import { Star, MoreVertical, Eye, ShieldCheck, AlertCircle, Trash2 } from 'lucid
 import { Partner, PartnerStatus } from '../../../types/partner';
 import { Avatar } from '../../ui/avatar';
 import { Badge } from '../../ui/badge';
+import { useConfirm } from '../../ui/confirm-dialog';
 import { formatPhone } from '../../../lib/utils';
 
 interface PartnerListRowProps {
@@ -25,6 +26,7 @@ export default function PartnerListRow({
   onSuspend,
   onDelete,
 }: PartnerListRowProps) {
+  const confirm = useConfirm();
   const partnerName = partner.name || 'Unnamed Partner';
   const partnerPhone = formatPhone(partner.phone, partner.countryCode);
   const partnerCity = partner.city || partner.state || 'N/A';
@@ -111,7 +113,17 @@ export default function PartnerListRow({
               </button>
             )}
             {onDelete && (
-              <button onClick={async () => { setActionMenuOpenId(null); if (confirm('Are you sure?')) await onDelete(partner.id); }} className="w-full flex items-center gap-2 px-3.5 py-2 hover:bg-red-50 text-red-600 cursor-pointer">
+              <button
+                onClick={async () => {
+                  setActionMenuOpenId(null);
+                  const ok = await confirm({
+                    title: 'Delete this partner?',
+                    description: `"${partnerName}" will be permanently removed. This can't be undone.`,
+                  });
+                  if (ok) await onDelete(partner.id);
+                }}
+                className="w-full flex items-center gap-2 px-3.5 py-2 hover:bg-red-50 text-red-600 cursor-pointer"
+              >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>Delete Partner</span>
               </button>

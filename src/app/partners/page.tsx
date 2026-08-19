@@ -9,7 +9,8 @@ import {
   deletePartnerServerAction,
 } from '../../lib/server-actions/partner';
 import { Partner } from '../../types/partner';
-import { Loader2 } from 'lucide-react';
+import { Card } from '../../components/ui/card';
+import { Skeleton, SkeletonCard, SkeletonTableRows } from '../../components/ui/skeleton';
 
 export default function PartnersPage() {
   const [partners, setPartners] = useState<Partner[]>([]);
@@ -31,10 +32,12 @@ export default function PartnersPage() {
     fetchPartners();
   }, []);
 
+  // Each patches just the one row it touched from the response the write already returns —
+  // no full refetch (and no page-wide skeleton flash) for a single partner's status/removal.
   const handleApprove = async (id: string) => {
     const res = await approvePartnerServerAction(id);
     if (res.ok) {
-      await fetchPartners();
+      setPartners(prev => prev.map(p => (p.id === id ? res.data : p)));
     } else {
       alert(res.message || 'Failed to approve partner');
     }
@@ -43,7 +46,7 @@ export default function PartnersPage() {
   const handleSuspend = async (id: string) => {
     const res = await suspendPartnerServerAction(id);
     if (res.ok) {
-      await fetchPartners();
+      setPartners(prev => prev.map(p => (p.id === id ? res.data : p)));
     } else {
       alert(res.message || 'Failed to suspend partner');
     }
@@ -52,7 +55,7 @@ export default function PartnersPage() {
   const handleDelete = async (id: string) => {
     const res = await deletePartnerServerAction(id);
     if (res.ok) {
-      await fetchPartners();
+      setPartners(prev => prev.filter(p => p.id !== id));
     } else {
       alert(res.message || 'Failed to delete partner');
     }
@@ -60,9 +63,40 @@ export default function PartnersPage() {
 
   if (loading) {
     return (
-      <div className="py-20 flex flex-col items-center justify-center text-gray-500 gap-3">
-        <Loader2 className="w-8 h-8 animate-spin text-[#D4A373]" />
-        <span className="text-xs font-semibold">Loading platform partners from database...</span>
+      <div className="space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="space-y-2">
+            <Skeleton className="h-7 w-28" />
+            <Skeleton className="h-3.5 w-64" />
+          </div>
+          <Skeleton className="h-10 w-full sm:w-80 rounded-xl" />
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <SkeletonCard key={i} />
+          ))}
+        </div>
+        <Card className="rounded-2xl border border-gray-100 shadow-xs overflow-hidden bg-white">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-gray-50/70 border-b border-gray-100 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
+                  <th className="py-3.5 px-5">Partner</th>
+                  <th className="py-3.5 px-4">Type</th>
+                  <th className="py-3.5 px-4">Rating</th>
+                  <th className="py-3.5 px-4">Location</th>
+                  <th className="py-3.5 px-4">Status</th>
+                  <th className="py-3.5 px-4">Booking</th>
+                  <th className="py-3.5 px-4">Joined</th>
+                  <th className="py-3.5 px-5 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                <SkeletonTableRows rows={6} columns={4} />
+              </tbody>
+            </table>
+          </div>
+        </Card>
       </div>
     );
   }

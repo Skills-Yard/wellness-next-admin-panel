@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import React from 'react';
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import React from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   Grid,
   FolderKanban,
@@ -16,10 +16,10 @@ import {
   MapPinned,
   X,
   ChevronLeft,
-  ChevronRight
-} from 'lucide-react';
-import { useAuth } from '../../contexts/AuthContext';
-import { Avatar } from '../ui/avatar';
+  ChevronRight,
+} from "lucide-react";
+import { useAuth } from "../../contexts/AuthContext";
+import { Avatar } from "../ui/avatar";
 
 interface SidebarProps {
   onCloseMobile?: () => void;
@@ -31,49 +31,66 @@ interface SidebarProps {
 }
 
 const menuItems = [
-  { label: 'Dashboard', icon: Grid, href: '/' },
-  { label: 'Catalogue', icon: FolderKanban, href: '/catalogue' },
-  { label: 'Campaigns', icon: Megaphone, href: '/campaigns' },
-  { label: 'Zones', icon: MapPinned, href: '/zones' },
-  { label: 'Bookings', icon: Calendar, href: '/bookings' },
-  { label: 'Partners', icon: UserCheck, href: '/partners' },
-  { label: 'Users', icon: Users, href: '/users' },
-  { label: 'Settings', icon: Settings, href: '/settings' },
+  { label: "Dashboard", icon: Grid, href: "/" },
+  { label: "Catalogue", icon: FolderKanban, href: "/catalogue" },
+  { label: "Campaigns", icon: Megaphone, href: "/campaigns" },
+  { label: "Zones", icon: MapPinned, href: "/zones" },
+  { label: "Bookings", icon: Calendar, href: "/bookings" },
+  { label: "Partners", icon: UserCheck, href: "/partners" },
+  { label: "Users", icon: Users, href: "/users" },
+  { label: "Settings", icon: Settings, href: "/settings" },
 ];
 
-export default function Sidebar({ onCloseMobile, collapsed = false, onToggleCollapse }: SidebarProps) {
+export default function Sidebar({
+  onCloseMobile,
+  collapsed = false,
+  onToggleCollapse,
+}: SidebarProps) {
   const pathname = usePathname();
   const { user, logout } = useAuth();
 
-  const displayName = user?.name || (user?.email ? user.email.split('@')[0] : 'Admin');
-  const userRole = user?.role || 'Administrator';
+  const displayName =
+    user?.name || (user?.email ? user.email.split("@")[0] : "Admin");
+  const userRole = user?.role || "Administrator";
   const fallbackInitials = displayName.substring(0, 2).toUpperCase();
 
   return (
-    <aside className={`relative w-full h-full bg-[#1C1512] text-[#E5D5C5] flex flex-col justify-between flex-shrink-0 transition-all duration-300 overflow-y-auto overflow-x-hidden select-none ${collapsed ? 'p-3' : 'p-4'}`}>
+    <aside
+      className={`relative w-full h-full bg-[#1C1512] text-[#E5D5C5] flex flex-col justify-between flex-shrink-0 transition-all duration-300 overflow-y-auto overflow-x-hidden no-scrollbar select-none ${collapsed ? "p-3" : "p-4"}`}
+    >
       {/* Minimize/expand toggle — floats on the sidebar's edge so it stays reachable whether
           expanded or collapsed. Desktop-only (onToggleCollapse is never passed to the mobile
           drawer instance). */}
       {onToggleCollapse && (
         <button
           onClick={onToggleCollapse}
-          title={collapsed ? 'Expand sidebar' : 'Minimize sidebar'}
-          className="hidden lg:flex absolute top-8 -right-3 w-6 h-6 rounded-full bg-[#1C1512] border border-[#3D3028] items-center justify-center text-[#D4A373] hover:bg-[#2D221C] hover:text-white transition-colors z-10 cursor-pointer shadow-md"
+          title={collapsed ? "Expand sidebar" : "Minimize sidebar"}
+          className={`hidden lg:flex z-50 fixed ${
+            collapsed ? "left-[64px] top-[76px]" : "top-[87px] left-[240px]"
+          } w-6 h-6 rounded-full bg-[#1C1512] border border-[#3D3028] items-center justify-center text-[#D4A373] hover:bg-[#2D221C] hover:text-white transition-[left] duration-300 cursor-pointer shadow-md`}
         >
-          {collapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronLeft className="w-3.5 h-3.5" />}
+          {collapsed ? (
+            <ChevronRight className="w-3.5 h-3.5" />
+          ) : (
+            <ChevronLeft className="w-3.5 h-3.5" />
+          )}
         </button>
       )}
 
       <div>
         {/* Logo / Header */}
-        <div className={`flex items-center mb-6 border-b border-[#2D231E] ${collapsed ? 'justify-center px-1 py-5' : 'justify-between px-4 py-5'}`}>
-          <div className={`flex items-center ${collapsed ? '' : 'gap-3'}`}>
+        <div
+          className={`flex items-center mb-6 border-b border-[#2D231E] ${collapsed ? "justify-center px-1 py-5" : "justify-between px-4 py-5"}`}
+        >
+          <div className={`flex items-center ${collapsed ? "" : "gap-3"}`}>
             <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#D4A373] to-[#F4E3D3] flex items-center justify-center text-[#1C1512] shadow-md flex-shrink-0">
               <Sparkles className="w-5 h-5 fill-current" />
             </div>
             {!collapsed && (
               <div>
-                <h1 className="font-bold text-lg text-white tracking-wide">Eezit Admin</h1>
+                <h1 className="font-bold text-lg text-white tracking-wide">
+                  Eezit Admin
+                </h1>
                 <p className="text-xs text-[#A8988A]">Eezit Management</p>
               </div>
             )}
@@ -101,12 +118,15 @@ export default function Sidebar({ onCloseMobile, collapsed = false, onToggleColl
                 href={item.href}
                 onClick={onCloseMobile}
                 title={collapsed ? item.label : undefined}
-                className={`w-full flex items-center rounded-xl text-sm font-medium transition-all duration-200 ${collapsed ? 'justify-center px-0 py-3' : 'gap-3.5 px-4 py-3'} ${isActive
-                    ? 'bg-[#2D221C] text-[#D4A373] shadow-sm border border-[#3D3028]'
-                    : 'text-[#A8988A] hover:bg-[#251D19] hover:text-white'
-                  }`}
+                className={`w-full flex items-center rounded-xl text-sm font-medium transition-all duration-200 ${collapsed ? "justify-center px-0 py-3" : "gap-3.5 px-4 py-3"} ${
+                  isActive
+                    ? "bg-[#2D221C] text-[#D4A373] shadow-sm border border-[#3D3028]"
+                    : "text-[#A8988A] hover:bg-[#251D19] hover:text-white"
+                }`}
               >
-                <Icon className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-[#D4A373]' : 'text-[#A8988A]'}`} />
+                <Icon
+                  className={`w-5 h-5 flex-shrink-0 ${isActive ? "text-[#D4A373]" : "text-[#A8988A]"}`}
+                />
                 {!collapsed && <span>{item.label}</span>}
               </Link>
             );
@@ -115,12 +135,13 @@ export default function Sidebar({ onCloseMobile, collapsed = false, onToggleColl
       </div>
 
       {/* Bottom User Avatar Profile Card & Logout */}
-      <div className={`border-t border-[#2D231E] pt-4 mt-6 space-y-3 ${collapsed ? '' : 'px-1'}`}>
-
+      <div
+        className={`border-t border-[#2D231E] pt-4 mt-6 space-y-3 ${collapsed ? "" : "px-1"}`}
+      >
         {/* User Avatar & Info */}
         <div
           title={collapsed ? `${displayName} · ${userRole}` : undefined}
-          className={`flex items-center rounded-xl bg-[#251D19]/60 border border-[#3D3028]/50 ${collapsed ? 'justify-center py-2' : 'gap-3 px-3 py-2'}`}
+          className={`flex items-center rounded-xl bg-[#251D19]/60 border border-[#3D3028]/50 ${collapsed ? "justify-center py-2" : "gap-3 px-3 py-2"}`}
         >
           <Avatar
             fallback={fallbackInitials}
@@ -143,14 +164,13 @@ export default function Sidebar({ onCloseMobile, collapsed = false, onToggleColl
         {/* Logout Button */}
         <button
           onClick={logout}
-          title={collapsed ? 'Logout' : undefined}
-          className={`w-full flex items-center rounded-xl text-sm text-[#A8988A] hover:bg-[#251D19] hover:text-red-400 transition-all cursor-pointer ${collapsed ? 'justify-center py-2.5' : 'gap-3 px-3 py-2.5'}`}
+          title={collapsed ? "Logout" : undefined}
+          className={`w-full flex items-center rounded-xl text-sm text-[#A8988A] hover:bg-[#251D19] hover:text-red-400 transition-all cursor-pointer ${collapsed ? "justify-center py-2.5" : "gap-3 px-3 py-2.5"}`}
         >
           <LogOut className="w-4 h-4 text-red-400/80 flex-shrink-0" />
           {!collapsed && <span className="font-medium">Logout</span>}
         </button>
       </div>
-
     </aside>
   );
 }

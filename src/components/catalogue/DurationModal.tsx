@@ -48,7 +48,7 @@ export default function DurationModal({
   const [saveToLibrary, setSaveToLibrary] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  const { zones, zoneDurationConfigs, refreshData } = useCatalogue();
+  const { zones, zoneDurationConfigs, refreshZoneConfigs } = useCatalogue();
   const [zoneOverrides, setZoneOverrides] = useState<Record<string, ZoneOverrideValue>>({});
 
   useEffect(() => {
@@ -94,8 +94,9 @@ export default function DurationModal({
   const canSubmit = hasOriginalPrice && !discountInvalid;
 
   // Writes/clears one ZoneDurationConfig per zone based on zoneOverrides — blank price means
-  // "no override, use the price above". Only refetches (refreshData) if something actually
-  // changed, so a duration saved without touching zone pricing doesn't trigger the full reload.
+  // "no override, use the price above". Only refetches (refreshZoneConfigs, which is scoped to
+  // just the 5 zone-config lists — not the whole catalogue) if something actually changed, so a
+  // duration saved without touching zone pricing doesn't trigger any reload at all.
   const syncZoneOverrides = async (durationId: string) => {
     const existingByZone = new Map(
       zoneDurationConfigs.filter((c) => c.serviceDurationId === durationId).map((c) => [c.zoneId, c])
@@ -129,7 +130,7 @@ export default function DurationModal({
       })
     );
     if (changed) {
-      await refreshData();
+      await refreshZoneConfigs();
       if (failed > 0) toast.error(`${failed} zone price${failed === 1 ? '' : 's'} failed to save.`);
     }
   };

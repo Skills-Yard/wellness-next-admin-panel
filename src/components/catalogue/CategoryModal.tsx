@@ -415,7 +415,7 @@ export default function CategoryModal() {
               disabled={saving}
               className="px-6 py-2.5 rounded-xl bg-[#221812] text-white font-medium text-sm hover:bg-black transition-colors shadow-md disabled:opacity-60"
             >
-              {saving ? 'Saving...' : `Save ${entityLabel}`}
+              {saving ? (isEditingExisting ? 'Updating...' : 'Saving...') : isEditingExisting ? `Update ${entityLabel}` : `Save ${entityLabel}`}
             </button>
           </div>
         </form>

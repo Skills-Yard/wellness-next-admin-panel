@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { Plus, Edit2, Trash2, MapPin, X } from 'lucide-react';
 import { User, UserAddress } from '../../../types/user';
 import { Card } from '../../ui/card';
+import { useConfirm } from '../../ui/confirm-dialog';
 
 interface UserAddressesTabProps {
   user: User;
@@ -18,6 +19,7 @@ export default function UserAddressesTab({
   onUpdateAddress,
   onDeleteAddress,
 }: UserAddressesTabProps) {
+  const confirm = useConfirm();
   const defaultAddresses: UserAddress[] = [
     {
       id: 'addr-1',
@@ -150,7 +152,14 @@ export default function UserAddressesTab({
                   <Edit2 className="w-4 h-4" />
                 </button>
                 <button
-                  onClick={() => onDeleteAddress && onDeleteAddress(addr.id)}
+                  onClick={async () => {
+                    if (!onDeleteAddress) return;
+                    const ok = await confirm({
+                      title: 'Delete this address?',
+                      description: `The "${addr.label}" address (${addr.line1}) will be removed. This can't be undone.`,
+                    });
+                    if (ok) await onDeleteAddress(addr.id);
+                  }}
                   className="p-1.5 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
                   title="Delete address"
                 >

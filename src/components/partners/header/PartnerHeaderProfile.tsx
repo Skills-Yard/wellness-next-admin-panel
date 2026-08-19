@@ -6,6 +6,7 @@ import { Partner } from '../../../types/partner';
 import { Avatar } from '../../ui/avatar';
 import { Badge } from '../../ui/badge';
 import { Button } from '../../ui/button';
+import { useConfirm } from '../../ui/confirm-dialog';
 import { formatPhone } from '../../../lib/utils';
 
 interface PartnerHeaderProfileProps {
@@ -22,6 +23,7 @@ export default function PartnerHeaderProfile({
   onDelete,
 }: PartnerHeaderProfileProps) {
   const [moreActionsOpen, setMoreActionsOpen] = useState(false);
+  const confirm = useConfirm();
 
   const partnerName = partner.name || 'Unnamed Partner';
   const partnerIdDisplay = `PR_${partner.id.slice(-6).toUpperCase()}`;
@@ -77,7 +79,17 @@ export default function PartnerHeaderProfile({
             {moreActionsOpen && (
               <div className="absolute right-0 top-11 z-20 w-44 bg-white border border-gray-100 rounded-xl shadow-lg py-1.5 text-left text-xs">
                 {onDelete && (
-                  <button onClick={async () => { setMoreActionsOpen(false); if (confirm('Delete partner?')) await onDelete(); }} className="w-full flex items-center gap-2 px-3.5 py-2 text-red-600 hover:bg-red-50 cursor-pointer">
+                  <button
+                    onClick={async () => {
+                      setMoreActionsOpen(false);
+                      const ok = await confirm({
+                        title: 'Delete this partner?',
+                        description: `"${partnerName}" will be permanently removed. This can't be undone.`,
+                      });
+                      if (ok) await onDelete();
+                    }}
+                    className="w-full flex items-center gap-2 px-3.5 py-2 text-red-600 hover:bg-red-50 cursor-pointer"
+                  >
                     <Trash2 className="w-3.5 h-3.5" />
                     <span>Delete Partner</span>
                   </button>

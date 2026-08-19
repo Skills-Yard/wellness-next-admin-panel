@@ -7,6 +7,9 @@ import { uploadFileToR2 } from '../../lib/uploadToR2';
 import { toast } from 'react-toastify';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
+import { Skeleton, SkeletonText, SkeletonCircle } from '../ui/skeleton';
+import { StatusToggle } from '../ui/status-toggle';
+import { useConfirm } from '../ui/confirm-dialog';
 import DurationModal from './DurationModal';
 import PackModal from './PackModal';
 import AddOnModal from './AddOnModal';
@@ -65,6 +68,7 @@ export default function ServiceDetailView() {
     saveServiceItem,
     deleteServiceItem,
     duplicateServiceItem,
+    updateServiceItemStatus,
     serviceDurations,
     servicePackages,
     serviceAddOns,
@@ -107,6 +111,8 @@ export default function ServiceDetailView() {
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
+  const [togglingServiceId, setTogglingServiceId] = useState<string | null>(null);
+  const confirm = useConfirm();
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const reviewFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -414,7 +420,12 @@ export default function ServiceDetailView() {
     toast.info('Created new service draft!');
   };
 
-  const handleDeleteService = async (id: string) => {
+  const handleDeleteService = async (id: string, name: string) => {
+    const ok = await confirm({
+      title: 'Delete this service?',
+      description: `"${name}" and its timeslots, packs, add-ons and zone overrides will be removed. This can't be undone.`,
+    });
+    if (!ok) return;
     try {
       const res = await deleteServiceItem(id);
       if (res.ok) {
@@ -424,6 +435,19 @@ export default function ServiceDetailView() {
       }
     } catch (err: any) {
       toast.error(`Failed to delete: ${err.message}`);
+    }
+  };
+
+  // Inline "from the outside" status toggle for the services list — flips isActive without
+  // opening the full edit form just to change status.
+  const handleToggleServiceStatus = async (id: string, nextActive: boolean) => {
+    setTogglingServiceId(id);
+    try {
+      const res = await updateServiceItemStatus(id, nextActive);
+      if (res.ok) toast.success(`Service marked ${nextActive ? 'active' : 'inactive'}`);
+      else toast.error(res.message || 'Failed to update status');
+    } finally {
+      setTogglingServiceId(null);
     }
   };
 
@@ -800,6 +824,13 @@ export default function ServiceDetailView() {
                       </div>
 
                       <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                        {!isDraftServiceId(service.id) && (
+                          <StatusToggle
+                            isActive={service.isActive !== false}
+                            busy={togglingServiceId === service.id}
+                            onToggle={() => handleToggleServiceStatus(service.id, !(service.isActive !== false))}
+                          />
+                        )}
                         <Button
                           variant="outline"
                           size="icon"
@@ -826,7 +857,7 @@ export default function ServiceDetailView() {
                         <Button
                           variant="destructive"
                           size="icon"
-                          onClick={() => handleDeleteService(service.id)}
+                          onClick={() => handleDeleteService(service.id, service.name)}
                           className="w-7 h-7 bg-red-50 text-red-500 hover:bg-red-100 border-none"
                           title="Delete Service"
                         >
@@ -1133,14 +1164,20 @@ export default function ServiceDetailView() {
                 </thead>
                 <tbody className="divide-y divide-gray-100 text-sm text-gray-700">
                   {serviceDurationsLoading ? (
-                    <tr>
-                      <td colSpan={5} className="py-6 text-center text-xs text-gray-400">
-                        <span className="inline-flex items-center gap-1.5">
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          {serviceDurations.length > 0 ? 'Updating...' : 'Loading...'}
-                        </span>
-                      </td>
-                    </tr>
+                    Array.from({ length: 3 }).map((_, i) => (
+                      <tr key={`sk-dur-${i}`}>
+                        <td className="py-3 px-4 sm:px-6"><SkeletonText className="w-20" /></td>
+                        <td className="py-3 px-4 sm:px-6"><SkeletonText className="w-14 mx-auto" /></td>
+                        <td className="py-3 px-4 sm:px-6"><SkeletonText className="w-14 mx-auto" /></td>
+                        <td className="py-3 px-4 sm:px-6"><Skeleton className="h-5 w-14 rounded-full mx-auto" /></td>
+                        <td className="py-3 px-4 sm:px-6">
+                          <div className="flex items-center justify-end gap-2">
+                            <Skeleton className="h-7 w-7 rounded-xl" />
+                            <Skeleton className="h-7 w-7 rounded-xl" />
+                          </div>
+                        </td>
+                      </tr>
+                    ))
                   ) : serviceDurations.length > 0 ? (
                     serviceDurations.map((dur) => {
                       const hasDiscount = dur.discountedPrice != null && dur.discountedPrice < dur.price;
@@ -1181,6 +1218,11 @@ export default function ServiceDetailView() {
                               size="icon"
                               onClick={async () => {
                                 if (!selectedServiceItem) return;
+                                const ok = await confirm({
+                                  title: 'Remove this timeslot?',
+                                  description: `"${dur.label}" will be removed from this service. This can't be undone.`,
+                                });
+                                if (!ok) return;
                                 const res = await deleteDurationFromService(selectedServiceItem.id, dur.id);
                                 if (res.ok) {
                                   toast.success('Timeslot removed');
@@ -1259,14 +1301,19 @@ export default function ServiceDetailView() {
                 </thead>
                 <tbody className="divide-y divide-gray-100 text-sm text-gray-700">
                   {servicePackagesLoading ? (
-                    <tr>
-                      <td colSpan={4} className="py-6 text-center text-xs text-gray-400">
-                        <span className="inline-flex items-center gap-1.5">
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          {servicePackages.length > 0 ? 'Updating...' : 'Loading...'}
-                        </span>
-                      </td>
-                    </tr>
+                    Array.from({ length: 2 }).map((_, i) => (
+                      <tr key={`sk-pkg-${i}`}>
+                        <td className="py-3 px-4 sm:px-6"><SkeletonText className="w-28" /></td>
+                        <td className="py-3 px-4 sm:px-6"><SkeletonText className="w-10 mx-auto" /></td>
+                        <td className="py-3 px-4 sm:px-6"><Skeleton className="h-5 w-12 rounded-full mx-auto" /></td>
+                        <td className="py-3 px-4 sm:px-6">
+                          <div className="flex items-center justify-end gap-2">
+                            <Skeleton className="h-7 w-7 rounded-xl" />
+                            <Skeleton className="h-7 w-7 rounded-xl" />
+                          </div>
+                        </td>
+                      </tr>
+                    ))
                   ) : servicePackages.length > 0 ? (
                     servicePackages.map((pkg) => {
                       // The backend derives price/originalPrice from sessions + savingsPercent (see
@@ -1310,6 +1357,11 @@ export default function ServiceDetailView() {
                               size="icon"
                               onClick={async () => {
                                 if (!selectedServiceItem) return;
+                                const ok = await confirm({
+                                  title: 'Remove this session pack?',
+                                  description: `"${pkg.label} (${pkg.sessions})" will be removed from this service. This can't be undone.`,
+                                });
+                                if (!ok) return;
                                 const res = await deletePackageFromService(selectedServiceItem.id, pkg.id);
                                 if (res.ok) {
                                   toast.success('Session pack removed');
@@ -1387,14 +1439,23 @@ export default function ServiceDetailView() {
                 </thead>
                 <tbody className="divide-y divide-gray-100 text-sm text-gray-700">
                   {serviceAddOnsLoading ? (
-                    <tr>
-                      <td colSpan={3} className="py-6 text-center text-xs text-gray-400">
-                        <span className="inline-flex items-center gap-1.5">
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          {serviceAddOns.length > 0 ? 'Updating...' : 'Loading...'}
-                        </span>
-                      </td>
-                    </tr>
+                    Array.from({ length: 2 }).map((_, i) => (
+                      <tr key={`sk-addon-${i}`}>
+                        <td className="py-3.5 px-4 sm:px-6">
+                          <div className="flex items-center gap-2.5">
+                            <SkeletonCircle className="w-8 h-8 rounded-lg" />
+                            <SkeletonText className="w-24" />
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4 sm:px-6"><SkeletonText className="w-10 mx-auto" /></td>
+                        <td className="py-3.5 px-4 sm:px-6">
+                          <div className="flex items-center justify-end gap-2">
+                            <Skeleton className="h-7 w-7 rounded-xl" />
+                            <Skeleton className="h-7 w-7 rounded-xl" />
+                          </div>
+                        </td>
+                      </tr>
+                    ))
                   ) : serviceAddOns.length === 0 ? (
                     <tr>
                       <td colSpan={3} className="py-6 text-center text-xs text-gray-400">
@@ -1427,6 +1488,11 @@ export default function ServiceDetailView() {
                               size="icon"
                               onClick={async () => {
                                 if (!selectedServiceItem) return;
+                                const ok = await confirm({
+                                  title: 'Remove this add-on?',
+                                  description: `"${addon.name}" will be removed from this service. This can't be undone.`,
+                                });
+                                if (!ok) return;
                                 const res = await deleteAddOnFromService(selectedServiceItem.id, addon.id);
                                 if (res.ok) {
                                   toast.success('Add-on removed');
@@ -1538,6 +1604,11 @@ export default function ServiceDetailView() {
                                   variant="destructive"
                                   size="icon"
                                   onClick={async () => {
+                                    const ok = await confirm({
+                                      title: 'Remove this zone override?',
+                                      description: `Availability and pricing for "${z.name}" will be removed. This can't be undone.`,
+                                    });
+                                    if (!ok) return;
                                     const res = await deleteZoneServiceItemConfig(cfg.id);
                                     if (res.ok) toast.success('Zone override removed');
                                     else toast.error(`Failed to remove zone override: ${res.message || 'Error occurred'}`);

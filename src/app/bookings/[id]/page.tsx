@@ -12,7 +12,7 @@ import {
 } from '../../../components/bookings';
 import { getBookingByIdServerAction, updateBookingServerAction } from '../../../lib/server-actions/booking';
 import { Booking } from '../../../types/booking';
-import { Loader2 } from 'lucide-react';
+import { Skeleton, SkeletonText } from '../../../components/ui/skeleton';
 
 export default function BookingDetailPage() {
   const params = useParams();
@@ -23,16 +23,19 @@ export default function BookingDetailPage() {
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<'timeline' | 'list'>('timeline');
 
-  const fetchBooking = async () => {
+  // `silent` skips the `loading` flip — used after marking this booking's own status, where
+  // update's response isn't a reliably-shaped row to patch in locally, but re-flashing the whole
+  // detail page's skeleton over a one-field change is worse than a quiet in-place update.
+  const fetchBooking = async (silent = false) => {
     if (!id) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const data = await getBookingByIdServerAction(id);
       setBooking(data);
     } catch (err) {
       console.error('Error fetching booking detail:', err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -42,9 +45,21 @@ export default function BookingDetailPage() {
 
   if (loading) {
     return (
-      <div className="py-24 flex flex-col items-center justify-center text-gray-500 gap-3">
-        <Loader2 className="w-8 h-8 animate-spin text-[#D4A373]" />
-        <span className="text-xs font-semibold">Loading booking details from database...</span>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <SkeletonText className="w-48 h-6" />
+          <Skeleton className="h-9 w-28 rounded-xl" />
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 space-y-4">
+            <Skeleton className="h-40 rounded-2xl" />
+            <Skeleton className="h-56 rounded-2xl" />
+          </div>
+          <div className="space-y-4">
+            <Skeleton className="h-48 rounded-2xl" />
+            <Skeleton className="h-32 rounded-2xl" />
+          </div>
+        </div>
       </div>
     );
   }
@@ -66,7 +81,7 @@ export default function BookingDetailPage() {
 
   const handleMarkCompleted = async () => {
     const res = await updateBookingServerAction(id, { status: 'COMPLETED' });
-    if (res.ok) await fetchBooking();
+    if (res.ok) await fetchBooking(true);
     else alert(res.message || 'Failed to update booking status');
   };
 

@@ -3,9 +3,10 @@
 import React, { useState } from 'react';
 import { Edit2, Trash2 } from 'lucide-react';
 import { PartnerServiceItem } from '../../../../types/partner';
-import { Badge } from '../../../ui/badge';
 import { Button } from '../../../ui/button';
 import { Input } from '../../../ui/input';
+import { StatusToggle } from '../../../ui/status-toggle';
+import { useConfirm } from '../../../ui/confirm-dialog';
 
 interface PartnerServicesRowProps {
   service: PartnerServiceItem;
@@ -23,6 +24,8 @@ export default function PartnerServicesRow({
 
   const [editingPrice, setEditingPrice] = useState(false);
   const [newPrice, setNewPrice] = useState(String(currentPricePaise / 100));
+  const [togglingActive, setTogglingActive] = useState(false);
+  const confirm = useConfirm();
 
   const handleSavePrice = async () => {
     if (!onUpdateService) return;
@@ -35,7 +38,21 @@ export default function PartnerServicesRow({
 
   const handleToggleActive = async () => {
     if (!onUpdateService) return;
-    await onUpdateService(s.serviceItemId, { isActive: !s.isActive });
+    setTogglingActive(true);
+    try {
+      await onUpdateService(s.serviceItemId, { isActive: !s.isActive });
+    } finally {
+      setTogglingActive(false);
+    }
+  };
+
+  const handleRemove = async () => {
+    if (!onRemoveService) return;
+    const ok = await confirm({
+      title: 'Remove this service from the partner?',
+      description: `"${name}" will no longer be offered by this partner. This can't be undone.`,
+    });
+    if (ok) await onRemoveService(s.serviceItemId);
   };
 
   return (
@@ -60,15 +77,11 @@ export default function PartnerServicesRow({
         )}
       </td>
       <td className="py-3.5 px-4">
-        <button onClick={handleToggleActive} className="cursor-pointer">
-          <Badge variant={s.isActive ? 'active' : 'inactive'}>
-            {s.isActive ? 'Active' : 'Inactive'}
-          </Badge>
-        </button>
+        <StatusToggle isActive={!!s.isActive} busy={togglingActive} onToggle={handleToggleActive} />
       </td>
       <td className="py-3.5 px-5 text-right">
         {onRemoveService && (
-          <button onClick={() => onRemoveService(s.serviceItemId)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 cursor-pointer">
+          <button onClick={handleRemove} className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 cursor-pointer">
             <Trash2 className="w-4 h-4" />
           </button>
         )}

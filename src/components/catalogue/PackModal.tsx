@@ -54,7 +54,7 @@ export default function PackModal({
   const [saveToLibrary, setSaveToLibrary] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  const { zones, zonePackageConfigs, zoneDurationConfigs, refreshData } = useCatalogue();
+  const { zones, zonePackageConfigs, zoneDurationConfigs, refreshZoneConfigs } = useCatalogue();
   const [zoneOverrides, setZoneOverrides] = useState<Record<string, ZoneOverrideValue>>({});
 
   useEffect(() => {
@@ -135,9 +135,9 @@ export default function PackModal({
   // Writes/clears one ZonePackageConfig per zone based on zoneOverrides — blank Discount Percent
   // means "no override, use the pack's own Discount Percent above". The backend still stores a
   // flat price/originalPrice per zone (mirrors the base pack), so the typed percent is resolved
-  // against that zone's own duration price before saving. Only refetches (refreshData) if
-  // something actually changed, so a pack saved without touching zone pricing doesn't trigger
-  // the full reload.
+  // against that zone's own duration price before saving. Only refetches (refreshZoneConfigs,
+  // scoped to just the 5 zone-config lists) if something actually changed, so a pack saved
+  // without touching zone pricing doesn't trigger any reload at all.
   const syncZoneOverrides = async (packageId: string) => {
     const existingByZone = new Map(
       zonePackageConfigs.filter((c) => c.servicePackageId === packageId).map((c) => [c.zoneId, c])
@@ -175,7 +175,7 @@ export default function PackModal({
       })
     );
     if (changed) {
-      await refreshData();
+      await refreshZoneConfigs();
       if (failed > 0) toast.error(`${failed} zone price${failed === 1 ? '' : 's'} failed to save.`);
     }
   };

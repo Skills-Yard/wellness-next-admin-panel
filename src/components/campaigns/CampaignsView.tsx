@@ -1,12 +1,14 @@
 'use client';
 
-import React from 'react';
-import { Plus, Edit3, Trash2, Loader2, Megaphone } from 'lucide-react';
+import React, { useState } from 'react';
+import { Plus, Edit3, Trash2, Megaphone } from 'lucide-react';
 import { useCampaign } from '../../contexts/CampaignContext';
 import { useCatalogue } from '../../contexts/CatalogueContext';
 import { Button } from '../ui/button';
-import { Badge } from '../ui/badge';
 import { Card } from '../ui/card';
+import { SkeletonTableRows } from '../ui/skeleton';
+import { StatusToggle } from '../ui/status-toggle';
+import { useConfirm } from '../ui/confirm-dialog';
 import { toast } from 'react-toastify';
 import { PromotionalCampaign } from '../../types/catalogue';
 
@@ -19,6 +21,8 @@ const TARGET_LABEL: Record<PromotionalCampaign['targetType'], string> = {
 export default function CampaignsView() {
   const { loading, campaigns, openCreateModal, openEditModal, updateCampaignStatus, deleteCampaign } = useCampaign();
   const { categories, subCategories, serviceItems, zones } = useCatalogue();
+  const confirm = useConfirm();
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   const resolveTarget = (c: PromotionalCampaign) => {
     if (c.targetType === 'CATEGORY') {
@@ -37,15 +41,25 @@ export default function CampaignsView() {
     c.zoneId ? zones.find(z => z.id === c.zoneId) : null;
 
   const handleToggleStatus = async (c: PromotionalCampaign) => {
-    const res = await updateCampaignStatus(c.id, !c.isActive);
-    if (res.ok) {
-      toast.success(c.isActive ? 'Campaign paused' : 'Campaign activated');
-    } else {
-      toast.error(`Failed to update status: ${res.message || 'Error occurred'}`);
+    setTogglingId(c.id);
+    try {
+      const res = await updateCampaignStatus(c.id, !c.isActive);
+      if (res.ok) {
+        toast.success(c.isActive ? 'Campaign paused' : 'Campaign activated');
+      } else {
+        toast.error(`Failed to update status: ${res.message || 'Error occurred'}`);
+      }
+    } finally {
+      setTogglingId(null);
     }
   };
 
   const handleDelete = async (c: PromotionalCampaign) => {
+    const ok = await confirm({
+      title: 'Delete this campaign?',
+      description: `"${c.title || 'Untitled campaign'}" will be permanently removed. This can't be undone.`,
+    });
+    if (!ok) return;
     const res = await deleteCampaign(c.id);
     if (res.ok) {
       toast.success('Campaign deleted');
@@ -71,9 +85,23 @@ export default function CampaignsView() {
 
       <Card className="w-full">
         {loading ? (
-          <div className="py-12 flex flex-col items-center justify-center text-gray-400 gap-2">
-            <Loader2 className="w-6 h-6 animate-spin text-[#C68A4C]" />
-            <span className="text-sm">Loading campaigns from backend...</span>
+          <div className="overflow-x-auto w-full">
+            <table className="w-full text-left border-collapse min-w-[900px]">
+              <thead>
+                <tr className="bg-[#FAF5F0] text-gray-700 text-xs font-semibold uppercase tracking-wider border-b border-[#F2E5D9]">
+                  <th className="py-4 px-4 sm:px-6">Campaign</th>
+                  <th className="py-4 px-4 sm:px-6">Type</th>
+                  <th className="py-4 px-4 sm:px-6">Target</th>
+                  <th className="py-4 px-4 sm:px-6">Zone</th>
+                  <th className="py-4 px-4 sm:px-6 text-center">Order</th>
+                  <th className="py-4 px-4 sm:px-6 text-center">Status</th>
+                  <th className="py-4 px-4 sm:px-6 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                <SkeletonTableRows rows={4} columns={4} />
+              </tbody>
+            </table>
           </div>
         ) : campaigns.length === 0 ? (
           <div className="py-16 flex flex-col items-center justify-center text-center p-6 space-y-3">
@@ -133,9 +161,12 @@ export default function CampaignsView() {
                       </td>
                       <td className="py-3.5 px-4 sm:px-6 text-center text-gray-500">{c.displayOrder}</td>
                       <td className="py-3.5 px-4 sm:px-6 text-center">
-                        <button onClick={() => handleToggleStatus(c)}>
-                          <Badge variant={c.isActive ? 'active' : 'inactive'}>{c.isActive ? 'Active' : 'Paused'}</Badge>
-                        </button>
+                        <StatusToggle
+                          isActive={c.isActive}
+                          busy={togglingId === c.id}
+                          onToggle={() => handleToggleStatus(c)}
+                          inactiveLabel="Paused"
+                        />
                       </td>
                       <td className="py-3.5 px-4 sm:px-6 text-right">
                         <div className="flex items-center justify-end gap-2">

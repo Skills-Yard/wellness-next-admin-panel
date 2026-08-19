@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { X, Check, Plus } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useCatalogue } from '../../contexts/CatalogueContext';
+import { useConfirm } from '../ui/confirm-dialog';
 import { getServiceDurationsServerAction } from '../../lib/server-actions/duration';
 import { getServicePackagesServerAction } from '../../lib/server-actions/package';
 import { getServiceAddOnsServerAction } from '../../lib/server-actions/addon';
@@ -15,6 +16,7 @@ import {
   saveZoneSuiteConfigServerAction,
 } from '../../lib/server-actions/zone';
 import { ServiceDuration, ServicePackage, ServiceAddOn, ServiceItem, ServiceSuite } from '../../types/catalogue';
+import { Skeleton } from '../ui/skeleton';
 
 type ConfigType = 'service' | 'duration' | 'package' | 'addon' | 'suite';
 type SubOption = ServiceDuration | ServicePackage | ServiceAddOn;
@@ -98,8 +100,9 @@ export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }:
     deleteZoneDurationConfig,
     deleteZonePackageConfig,
     deleteZoneAddOnConfig,
-    refreshData,
+    refreshZoneConfigs,
   } = useCatalogue();
+  const confirm = useConfirm();
 
   const isSuiteConfig = configType === 'suite';
   const needsSub = configType !== 'service' && !isSuiteConfig;
@@ -263,6 +266,11 @@ export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }:
   const handleQuickDelete = async (optId: string) => {
     const existing = subConfigMap.get(optId);
     if (!existing) return;
+    const ok = await confirm({
+      title: 'Remove from this zone?',
+      description: 'This price override will be removed from this zone. This can\'t be undone.',
+    });
+    if (!ok) return;
     setDeletingSubConfigId(existing.id);
     try {
       const deleter =
@@ -361,7 +369,7 @@ export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }:
   // to every zone forever" rule (zoneId is required on these 5 models, unlike PromotionalCampaign,
   // so there's no null-means-everywhere option here). A zone created later needs this re-run.
   // Calls the raw server actions directly (not the context-wrapped ones) so N zones only cost
-  // one refreshData() at the end instead of N.
+  // one refreshZoneConfigs() at the end instead of N.
   const handleApplyToAllZones = async () => {
     let alreadyConfiguredZoneIds: Set<string>;
     let results: { ok: boolean; message?: string }[];
@@ -424,7 +432,7 @@ export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }:
     }
 
     const failed = results.filter((r) => !r.ok).length;
-    await refreshData();
+    await refreshZoneConfigs();
 
     if (failed === 0) {
       const skipped = alreadyConfiguredZoneIds.size;
@@ -533,7 +541,11 @@ export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }:
                 </p>
               )}
               {serviceItemId && loadingSub && (
-                <p className="text-xs text-gray-400 border border-gray-100 rounded-xl p-4 text-center">Loading...</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <Skeleton key={i} className="h-16 rounded-2xl" />
+                  ))}
+                </div>
               )}
               {serviceItemId && !loadingSub && subOptions.length === 0 && (
                 <p className="text-xs text-gray-400 border border-dashed border-gray-200 rounded-xl p-4 text-center">

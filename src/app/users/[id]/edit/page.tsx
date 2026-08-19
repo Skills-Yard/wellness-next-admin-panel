@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { UserEditTab } from '../../../../components/users';
 import { getUserByIdServerAction, updateUserServerAction } from '../../../../lib/server-actions/user';
 import { User, UpdateUserPayload } from '../../../../types/user';
-import { Loader2 } from 'lucide-react';
+import { Skeleton, SkeletonText } from '../../../../components/ui/skeleton';
 
 export default function UserEditPage() {
   const params = useParams();
@@ -64,9 +64,16 @@ export default function UserEditPage() {
 
   if (loading) {
     return (
-      <div className="py-24 flex flex-col items-center justify-center text-gray-400 gap-3">
-        <Loader2 className="w-8 h-8 animate-spin text-[#D4A373]" />
-        <span className="text-xs font-semibold">Loading user details for edit...</span>
+      <div className="max-w-2xl mx-auto space-y-6">
+        <SkeletonText className="w-40 h-6" />
+        <div className="rounded-2xl border border-gray-100 bg-white p-6 space-y-5">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="space-y-1.5">
+              <SkeletonText className="w-24 h-3" />
+              <Skeleton className="h-10 rounded-xl" />
+            </div>
+          ))}
+        </div>
       </div>
     );
   }

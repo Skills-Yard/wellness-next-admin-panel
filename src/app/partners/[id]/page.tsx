@@ -37,7 +37,7 @@ import {
   PartnerBooking,
   PartnerReview,
 } from '../../../types/partner';
-import { Loader2 } from 'lucide-react';
+import { Skeleton, SkeletonCircle, SkeletonText } from '../../../components/ui/skeleton';
 
 export default function PartnerDetailPage() {
   const params = useParams();
@@ -85,9 +85,38 @@ export default function PartnerDetailPage() {
 
   if (loading) {
     return (
-      <div className="py-24 flex flex-col items-center justify-center text-gray-500 gap-3">
-        <Loader2 className="w-8 h-8 animate-spin text-[#D4A373]" />
-        <span className="text-xs font-semibold">Loading partner profile from backend database...</span>
+      <div className="space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-start gap-4">
+            <SkeletonCircle className="w-14 h-14" />
+            <div className="space-y-2">
+              <div className="flex items-center gap-2.5">
+                <SkeletonText className="w-32 h-5" />
+                <Skeleton className="h-5 w-16 rounded-full" />
+              </div>
+              <SkeletonText className="w-24" />
+              <div className="flex items-center gap-4 pt-1">
+                <SkeletonText className="w-20" />
+                <SkeletonText className="w-24" />
+                <SkeletonText className="w-28" />
+              </div>
+            </div>
+          </div>
+          <Skeleton className="h-9 w-36 rounded-xl" />
+        </div>
+        <div className="flex items-center gap-2 border-b border-gray-100 pb-px">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-8 w-24 rounded-t-lg" />
+          ))}
+        </div>
+        <div className="rounded-2xl border border-gray-100 bg-white p-6 space-y-4">
+          <SkeletonText className="w-40 h-5" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-16 rounded-xl" />
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
@@ -107,15 +136,24 @@ export default function PartnerDetailPage() {
     );
   }
 
+  // Re-fetches just the partner record itself (1 call, no `loading` flip) — used only where the
+  // write's own response doesn't already carry the updated partner (KYC/bank verification return
+  // a bare {success,message}/unknown shape, not the row), so there's nothing to patch in with
+  // locally. Every other handler below patches from its own response instead of calling this.
+  const refetchPartnerOnly = async () => {
+    const fresh = await getPartnerByIdServerAction(id);
+    if (fresh) setPartner(fresh);
+  };
+
   const handleApprove = async () => {
     const res = await approvePartnerServerAction(id);
-    if (res.ok) await fetchPartnerDetails();
+    if (res.ok) setPartner(res.data);
     else alert(res.message || 'Failed to approve partner');
   };
 
   const handleSuspend = async () => {
     const res = await suspendPartnerServerAction(id);
-    if (res.ok) await fetchPartnerDetails();
+    if (res.ok) setPartner(res.data);
     else alert(res.message || 'Failed to suspend partner');
   };
 
@@ -127,43 +165,43 @@ export default function PartnerDetailPage() {
 
   const handleApproveKyc = async () => {
     const res = await approvePartnerKycServerAction(id);
-    if (res.ok) await fetchPartnerDetails();
+    if (res.ok) await refetchPartnerOnly();
     else alert(res.message || 'Failed to approve KYC');
   };
 
   const handleRejectKyc = async (reason: string) => {
     const res = await rejectPartnerKycServerAction(id, reason);
-    if (res.ok) await fetchPartnerDetails();
+    if (res.ok) await refetchPartnerOnly();
     else alert(res.message || 'Failed to reject KYC');
   };
 
   const handleVerifyBank = async (isVerified: boolean) => {
     const res = await verifyPartnerBankServerAction(id, isVerified);
-    if (res.ok) await fetchPartnerDetails();
+    if (res.ok) await refetchPartnerOnly();
     else alert(res.message || 'Failed to update bank verification');
   };
 
   const handleUpdateService = async (serviceItemId: string, payload: { customPrice?: number; isActive?: boolean }) => {
     const res = await updatePartnerServiceServerAction(id, serviceItemId, payload);
-    if (res.ok) await fetchPartnerDetails();
+    if (res.ok) setServices(prev => prev.map(s => (s.serviceItemId === serviceItemId ? res.data : s)));
     else alert(res.message || 'Failed to update service');
   };
 
   const handleRemoveService = async (serviceItemId: string) => {
     const res = await removePartnerServiceServerAction(id, serviceItemId);
-    if (res.ok) await fetchPartnerDetails();
+    if (res.ok) setServices(prev => prev.filter(s => s.serviceItemId !== serviceItemId));
     else alert(res.message || 'Failed to remove service');
   };
 
   const handleSetServices = async (serviceItemIds: string[]) => {
     const res = await setPartnerServicesServerAction(id, serviceItemIds);
-    if (res.ok) await fetchPartnerDetails();
+    if (res.ok) setServices(res.data);
     else alert(res.message || 'Failed to set services');
   };
 
   const handleSetAvailability = async (schedules: PartnerAvailabilityItem[]) => {
     const res = await setPartnerAvailabilityServerAction(id, schedules);
-    if (res.ok) await fetchPartnerDetails();
+    if (res.ok) setAvailability(res.data);
     else alert(res.message || 'Failed to set availability');
   };
 
@@ -203,7 +241,6 @@ export default function PartnerDetailPage() {
         <PartnerServicesTab
           partner={partner}
           services={services}
-          onRefresh={fetchPartnerDetails}
           onUpdateService={handleUpdateService}
           onRemoveService={handleRemoveService}
           onSetServices={handleSetServices}
@@ -214,7 +251,6 @@ export default function PartnerDetailPage() {
         <PartnerScheduleTab
           partner={partner}
           availability={availability}
-          onRefresh={fetchPartnerDetails}
           onSetAvailability={handleSetAvailability}
         />
       )}

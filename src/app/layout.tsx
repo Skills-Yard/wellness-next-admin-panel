@@ -6,6 +6,7 @@ import { CatalogueProvider } from "../contexts/CatalogueContext";
 import { AuthProvider } from "../contexts/AuthContext";
 import MainLayout from "../components/layout/MainLayout";
 import { ToastContainer } from "react-toastify";
+import { ConfirmProvider } from "../components/ui/confirm-dialog";
 
 const plusJakartaSans = Plus_Jakarta_Sans({
   variable: "--font-plus-jakarta",
@@ -34,13 +35,15 @@ export default function RootLayout({
       className={`${plusJakartaSans.variable} ${jetbrainsMono.variable} h-full antialiased overflow-hidden`}
     >
       <body className="h-full bg-[#FAF9F6] overflow-hidden">
-        <AuthProvider>
-          <CatalogueProvider>
-            <MainLayout>
-              {children}
-            </MainLayout>
-          </CatalogueProvider>
-        </AuthProvider>
+        <ConfirmProvider>
+          <AuthProvider>
+            <CatalogueProvider>
+              <MainLayout>
+                {children}
+              </MainLayout>
+            </CatalogueProvider>
+          </AuthProvider>
+        </ConfirmProvider>
         <ToastContainer position="top-center" autoClose={3000} hideProgressBar={false} />
       </body>
     </html>

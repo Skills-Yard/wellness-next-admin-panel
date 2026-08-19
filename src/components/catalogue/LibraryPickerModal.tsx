@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { X, Search, ChevronDown, Loader2, Check } from 'lucide-react';
+import { X, Search, ChevronDown, Check, Loader2 } from 'lucide-react';
+import { Skeleton, SkeletonText } from '../ui/skeleton';
 
 export interface LibraryColumn {
   key: string;
@@ -183,14 +184,16 @@ export default function LibraryPickerModal({
           </thead>
           <tbody className="divide-y divide-gray-100 text-sm text-gray-800">
             {loading ? (
-              <tr>
-                <td colSpan={columns.length + 1} className="py-8 text-center text-xs text-gray-400">
-                  <span className="inline-flex items-center gap-1.5">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    Loading...
-                  </span>
-                </td>
-              </tr>
+              Array.from({ length: 5 }).map((_, i) => (
+                <tr key={`sk-${i}`}>
+                  <td className="py-3 px-4"><Skeleton className="w-4 h-4 rounded" /></td>
+                  {columns.map((col) => (
+                    <td key={col.key} className="py-3 px-3">
+                      <SkeletonText className={col.align === 'right' || col.align === 'center' ? 'w-12 mx-auto' : 'w-24'} />
+                    </td>
+                  ))}
+                </tr>
+              ))
             ) : pageRows.length === 0 ? (
               <tr>
                 <td colSpan={columns.length + 1} className="py-8 text-center text-xs text-gray-400">

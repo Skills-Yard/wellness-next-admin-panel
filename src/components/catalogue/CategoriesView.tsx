@@ -1,11 +1,14 @@
 'use client';
 
 import React, { useState, useRef, useLayoutEffect, useEffect } from 'react';
-import { Plus, Edit3, Trash2, ChevronDown, ChevronLeft, ChevronRight, Loader2, FolderPlus, MapPin } from 'lucide-react';
+import { Plus, Edit3, Trash2, ChevronDown, ChevronLeft, ChevronRight, FolderPlus, MapPin } from 'lucide-react';
 import { useCatalogue } from '../../contexts/CatalogueContext';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Card } from '../ui/card';
+import { SkeletonTableRows } from '../ui/skeleton';
+import { StatusToggle } from '../ui/status-toggle';
+import { useConfirm } from '../ui/confirm-dialog';
 import { toast } from 'react-toastify';
 import SuiteZoneAvailabilityModal from './SuiteZoneAvailabilityModal';
 import { ServiceCategory, ServiceSuite } from '../../types/catalogue';
@@ -91,8 +94,20 @@ export default function CategoriesView() {
     deleteCategory,
     deleteSubCategory,
     deleteServiceGender,
-    deleteServiceSuite
+    deleteServiceSuite,
+    updateCategoryStatus,
+    updateSubCategoryStatus,
+    updateServiceGenderStatus,
+    updateServiceSuiteStatus,
   } = useCatalogue();
+  const confirm = useConfirm();
+
+  // Row currently mid-flight on its status toggle (per section) — disables that one pill and
+  // swaps it to a spinner instead of locking the whole table while a single PATCH is in flight.
+  const [togglingGenderId, setTogglingGenderId] = useState<string | null>(null);
+  const [togglingCategoryId, setTogglingCategoryId] = useState<string | null>(null);
+  const [togglingSuiteId, setTogglingSuiteId] = useState<string | null>(null);
+  const [togglingSubCategoryId, setTogglingSubCategoryId] = useState<string | null>(null);
 
   // Filters the Sub-Categories table (Section 2) down to sub-categories that have at least one
   // service in the chosen suite — 'all' shows every sub-category for the active category.
@@ -190,7 +205,12 @@ export default function CategoriesView() {
   const servicesCountByGender = (genderId: string) =>
     serviceItems.filter(s => s.genderId === genderId).length;
 
-  const handleDeleteCategory = async (id: string) => {
+  const handleDeleteCategory = async (id: string, name: string) => {
+    const ok = await confirm({
+      title: 'Delete this category?',
+      description: `"${name}" and every sub-category, suite and service under it will be removed. This can't be undone.`,
+    });
+    if (!ok) return;
     try {
       const res = await deleteCategory(id);
       if (res.ok) {
@@ -203,7 +223,12 @@ export default function CategoriesView() {
     }
   };
 
-  const handleDeleteSubCategory = async (id: string) => {
+  const handleDeleteSubCategory = async (id: string, name: string) => {
+    const ok = await confirm({
+      title: 'Delete this sub-category?',
+      description: `"${name}" and its services will be removed. This can't be undone.`,
+    });
+    if (!ok) return;
     try {
       const res = await deleteSubCategory(id);
       if (res.ok) {
@@ -216,7 +241,12 @@ export default function CategoriesView() {
     }
   };
 
-  const handleDeleteGender = async (id: string) => {
+  const handleDeleteGender = async (id: string, name: string) => {
+    const ok = await confirm({
+      title: 'Delete this gender?',
+      description: `"${name}" will be removed. Services already tagged with it keep their reference. This can't be undone.`,
+    });
+    if (!ok) return;
     try {
       const res = await deleteServiceGender(id);
       if (res.ok) {
@@ -229,7 +259,12 @@ export default function CategoriesView() {
     }
   };
 
-  const handleDeleteSuite = async (id: string) => {
+  const handleDeleteSuite = async (id: string, name: string) => {
+    const ok = await confirm({
+      title: 'Delete this suite?',
+      description: `"${name}" and its zone availability will be removed. This can't be undone.`,
+    });
+    if (!ok) return;
     try {
       const res = await deleteServiceSuite(id);
       if (res.ok) {
@@ -239,6 +274,52 @@ export default function CategoriesView() {
       }
     } catch (err: any) {
       toast.error(`Delete failed: ${err.message || 'Operation failed'}`);
+    }
+  };
+
+  // ---- Inline "from the outside" status toggles — flip isActive straight from the list row,
+  // no need to open the edit modal just to change status. ----
+  const handleToggleGenderStatus = async (id: string, nextActive: boolean) => {
+    setTogglingGenderId(id);
+    try {
+      const res = await updateServiceGenderStatus(id, nextActive);
+      if (res.ok) toast.success(`Gender marked ${nextActive ? 'active' : 'inactive'}`);
+      else toast.error(res.message || 'Failed to update status');
+    } finally {
+      setTogglingGenderId(null);
+    }
+  };
+
+  const handleToggleCategoryStatus = async (id: string, nextActive: boolean) => {
+    setTogglingCategoryId(id);
+    try {
+      const res = await updateCategoryStatus(id, nextActive);
+      if (res.ok) toast.success(`Category marked ${nextActive ? 'active' : 'inactive'}`);
+      else toast.error(res.message || 'Failed to update status');
+    } finally {
+      setTogglingCategoryId(null);
+    }
+  };
+
+  const handleToggleSuiteStatus = async (id: string, nextActive: boolean) => {
+    setTogglingSuiteId(id);
+    try {
+      const res = await updateServiceSuiteStatus(id, nextActive);
+      if (res.ok) toast.success(`Suite marked ${nextActive ? 'active' : 'inactive'}`);
+      else toast.error(res.message || 'Failed to update status');
+    } finally {
+      setTogglingSuiteId(null);
+    }
+  };
+
+  const handleToggleSubCategoryStatus = async (id: string, nextActive: boolean) => {
+    setTogglingSubCategoryId(id);
+    try {
+      const res = await updateSubCategoryStatus(id, nextActive);
+      if (res.ok) toast.success(`Sub-category marked ${nextActive ? 'active' : 'inactive'}`);
+      else toast.error(res.message || 'Failed to update status');
+    } finally {
+      setTogglingSubCategoryId(null);
     }
   };
 
@@ -265,9 +346,21 @@ export default function CategoriesView() {
         {/* Genders Table Card */}
         <Card className="w-full">
           {loading ? (
-            <div className="py-12 flex flex-col items-center justify-center text-gray-400 gap-2">
-              <Loader2 className="w-6 h-6 animate-spin text-[#C68A4C]" />
-              <span className="text-sm">Loading genders from backend...</span>
+            <div className="overflow-x-auto w-full">
+              <table className="w-full text-left border-collapse min-w-[600px]">
+                <thead>
+                  <tr className="bg-[#FAF5F0] text-gray-700 text-xs font-semibold uppercase tracking-wider border-b border-[#F2E5D9]">
+                    <th className="py-4 px-4 sm:px-6">Gender</th>
+                    <th className="py-4 px-4 sm:px-6 text-center">Code</th>
+                    <th className="py-4 px-4 sm:px-6 text-center">Services</th>
+                    <th className="py-4 px-4 sm:px-6 text-center">Status</th>
+                    <th className="py-4 px-4 sm:px-6 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  <SkeletonTableRows rows={2} columns={2} />
+                </tbody>
+              </table>
             </div>
           ) : genders.length === 0 ? (
             <div className="py-16 flex flex-col items-center justify-center text-center p-6 space-y-3">
@@ -321,9 +414,11 @@ export default function CategoriesView() {
                         {servicesCountByGender(gender.id)}
                       </td>
                       <td className="py-4 px-4 sm:px-6 text-center">
-                        <Badge variant={gender.isActive !== false ? "active" : "inactive"}>
-                          {gender.isActive !== false ? 'Active' : 'Inactive'}
-                        </Badge>
+                        <StatusToggle
+                          isActive={gender.isActive !== false}
+                          busy={togglingGenderId === gender.id}
+                          onToggle={() => handleToggleGenderStatus(gender.id, !(gender.isActive !== false))}
+                        />
                       </td>
                       <td className="py-4 px-4 sm:px-6 text-right">
                         <div className="flex items-center justify-end gap-2">
@@ -338,7 +433,7 @@ export default function CategoriesView() {
                           <Button
                             variant="destructive"
                             size="icon"
-                            onClick={() => handleDeleteGender(gender.id)}
+                            onClick={() => handleDeleteGender(gender.id, gender.name)}
                             className="bg-red-50 text-red-500 hover:bg-red-100 hover:text-red-700 border-none"
                             title="Delete Gender"
                           >
@@ -375,9 +470,21 @@ export default function CategoriesView() {
         {/* Main Categories Table Card */}
         <Card className="w-full">
           {loading ? (
-            <div className="py-12 flex flex-col items-center justify-center text-gray-400 gap-2">
-              <Loader2 className="w-6 h-6 animate-spin text-[#C68A4C]" />
-              <span className="text-sm">Loading categories from backend...</span>
+            <div className="overflow-x-auto w-full">
+              <table className="w-full text-left border-collapse min-w-[600px]">
+                <thead>
+                  <tr className="bg-[#FAF5F0] text-gray-700 text-xs font-semibold uppercase tracking-wider border-b border-[#F2E5D9]">
+                    <th className="py-4 px-4 sm:px-6">Categories</th>
+                    <th className="py-4 px-4 sm:px-6 text-center">Sub-Categories</th>
+                    <th className="py-4 px-4 sm:px-6 text-center">Services</th>
+                    <th className="py-4 px-4 sm:px-6 text-center">Status</th>
+                    <th className="py-4 px-4 sm:px-6 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  <SkeletonTableRows rows={3} columns={2} />
+                </tbody>
+              </table>
             </div>
           ) : categories.length === 0 ? (
             <div className="py-16 flex flex-col items-center justify-center text-center p-6 space-y-3">
@@ -446,10 +553,12 @@ export default function CategoriesView() {
                         </td>
 
                         {/* Status Badge */}
-                        <td className="py-4 px-4 sm:px-6 text-center">
-                          <Badge variant={category.isActive !== false ? "active" : "inactive"}>
-                            {category.isActive !== false ? 'Active' : 'Inactive'}
-                          </Badge>
+                        <td className="py-4 px-4 sm:px-6 text-center" onClick={(e) => e.stopPropagation()}>
+                          <StatusToggle
+                            isActive={category.isActive !== false}
+                            busy={togglingCategoryId === category.id}
+                            onToggle={() => handleToggleCategoryStatus(category.id, !(category.isActive !== false))}
+                          />
                         </td>
 
                         {/* Action Buttons */}
@@ -466,7 +575,7 @@ export default function CategoriesView() {
                             <Button
                               variant="destructive"
                               size="icon"
-                              onClick={() => handleDeleteCategory(category.id)}
+                              onClick={() => handleDeleteCategory(category.id, category.name)}
                               className="bg-red-50 text-red-500 hover:bg-red-100 hover:text-red-700 border-none"
                               title="Delete Category"
                             >
@@ -526,9 +635,20 @@ export default function CategoriesView() {
         {/* Suites Table Card */}
         <Card className="w-full">
           {loading ? (
-            <div className="py-12 flex flex-col items-center justify-center text-gray-400 gap-2">
-              <Loader2 className="w-6 h-6 animate-spin text-[#C68A4C]" />
-              <span className="text-sm">Loading suites...</span>
+            <div className="overflow-x-auto w-full">
+              <table className="w-full text-left border-collapse min-w-[500px]">
+                <thead>
+                  <tr className="bg-[#FAF5F0] text-gray-700 text-xs font-semibold uppercase tracking-wider border-b border-[#F2E5D9]">
+                    <th className="py-4 px-4 sm:px-6">Suites</th>
+                    <th className="py-4 px-4 sm:px-6 text-center">Services</th>
+                    <th className="py-4 px-4 sm:px-6 text-center">Status</th>
+                    <th className="py-4 px-4 sm:px-6 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  <SkeletonTableRows rows={2} columns={1} />
+                </tbody>
+              </table>
             </div>
           ) : currentSuites.length === 0 ? (
             <div className="py-14 flex flex-col items-center justify-center text-center p-6 space-y-3">
@@ -583,9 +703,11 @@ export default function CategoriesView() {
                         {servicesCountBySuite(suite.id)}
                       </td>
                       <td className="py-4 px-4 sm:px-6 text-center">
-                        <Badge variant={suite.isActive !== false ? "active" : "inactive"}>
-                          {suite.isActive !== false ? 'Active' : 'Inactive'}
-                        </Badge>
+                        <StatusToggle
+                          isActive={suite.isActive !== false}
+                          busy={togglingSuiteId === suite.id}
+                          onToggle={() => handleToggleSuiteStatus(suite.id, !(suite.isActive !== false))}
+                        />
                       </td>
                       <td className="py-4 px-4 sm:px-6 text-right">
                         <div className="flex items-center justify-end gap-2">
@@ -608,7 +730,7 @@ export default function CategoriesView() {
                           <Button
                             variant="destructive"
                             size="icon"
-                            onClick={() => handleDeleteSuite(suite.id)}
+                            onClick={() => handleDeleteSuite(suite.id, suite.name)}
                             className="bg-red-50 text-red-500 hover:bg-red-100 hover:text-red-700 border-none"
                             title="Delete Suite"
                           >
@@ -759,9 +881,22 @@ export default function CategoriesView() {
         {/* Sub-Categories Table Card */}
         <Card className="w-full">
           {loading ? (
-            <div className="py-12 flex flex-col items-center justify-center text-gray-400 gap-2">
-              <Loader2 className="w-6 h-6 animate-spin text-[#C68A4C]" />
-              <span className="text-sm">Loading sub-categories...</span>
+            <div className="overflow-x-auto w-full">
+              <table className="w-full text-left border-collapse min-w-[640px]">
+                <thead>
+                  <tr className="bg-[#FAF5F0] text-gray-700 text-xs font-semibold uppercase tracking-wider border-b border-[#F2E5D9]">
+                    <th className="py-4 px-4 sm:px-6">Sub-Categories</th>
+                    <th className="py-4 px-4 sm:px-6 text-center">Services</th>
+                    <th className="py-4 px-4 sm:px-6 text-center">Suites</th>
+                    <th className="py-4 px-4 sm:px-6 text-center">Genders</th>
+                    <th className="py-4 px-4 sm:px-6 text-center">Status</th>
+                    <th className="py-4 px-4 sm:px-6 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  <SkeletonTableRows rows={3} columns={3} />
+                </tbody>
+              </table>
             </div>
           ) : currentSubCategories.length === 0 ? (
             <div className="py-14 flex flex-col items-center justify-center text-center p-6 space-y-3">
@@ -872,10 +1007,12 @@ export default function CategoriesView() {
                         </td>
 
                         {/* Status Badge */}
-                        <td className="py-4 px-4 sm:px-6 text-center">
-                          <Badge variant={sub.isActive !== false ? "active" : "inactive"}>
-                            {sub.isActive !== false ? 'Active' : 'Inactive'}
-                          </Badge>
+                        <td className="py-4 px-4 sm:px-6 text-center" onClick={(e) => e.stopPropagation()}>
+                          <StatusToggle
+                            isActive={sub.isActive !== false}
+                            busy={togglingSubCategoryId === sub.id}
+                            onToggle={() => handleToggleSubCategoryStatus(sub.id, !(sub.isActive !== false))}
+                          />
                         </td>
 
                         {/* Action Buttons */}
@@ -892,7 +1029,7 @@ export default function CategoriesView() {
                             <Button
                               variant="destructive"
                               size="icon"
-                              onClick={() => handleDeleteSubCategory(sub.id)}
+                              onClick={() => handleDeleteSubCategory(sub.id, sub.name)}
                               className="bg-red-50 text-red-500 hover:bg-red-100 hover:text-red-700 border-none"
                               title="Delete Sub-Category"
                             >

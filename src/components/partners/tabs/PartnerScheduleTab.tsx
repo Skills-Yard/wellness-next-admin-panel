@@ -11,7 +11,6 @@ import { Input } from '../../ui/input';
 interface PartnerScheduleTabProps {
   partner: Partner;
   availability: PartnerAvailabilityItem[];
-  onRefresh: () => void;
   onSetAvailability: (schedules: PartnerAvailabilityItem[]) => Promise<void>;
 }
 
@@ -28,7 +27,6 @@ const DEFAULT_DAYS: { day: DayOfWeek; name: string }[] = [
 export default function PartnerScheduleTab({
   partner,
   availability,
-  onRefresh,
   onSetAvailability,
 }: PartnerScheduleTabProps) {
   const [editingDay, setEditingDay] = useState<DayOfWeek | null>(null);
@@ -48,7 +46,8 @@ export default function PartnerScheduleTab({
       });
       await onSetAvailability(updated);
       setEditingDay(null);
-      onRefresh();
+      // onSetAvailability already patches `availability` state from its own response (see
+      // handleSetAvailability in the partner detail page) — no separate refresh needed here.
     } finally { setSaving(false); }
   };
 
@@ -61,7 +60,6 @@ export default function PartnerScheduleTab({
         return ex || { dayOfWeek: d, startTime: '09:00', endTime: '18:00', isActive: true };
       });
       await onSetAvailability(updated);
-      onRefresh();
     } finally { setSaving(false); }
   };
 

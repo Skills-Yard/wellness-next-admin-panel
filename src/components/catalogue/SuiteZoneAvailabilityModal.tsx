@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { X, Plus, Trash2, Loader2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useCatalogue } from '../../contexts/CatalogueContext';
+import { useConfirm } from '../ui/confirm-dialog';
 import { ServiceSuite } from '../../types/catalogue';
 
 interface SuiteZoneAvailabilityModalProps {
@@ -17,6 +18,7 @@ interface SuiteZoneAvailabilityModalProps {
 // toggling is done inline in the row instead of needing a nested edit modal.
 export default function SuiteZoneAvailabilityModal({ isOpen, onClose, suite }: SuiteZoneAvailabilityModalProps) {
   const { zones, zoneSuiteConfigs, saveZoneSuiteConfig, deleteZoneSuiteConfig } = useCatalogue();
+  const confirm = useConfirm();
 
   const [zonePickerId, setZonePickerId] = useState('');
   const [addingZone, setAddingZone] = useState(false);
@@ -49,7 +51,12 @@ export default function SuiteZoneAvailabilityModal({ isOpen, onClose, suite }: S
     else toast.error(res.message || 'Failed to update availability');
   };
 
-  const handleRemove = async (configId: string) => {
+  const handleRemove = async (configId: string, zoneName: string) => {
+    const ok = await confirm({
+      title: 'Remove this zone override?',
+      description: `"${suite.name}" will no longer have an availability entry for "${zoneName}". This can't be undone.`,
+    });
+    if (!ok) return;
     setBusyRowId(configId);
     const res = await deleteZoneSuiteConfig(configId);
     setBusyRowId(null);
@@ -125,7 +132,7 @@ export default function SuiteZoneAvailabilityModal({ isOpen, onClose, suite }: S
                         {busy ? <Loader2 className="w-3 h-3 animate-spin" /> : cfg.isAvailable ? 'Available' : 'Unavailable'}
                       </button>
                       <button
-                        onClick={() => handleRemove(cfg.id)}
+                        onClick={() => handleRemove(cfg.id, z.name)}
                         disabled={busy}
                         className="w-7 h-7 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 flex items-center justify-center disabled:opacity-50"
                         title="Remove override"
