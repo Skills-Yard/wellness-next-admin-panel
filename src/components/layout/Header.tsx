@@ -77,9 +77,17 @@ export default function Header({ onOpenMobileMenu }: HeaderProps) {
       );
     }
 
+    // Routes whose slug doesn't read well through the generic capitalize fallback below
+    // (hyphenated, or wants an "&" a plain capitalize can't produce).
+    const pageLabels: Record<string, string> = {
+      profile: 'My Profile',
+      settings: 'Settings',
+      'roles-permissions': 'Roles & Permissions',
+    };
+
     // Fallback: capitalize pathname
     const page = pathname.replace('/', '');
-    return <span className="text-[#C68A4C] font-semibold capitalize">{page}</span>;
+    return <span className="text-[#C68A4C] font-semibold capitalize">{pageLabels[page] || page}</span>;
   };
 
   const displayName = user?.name || (user?.email ? user.email.split('@')[0] : 'Admin');
@@ -159,19 +167,25 @@ export default function Header({ onOpenMobileMenu }: HeaderProps) {
 
             <DropdownMenuSeparator />
 
-            <DropdownMenuItem className="gap-2.5">
-              <UserIcon className="w-4 h-4 text-gray-500" />
-              <span>Admin Profile</span>
+            <DropdownMenuItem asChild className="gap-2.5">
+              <Link href="/profile">
+                <UserIcon className="w-4 h-4 text-gray-500" />
+                <span>Admin Profile</span>
+              </Link>
             </DropdownMenuItem>
 
-            <DropdownMenuItem className="gap-2.5">
-              <Shield className="w-4 h-4 text-gray-500" />
-              <span>Role & Permissions</span>
+            <DropdownMenuItem asChild className="gap-2.5">
+              <Link href="/roles-permissions">
+                <Shield className="w-4 h-4 text-gray-500" />
+                <span>Role & Permissions</span>
+              </Link>
             </DropdownMenuItem>
 
-            <DropdownMenuItem className="gap-2.5">
-              <Settings className="w-4 h-4 text-gray-500" />
-              <span>Account Settings</span>
+            <DropdownMenuItem asChild className="gap-2.5">
+              <Link href="/settings">
+                <Settings className="w-4 h-4 text-gray-500" />
+                <span>Account Settings</span>
+              </Link>
             </DropdownMenuItem>
 
             <DropdownMenuSeparator />

@@ -17,25 +17,24 @@ function unwrap<T>(resData: any, fallback: T): T {
   return (resData ?? fallback) as T;
 }
 
+// Deliberately doesn't catch-and-return-[] on failure (unlike most list actions in this
+// directory) — its only callers (Dashboard, the Partners list page) need to tell "genuinely no
+// partners" apart from "the request failed", so they can show a retry state instead of silently
+// rendering an empty/zeroed page as if it were real data. Let the error propagate; callers catch it.
 export async function getPartnersServerAction(filter?: PartnerFilter): Promise<Partner[]> {
-  try {
-    const headers = await getAuthHeaders();
-    const response = await axiosInstance.get('/admin/partners', {
-      headers,
-      params: {
-        ...(filter?.status ? { status: filter.status } : {}),
-        ...(filter?.isActive !== undefined ? { isActive: filter.isActive } : {}),
-        ...(filter?.city ? { city: filter.city } : {}),
-        ...(filter?.skip !== undefined ? { skip: filter.skip } : {}),
-        ...(filter?.take !== undefined ? { take: filter.take } : {}),
-      },
-    });
-    const data = unwrap<Partner[]>(response.data, []);
-    return Array.isArray(data) ? data : [];
-  } catch (error: any) {
-    console.error('[getPartnersServerAction]', error?.response?.data || error.message);
-    return [];
-  }
+  const headers = await getAuthHeaders();
+  const response = await axiosInstance.get('/admin/partners', {
+    headers,
+    params: {
+      ...(filter?.status ? { status: filter.status } : {}),
+      ...(filter?.isActive !== undefined ? { isActive: filter.isActive } : {}),
+      ...(filter?.city ? { city: filter.city } : {}),
+      ...(filter?.skip !== undefined ? { skip: filter.skip } : {}),
+      ...(filter?.take !== undefined ? { take: filter.take } : {}),
+    },
+  });
+  const data = unwrap<Partner[]>(response.data, []);
+  return Array.isArray(data) ? data : [];
 }
 
 export async function getPartnerByIdServerAction(id: string): Promise<Partner | null> {

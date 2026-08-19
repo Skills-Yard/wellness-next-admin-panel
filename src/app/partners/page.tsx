@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import PartnerListTable from '../../components/partners/list/PartnerListTable';
 import {
   getPartnersServerAction,
@@ -11,33 +11,50 @@ import {
 import { Partner } from '../../types/partner';
 import { Card } from '../../components/ui/card';
 import { Skeleton, SkeletonCard, SkeletonTableRows } from '../../components/ui/skeleton';
+import { getCached, setCached } from '../../lib/sessionCache';
+import FetchErrorBanner from '../../components/common/FetchErrorBanner';
+
+const CACHE_KEY = 'partners:list';
 
 export default function PartnersPage() {
-  const [partners, setPartners] = useState<Partner[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cached = getCached<Partner[]>(CACHE_KEY);
+  const [partners, setPartners] = useState<Partner[]>(cached || []);
+  // Only the very first, never-cached load shows the full skeleton — a revisit this session
+  // renders the cached list immediately while refreshing quietly underneath.
+  const [loading, setLoading] = useState(cached === undefined);
+  const [error, setError] = useState<string | null>(null);
 
-  const fetchPartners = async () => {
-    setLoading(true);
+  const fetchPartners = useCallback(async () => {
+    if (getCached<Partner[]>(CACHE_KEY) === undefined) setLoading(true);
+    setError(null);
     try {
       const data = await getPartnersServerAction();
+      setCached(CACHE_KEY, data);
       setPartners(data);
-    } catch (error) {
-      console.error('Error loading partners:', error);
+    } catch (err: any) {
+      console.error('Error loading partners:', err?.response?.data || err?.message || err);
+      // Keep whatever's already on screen (cached or previous) — a failed refresh shouldn't
+      // wipe out good data, it should just say so.
+      setError("Couldn't load the latest partners list.");
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchPartners();
-  }, []);
+  }, [fetchPartners]);
 
   // Each patches just the one row it touched from the response the write already returns —
   // no full refetch (and no page-wide skeleton flash) for a single partner's status/removal.
   const handleApprove = async (id: string) => {
     const res = await approvePartnerServerAction(id);
     if (res.ok) {
-      setPartners(prev => prev.map(p => (p.id === id ? res.data : p)));
+      setPartners(prev => {
+        const next = prev.map(p => (p.id === id ? res.data : p));
+        setCached(CACHE_KEY, next);
+        return next;
+      });
     } else {
       alert(res.message || 'Failed to approve partner');
     }
@@ -46,7 +63,11 @@ export default function PartnersPage() {
   const handleSuspend = async (id: string) => {
     const res = await suspendPartnerServerAction(id);
     if (res.ok) {
-      setPartners(prev => prev.map(p => (p.id === id ? res.data : p)));
+      setPartners(prev => {
+        const next = prev.map(p => (p.id === id ? res.data : p));
+        setCached(CACHE_KEY, next);
+        return next;
+      });
     } else {
       alert(res.message || 'Failed to suspend partner');
     }
@@ -55,7 +76,11 @@ export default function PartnersPage() {
   const handleDelete = async (id: string) => {
     const res = await deletePartnerServerAction(id);
     if (res.ok) {
-      setPartners(prev => prev.filter(p => p.id !== id));
+      setPartners(prev => {
+        const next = prev.filter(p => p.id !== id);
+        setCached(CACHE_KEY, next);
+        return next;
+      });
     } else {
       alert(res.message || 'Failed to delete partner');
     }
@@ -102,12 +127,15 @@ export default function PartnersPage() {
   }
 
   return (
-    <PartnerListTable
-      partners={partners}
-      onRefresh={fetchPartners}
-      onApprove={handleApprove}
-      onSuspend={handleSuspend}
-      onDelete={handleDelete}
-    />
+    <div className="space-y-4">
+      {error && <FetchErrorBanner message={error} onRetry={fetchPartners} />}
+      <PartnerListTable
+        partners={partners}
+        onRefresh={fetchPartners}
+        onApprove={handleApprove}
+        onSuspend={handleSuspend}
+        onDelete={handleDelete}
+      />
+    </div>
   );
 }

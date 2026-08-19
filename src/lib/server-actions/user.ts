@@ -29,23 +29,22 @@ export async function getAuthHeadersClientOrServer() {
   }
 }
 
+// Deliberately doesn't catch-and-return-[] on failure (unlike most list actions in this
+// directory) — its only callers (Dashboard, the Users list page) need to tell "genuinely no
+// users" apart from "the request failed", so they can show a retry state instead of silently
+// rendering an empty/zeroed page as if it were real data. Let the error propagate; callers catch it.
 export async function getUsersServerAction(filter?: UserFilter): Promise<User[]> {
-  try {
-    const headers = await getAuthHeadersClientOrServer();
-    const response = await axiosInstance.get('/admin/users', {
-      headers,
-      params: {
-        ...(filter?.skip !== undefined ? { skip: filter.skip } : {}),
-        ...(filter?.take !== undefined ? { take: filter.take } : {}),
-        include: '_count',
-      },
-    });
-    const data = unwrap<User[]>(response.data, []);
-    return Array.isArray(data) ? data : [];
-  } catch (error: any) {
-    console.error('[getUsersServerAction]', error?.response?.data || error.message);
-    return [];
-  }
+  const headers = await getAuthHeadersClientOrServer();
+  const response = await axiosInstance.get('/admin/users', {
+    headers,
+    params: {
+      ...(filter?.skip !== undefined ? { skip: filter.skip } : {}),
+      ...(filter?.take !== undefined ? { take: filter.take } : {}),
+      include: '_count',
+    },
+  });
+  const data = unwrap<User[]>(response.data, []);
+  return Array.isArray(data) ? data : [];
 }
 
 export async function getUserByIdServerAction(id: string): Promise<User | null> {
