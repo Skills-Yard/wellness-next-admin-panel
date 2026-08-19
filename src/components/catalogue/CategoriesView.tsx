@@ -102,6 +102,21 @@ export default function CategoriesView() {
   } = useCatalogue();
   const confirm = useConfirm();
 
+  // The tab switcher (Section 1B/2) is a quick-navigation control, not the management table —
+  // an inactive category has nothing active to manage under it, so it's dropped from the tabs
+  // while still showing up (with its status toggle) in the main table above.
+  const activeCategories = categories.filter(c => c.isActive !== false);
+
+  // If the selected category drops out of the active set (toggled inactive, or it was inactive
+  // on load) fall back to the first active one instead of leaving the tabs with nothing
+  // highlighted while Sections 1B/2 still show content for a now-hidden category.
+  useEffect(() => {
+    if (selectedCategory && !activeCategories.some(c => c.id === selectedCategory.id)) {
+      setSelectedCategory(activeCategories[0] || null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCategory, activeCategories]);
+
   // Row currently mid-flight on its status toggle (per section) — disables that one pill and
   // swaps it to a spinner instead of locking the whole table while a single PATCH is in flight.
   const [togglingGenderId, setTogglingGenderId] = useState<string | null>(null);
@@ -630,7 +645,7 @@ export default function CategoriesView() {
 
         {/* Category switcher — tabs instead of a dropdown so every category is reachable in one
             glance (see CategoryTabs above); drives the same selectedCategory used by Section 2. */}
-        <CategoryTabs categories={categories} selectedId={selectedCategory?.id} onSelect={setSelectedCategory} />
+        <CategoryTabs categories={activeCategories} selectedId={selectedCategory?.id} onSelect={setSelectedCategory} />
 
         {/* Suites Table Card */}
         <Card className="w-full">
@@ -773,7 +788,7 @@ export default function CategoriesView() {
             dropdowns below fade/scale in via subCategorySuiteFilterOpen/subCategoryGenderFilterOpen
             instead of just popping open). */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <CategoryTabs categories={categories} selectedId={selectedCategory?.id} onSelect={setSelectedCategory} />
+          <CategoryTabs categories={activeCategories} selectedId={selectedCategory?.id} onSelect={setSelectedCategory} />
 
           {(currentSuites.length > 0 || currentGenders.length > 0) && (
             <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap self-start sm:self-auto">
