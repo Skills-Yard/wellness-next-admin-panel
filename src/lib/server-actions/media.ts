@@ -7,6 +7,12 @@ import { getAuthHeaders } from './category';
 export interface GetUploadUrlPayload {
   fileName: string;
   contentType: string;
+  // Matches GetUploadUrlDto's @IsEnum(R2Module) on the backend exactly (see
+  // wellness-backend/src/shared/storage/r2-storage.service.ts) — 'genders'/'suites'/'campaigns'
+  // are listed here even though the backend enum doesn't currently accept them either; leaving
+  // them as-is rather than silently narrowing this shared type out from under whichever caller
+  // added them. There's no 'training' value yet — training uploads reuse 'app-content' below
+  // until the backend adds one (see CourseModal/LessonModal).
   module: 'categories' | 'subcategories' | 'genders' | 'suites' | 'services' | 'addons' | 'professional-banners' | 'app-content' | 'campaigns';
   version?: number;
   slug?: string;

@@ -76,6 +76,25 @@ export default function Header({ onOpenMobileMenu }: HeaderProps) {
         </>
       );
     }
+    if (pathname.startsWith('/training/')) {
+      return (
+        <>
+          <Link
+            href="/training"
+            className="text-gray-500 hover:text-gray-800 transition-colors"
+          >
+            Training
+          </Link>
+          <span className="text-gray-300 font-light">&gt;</span>
+          {/* breadcrumbLabel is set by the course detail page once it has loaded the course
+              (see BreadcrumbContext) — show a neutral placeholder instead of the raw id from
+              the URL while that fetch is still in flight. */}
+          <span className="text-[#C68A4C] font-semibold truncate max-w-40 sm:max-w-none">
+            {breadcrumbLabel || 'Course Details'}
+          </span>
+        </>
+      );
+    }
 
     // Routes whose slug doesn't read well through the generic capitalize fallback below
     // (hyphenated, or wants an "&" a plain capitalize can't produce).

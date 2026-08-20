@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -14,7 +14,9 @@ import {
   Sparkles,
   Megaphone,
   MapPinned,
+  GraduationCap,
   X,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
@@ -30,13 +32,27 @@ interface SidebarProps {
   onToggleCollapse?: () => void;
 }
 
-const menuItems = [
+// Either a direct link, or a group (rendered as an expandable parent with its own sub-links —
+// see the "Partner" group below, which nests the existing Partner pages alongside the new
+// Training section under one parent instead of two more flat top-level items).
+type MenuItem =
+  | { label: string; icon: typeof Grid; href: string }
+  | { label: string; icon: typeof Grid; children: { label: string; icon: typeof Grid; href: string }[] };
+
+const menuItems: MenuItem[] = [
   { label: "Dashboard", icon: Grid, href: "/" },
   { label: "Catalogue", icon: FolderKanban, href: "/catalogue" },
   { label: "Campaigns", icon: Megaphone, href: "/campaigns" },
   { label: "Zones", icon: MapPinned, href: "/zones" },
   { label: "Bookings", icon: Calendar, href: "/bookings" },
-  { label: "Partners", icon: UserCheck, href: "/partners" },
+  {
+    label: "Partner",
+    icon: UserCheck,
+    children: [
+      { label: "Partner", icon: UserCheck, href: "/partners" },
+      { label: "Training", icon: GraduationCap, href: "/training" },
+    ],
+  },
   { label: "Users", icon: Users, href: "/users" },
   { label: "Settings", icon: Settings, href: "/settings" },
 ];
@@ -48,6 +64,13 @@ export default function Sidebar({
 }: SidebarProps) {
   const pathname = usePathname();
   const { user, logout } = useAuth();
+
+  // Which group (by label) the user has manually expanded/collapsed this session — null means
+  // "no manual override yet", in which case a group whose own route is currently active falls
+  // back to open (see isOpen below) instead of hiding the very link you're standing on.
+  const [openGroup, setOpenGroup] = useState<string | null>(null);
+
+  const isChildActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
 
   const displayName =
     user?.name || (user?.email ? user.email.split("@")[0] : "Admin");
@@ -111,6 +134,76 @@ export default function Sidebar({
         <nav className="space-y-1.5">
           {menuItems.map((item) => {
             const Icon = item.icon;
+
+            if ("children" in item) {
+              const isGroupActive = item.children.some((c) => isChildActive(c.href));
+              const isOpen = openGroup === item.label || (openGroup === null && isGroupActive);
+
+              // Collapsed rail has no room for a sub-list — the parent icon just goes straight
+              // to its first child (Partner) instead of doubling as an inert expand toggle.
+              if (collapsed) {
+                return (
+                  <Link
+                    key={item.label}
+                    href={item.children[0].href}
+                    onClick={onCloseMobile}
+                    title={item.label}
+                    className={`w-full flex items-center justify-center px-0 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${
+                      isGroupActive
+                        ? "bg-[#2D221C] text-[#D4A373] shadow-sm border border-[#3D3028]"
+                        : "text-[#A8988A] hover:bg-[#251D19] hover:text-white"
+                    }`}
+                  >
+                    <Icon className={`w-5 h-5 flex-shrink-0 ${isGroupActive ? "text-[#D4A373]" : "text-[#A8988A]"}`} />
+                  </Link>
+                );
+              }
+
+              return (
+                <div key={item.label}>
+                  <button
+                    type="button"
+                    onClick={() => setOpenGroup(isOpen ? "" : item.label)}
+                    className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 cursor-pointer ${
+                      isGroupActive
+                        ? "bg-[#2D221C] text-[#D4A373] shadow-sm border border-[#3D3028]"
+                        : "text-[#A8988A] hover:bg-[#251D19] hover:text-white"
+                    }`}
+                  >
+                    <Icon className={`w-5 h-5 flex-shrink-0 ${isGroupActive ? "text-[#D4A373]" : "text-[#A8988A]"}`} />
+                    <span className="flex-1 text-left">{item.label}</span>
+                    <ChevronDown className={`w-3.5 h-3.5 flex-shrink-0 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`} />
+                  </button>
+
+                  <div className={`grid transition-all duration-200 ${isOpen ? "grid-rows-[1fr] opacity-100 mt-1" : "grid-rows-[0fr] opacity-0"}`}>
+                    <div className="overflow-hidden">
+                      <div className="ml-5 pl-3.5 border-l border-[#2D231E] space-y-1">
+                        {item.children.map((child) => {
+                          const ChildIcon = child.icon;
+                          const childActive = isChildActive(child.href);
+                          return (
+                            <Link
+                              key={child.href}
+                              href={child.href}
+                              onClick={onCloseMobile}
+                              className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                childActive
+                                  ? "text-[#D4A373] bg-[#251D19]"
+                                  : "text-[#A8988A] hover:text-white hover:bg-[#251D19]"
+                              }`}
+                            >
+                              <ChildIcon className={`w-4 h-4 flex-shrink-0 ${childActive ? "text-[#D4A373]" : "text-[#A8988A]"}`} />
+                              <span>{child.label}</span>
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
             const isActive = pathname === item.href;
             return (
               <Link

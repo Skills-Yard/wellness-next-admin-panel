@@ -8,7 +8,12 @@ export const axiosInstance: AxiosInstance = axios.create({
     'Content-Type': 'application/json',
     'ngrok-skip-browser-warning': 'true',
   },
-  timeout: 10000,
+  // The backend is on Render's free tier, which spins the service down after idle and takes
+  // 20-50s+ to cold-start the next request — 10s was aborting every one of those as a hard
+  // failure (Dashboard/Partners/etc. showing zeroed data with a "couldn't load" banner even
+  // though the backend was simply still waking up). 30s covers that without making a genuinely
+  // unreachable backend hang much longer than before.
+  timeout: 30000,
 });
 
 axiosInstance.interceptors.request.use((config) => {
