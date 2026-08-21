@@ -12,6 +12,7 @@ import {
 } from '../../types/catalogue';
 import { ActionResult, getAuthHeaders } from './category';
 import { parseServerError } from '../errorParser';
+import { fetchAllPaginated, PaginatedEnvelope } from './pagination';
 
 function unwrap<T>(resData: any, fallback: T): T {
   if (resData && typeof resData === 'object' && 'data' in resData) return resData.data;
@@ -22,15 +23,17 @@ function unwrap<T>(resData: any, fallback: T): T {
 export async function getZonesServerAction(filters?: { city?: string; isActive?: boolean }): Promise<OperationalZone[]> {
   try {
     const headers = await getAuthHeaders();
-    const response = await axiosInstance.get('/admin/zones', {
-      headers,
-      params: {
-        city: filters?.city || undefined,
-        isActive: filters?.isActive === undefined ? undefined : String(filters.isActive),
-      },
-    });
-    const data = unwrap<OperationalZone[]>(response.data, []);
-    return Array.isArray(data) ? data : [];
+    return await fetchAllPaginated<OperationalZone>((page, limit) =>
+      axiosInstance.get<PaginatedEnvelope<OperationalZone>>('/admin/zones', {
+        headers,
+        params: {
+          city: filters?.city || undefined,
+          isActive: filters?.isActive === undefined ? undefined : String(filters.isActive),
+          page,
+          limit,
+        },
+      })
+    );
   } catch (error: any) {
     console.error('[getZonesServerAction]', error?.response?.data || error.message);
     return [];
@@ -113,9 +116,12 @@ export async function deleteZoneServerAction(id: string): Promise<ActionResult<v
 export async function getZoneServiceItemConfigsServerAction(): Promise<ZoneServiceItemConfig[]> {
   try {
     const headers = await getAuthHeaders();
-    const response = await axiosInstance.get('/admin/zones/service-item-configs', { headers });
-    const data = unwrap<ZoneServiceItemConfig[]>(response.data, []);
-    return Array.isArray(data) ? data : [];
+    return await fetchAllPaginated<ZoneServiceItemConfig>((page, limit) =>
+      axiosInstance.get<PaginatedEnvelope<ZoneServiceItemConfig>>('/admin/zones/service-item-configs', {
+        headers,
+        params: { page, limit },
+      })
+    );
   } catch (error: any) {
     console.error('[getZoneServiceItemConfigsServerAction]', error?.response?.data || error.message);
     return [];
@@ -161,9 +167,12 @@ export async function deleteZoneServiceItemConfigServerAction(id: string): Promi
 export async function getZoneDurationConfigsServerAction(): Promise<ZoneDurationConfig[]> {
   try {
     const headers = await getAuthHeaders();
-    const response = await axiosInstance.get('/admin/zones/duration-configs', { headers });
-    const data = unwrap<ZoneDurationConfig[]>(response.data, []);
-    return Array.isArray(data) ? data : [];
+    return await fetchAllPaginated<ZoneDurationConfig>((page, limit) =>
+      axiosInstance.get<PaginatedEnvelope<ZoneDurationConfig>>('/admin/zones/duration-configs', {
+        headers,
+        params: { page, limit },
+      })
+    );
   } catch (error: any) {
     console.error('[getZoneDurationConfigsServerAction]', error?.response?.data || error.message);
     return [];
@@ -209,9 +218,12 @@ export async function deleteZoneDurationConfigServerAction(id: string): Promise<
 export async function getZonePackageConfigsServerAction(): Promise<ZonePackageConfig[]> {
   try {
     const headers = await getAuthHeaders();
-    const response = await axiosInstance.get('/admin/zones/package-configs', { headers });
-    const data = unwrap<ZonePackageConfig[]>(response.data, []);
-    return Array.isArray(data) ? data : [];
+    return await fetchAllPaginated<ZonePackageConfig>((page, limit) =>
+      axiosInstance.get<PaginatedEnvelope<ZonePackageConfig>>('/admin/zones/package-configs', {
+        headers,
+        params: { page, limit },
+      })
+    );
   } catch (error: any) {
     console.error('[getZonePackageConfigsServerAction]', error?.response?.data || error.message);
     return [];
@@ -259,9 +271,12 @@ export async function deleteZonePackageConfigServerAction(id: string): Promise<A
 export async function getZoneAddOnConfigsServerAction(): Promise<ZoneAddOnConfig[]> {
   try {
     const headers = await getAuthHeaders();
-    const response = await axiosInstance.get('/admin/zones/add-on-configs', { headers });
-    const data = unwrap<ZoneAddOnConfig[]>(response.data, []);
-    return Array.isArray(data) ? data : [];
+    return await fetchAllPaginated<ZoneAddOnConfig>((page, limit) =>
+      axiosInstance.get<PaginatedEnvelope<ZoneAddOnConfig>>('/admin/zones/add-on-configs', {
+        headers,
+        params: { page, limit },
+      })
+    );
   } catch (error: any) {
     console.error('[getZoneAddOnConfigsServerAction]', error?.response?.data || error.message);
     return [];
@@ -309,9 +324,12 @@ export async function deleteZoneAddOnConfigServerAction(id: string): Promise<Act
 export async function getZoneSuiteConfigsServerAction(): Promise<ZoneSuiteConfig[]> {
   try {
     const headers = await getAuthHeaders();
-    const response = await axiosInstance.get('/admin/zones/suite-configs', { headers });
-    const data = unwrap<ZoneSuiteConfig[]>(response.data, []);
-    return Array.isArray(data) ? data : [];
+    return await fetchAllPaginated<ZoneSuiteConfig>((page, limit) =>
+      axiosInstance.get<PaginatedEnvelope<ZoneSuiteConfig>>('/admin/zones/suite-configs', {
+        headers,
+        params: { page, limit },
+      })
+    );
   } catch (error: any) {
     console.error('[getZoneSuiteConfigsServerAction]', error?.response?.data || error.message);
     return [];

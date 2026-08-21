@@ -170,8 +170,6 @@ export interface PartnerFilter {
   status?: PartnerStatus;
   isActive?: boolean;
   city?: string;
-  skip?: number;
-  take?: number;
   search?: string;
 }
 

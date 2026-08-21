@@ -3,6 +3,7 @@
 import axiosInstance from '../axios';
 import { getAuthHeaders, ActionResult } from './category';
 import { parseServerError } from '../errorParser';
+import { fetchAllPaginated, PaginatedEnvelope } from './pagination';
 import {
   Partner,
   PartnerFilter,
@@ -23,18 +24,19 @@ function unwrap<T>(resData: any, fallback: T): T {
 // rendering an empty/zeroed page as if it were real data. Let the error propagate; callers catch it.
 export async function getPartnersServerAction(filter?: PartnerFilter): Promise<Partner[]> {
   const headers = await getAuthHeaders();
-  const response = await axiosInstance.get('/admin/partners', {
-    headers,
-    params: {
-      ...(filter?.status ? { status: filter.status } : {}),
-      ...(filter?.isActive !== undefined ? { isActive: filter.isActive } : {}),
-      ...(filter?.city ? { city: filter.city } : {}),
-      ...(filter?.skip !== undefined ? { skip: filter.skip } : {}),
-      ...(filter?.take !== undefined ? { take: filter.take } : {}),
-    },
-  });
-  const data = unwrap<Partner[]>(response.data, []);
-  return Array.isArray(data) ? data : [];
+  return fetchAllPaginated<Partner>((page, limit) =>
+    axiosInstance.get<PaginatedEnvelope<Partner>>('/admin/partners', {
+      headers,
+      params: {
+        ...(filter?.status ? { status: filter.status } : {}),
+        ...(filter?.isActive !== undefined ? { isActive: filter.isActive } : {}),
+        ...(filter?.city ? { city: filter.city } : {}),
+        ...(filter?.search ? { q: filter.search } : {}),
+        page,
+        limit,
+      },
+    })
+  );
 }
 
 export async function getPartnerByIdServerAction(id: string): Promise<Partner | null> {
@@ -233,9 +235,12 @@ export async function setPartnerAvailabilityServerAction(
 export async function getPartnerBookingsServerAction(id: string): Promise<PartnerBooking[]> {
   try {
     const headers = await getAuthHeaders();
-    const response = await axiosInstance.get(`/admin/partners/${id}/bookings`, { headers });
-    const data = unwrap<PartnerBooking[]>(response.data, []);
-    return Array.isArray(data) ? data : [];
+    return await fetchAllPaginated<PartnerBooking>((page, limit) =>
+      axiosInstance.get<PaginatedEnvelope<PartnerBooking>>(`/admin/partners/${id}/bookings`, {
+        headers,
+        params: { page, limit },
+      })
+    );
   } catch (error: any) {
     console.error('[getPartnerBookingsServerAction]', error?.response?.data || error.message);
     return [];
@@ -246,9 +251,12 @@ export async function getPartnerBookingsServerAction(id: string): Promise<Partne
 export async function getPartnerReviewsServerAction(id: string): Promise<PartnerReview[]> {
   try {
     const headers = await getAuthHeaders();
-    const response = await axiosInstance.get(`/admin/partners/${id}/reviews`, { headers });
-    const data = unwrap<PartnerReview[]>(response.data, []);
-    return Array.isArray(data) ? data : [];
+    return await fetchAllPaginated<PartnerReview>((page, limit) =>
+      axiosInstance.get<PaginatedEnvelope<PartnerReview>>(`/admin/partners/${id}/reviews`, {
+        headers,
+        params: { page, limit },
+      })
+    );
   } catch (error: any) {
     console.error('[getPartnerReviewsServerAction]', error?.response?.data || error.message);
     return [];

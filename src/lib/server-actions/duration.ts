@@ -4,6 +4,7 @@ import axiosInstance from '../axios';
 import { ServiceDuration } from '../../types/catalogue';
 import { ActionResult, getAuthHeaders } from './category';
 import { parseServerError } from '../errorParser';
+import { fetchAllPaginated, PaginatedEnvelope } from './pagination';
 
 function unwrap<T>(resData: any, fallback: T): T {
   if (resData && typeof resData === 'object' && 'data' in resData) return resData.data;
@@ -32,9 +33,12 @@ export async function getServiceDurationsServerAction(serviceItemId: string): Pr
 export async function getAllServiceDurationsServerAction(): Promise<ServiceDuration[]> {
   try {
     const headers = await getAuthHeaders();
-    const response = await axiosInstance.get('/admin/catalog/service-durations', { headers });
-    const data = unwrap<ServiceDuration[]>(response.data, []);
-    return Array.isArray(data) ? data : [];
+    return await fetchAllPaginated<ServiceDuration>((page, limit) =>
+      axiosInstance.get<PaginatedEnvelope<ServiceDuration>>('/admin/catalog/service-durations', {
+        headers,
+        params: { page, limit },
+      })
+    );
   } catch (error: any) {
     console.error('[getAllServiceDurationsServerAction]', error?.response?.data || error.message);
     return [];

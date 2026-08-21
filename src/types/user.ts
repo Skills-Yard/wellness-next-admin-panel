@@ -113,11 +113,10 @@ export interface User {
 export interface UserFilter {
   search?: string;
   status?: UserStatus | 'ALL';
+  isActive?: boolean;
   isPhoneVerified?: boolean;
   startDate?: string;
   endDate?: string;
-  skip?: number;
-  take?: number;
 }
 
 export interface CreateUserPayload {

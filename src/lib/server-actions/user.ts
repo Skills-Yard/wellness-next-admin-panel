@@ -1,5 +1,6 @@
 import axiosInstance from '../axios';
 import { parseServerError } from '../errorParser';
+import { fetchAllPaginated, PaginatedEnvelope } from './pagination';
 import {
   User,
   UserFilter,
@@ -33,18 +34,24 @@ export async function getAuthHeadersClientOrServer() {
 // directory) — its only callers (Dashboard, the Users list page) need to tell "genuinely no
 // users" apart from "the request failed", so they can show a retry state instead of silently
 // rendering an empty/zeroed page as if it were real data. Let the error propagate; callers catch it.
+//
+// isActive: the backend used to hardcode active-only server-side; it's now an optional filter
+// (omitting it returns deactivated users too). Defaulted to true here so this list keeps
+// showing only active users unless a caller explicitly asks otherwise — same behavior as
+// before, just explicit now instead of implicit.
 export async function getUsersServerAction(filter?: UserFilter): Promise<User[]> {
   const headers = await getAuthHeadersClientOrServer();
-  const response = await axiosInstance.get('/admin/users', {
-    headers,
-    params: {
-      ...(filter?.skip !== undefined ? { skip: filter.skip } : {}),
-      ...(filter?.take !== undefined ? { take: filter.take } : {}),
-      include: '_count',
-    },
-  });
-  const data = unwrap<User[]>(response.data, []);
-  return Array.isArray(data) ? data : [];
+  return fetchAllPaginated<User>((page, limit) =>
+    axiosInstance.get<PaginatedEnvelope<User>>('/admin/users', {
+      headers,
+      params: {
+        isActive: filter?.isActive ?? true,
+        ...(filter?.search ? { q: filter.search } : {}),
+        page,
+        limit,
+      },
+    })
+  );
 }
 
 export async function getUserByIdServerAction(id: string): Promise<User | null> {

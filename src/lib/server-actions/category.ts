@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import axiosInstance from '../axios';
 import { ServiceCategory } from '../../types/catalogue';
 import { parseServerError } from '../errorParser';
+import { fetchAllPaginated, PaginatedEnvelope } from './pagination';
 
 export type ActionResult<T> =
   | { ok: true; data: T }
@@ -29,12 +30,12 @@ function unwrap<T>(resData: any, fallback: T): T {
 export async function getCategoriesServerAction(isActive?: boolean): Promise<ServiceCategory[]> {
   try {
     const headers = await getAuthHeaders();
-    const response = await axiosInstance.get('/admin/catalog/categories', {
-      headers,
-      params: isActive === undefined ? undefined : { isActive },
-    });
-    const data = unwrap<ServiceCategory[]>(response.data, []);
-    return Array.isArray(data) ? data : [];
+    return await fetchAllPaginated<ServiceCategory>((page, limit) =>
+      axiosInstance.get<PaginatedEnvelope<ServiceCategory>>('/admin/catalog/categories', {
+        headers,
+        params: { ...(isActive === undefined ? {} : { isActive }), page, limit },
+      })
+    );
   } catch (error: any) {
     console.error('[getCategoriesServerAction]', error?.response?.data || error.message);
     return [];

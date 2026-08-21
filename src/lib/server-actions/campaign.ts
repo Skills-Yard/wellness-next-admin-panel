@@ -4,6 +4,7 @@ import axiosInstance from '../axios';
 import { PromotionalCampaign, CampaignType, CampaignTargetType, MediaType } from '../../types/catalogue';
 import { ActionResult, getAuthHeaders } from './category';
 import { parseServerError } from '../errorParser';
+import { fetchAllPaginated, PaginatedEnvelope } from './pagination';
 
 function unwrap<T>(resData: any, fallback: T): T {
   if (resData && typeof resData === 'object' && 'data' in resData) return resData.data;
@@ -16,14 +17,22 @@ function unwrap<T>(resData: any, fallback: T): T {
 export async function getCampaignsServerAction(): Promise<PromotionalCampaign[]> {
   try {
     const headers = await getAuthHeaders();
-    const [activeRes, inactiveRes] = await Promise.all([
-      axiosInstance.get('/admin/catalog/promotional-campaign', { headers, params: { isActive: true } }),
-      axiosInstance.get('/admin/catalog/promotional-campaign', { headers, params: { isActive: false } }),
+    const [active, inactive] = await Promise.all([
+      fetchAllPaginated<PromotionalCampaign>((page, limit) =>
+        axiosInstance.get<PaginatedEnvelope<PromotionalCampaign>>('/admin/catalog/promotional-campaign', {
+          headers,
+          params: { isActive: true, page, limit },
+        })
+      ),
+      fetchAllPaginated<PromotionalCampaign>((page, limit) =>
+        axiosInstance.get<PaginatedEnvelope<PromotionalCampaign>>('/admin/catalog/promotional-campaign', {
+          headers,
+          params: { isActive: false, page, limit },
+        })
+      ),
     ]);
-    const active = unwrap<PromotionalCampaign[]>(activeRes.data, []);
-    const inactive = unwrap<PromotionalCampaign[]>(inactiveRes.data, []);
     const byId = new Map<string, PromotionalCampaign>();
-    [...(Array.isArray(active) ? active : []), ...(Array.isArray(inactive) ? inactive : [])].forEach(c => byId.set(c.id, c));
+    [...active, ...inactive].forEach(c => byId.set(c.id, c));
     return Array.from(byId.values()).sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
   } catch (error: any) {
     console.error('[getCampaignsServerAction]', error?.response?.data || error.message);

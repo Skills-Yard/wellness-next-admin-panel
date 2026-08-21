@@ -3,6 +3,7 @@
 import axiosInstance from '../axios';
 import { Booking } from '../../types/booking';
 import { getAuthHeaders, ActionResult } from './category';
+import { fetchAllPaginated, PaginatedEnvelope } from './pagination';
 
 function unwrap<T>(resData: any, fallback: T): T {
   if (resData && typeof resData === 'object' && 'data' in resData) return resData.data;
@@ -15,9 +16,12 @@ function unwrap<T>(resData: any, fallback: T): T {
 // rendering an empty/zeroed page as if it were real data. Let the error propagate; callers catch it.
 export async function getBookingsServerAction(): Promise<Booking[]> {
   const headers = await getAuthHeaders();
-  const response = await axiosInstance.get('/admin/bookings/all', { headers });
-  const data = unwrap<Booking[]>(response.data, []);
-  return Array.isArray(data) ? data : [];
+  return fetchAllPaginated<Booking>((page, limit) =>
+    axiosInstance.get<PaginatedEnvelope<Booking>>('/admin/bookings/all', {
+      headers,
+      params: { page, limit },
+    })
+  );
 }
 
 export async function getBookingByIdServerAction(id: string): Promise<Booking | null> {

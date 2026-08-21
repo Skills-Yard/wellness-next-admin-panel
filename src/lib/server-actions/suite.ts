@@ -4,6 +4,7 @@ import axiosInstance from '../axios';
 import { ServiceSuite } from '../../types/catalogue';
 import { ActionResult, getAuthHeaders } from './category';
 import { parseServerError } from '../errorParser';
+import { fetchAllPaginated, PaginatedEnvelope } from './pagination';
 
 function unwrap<T>(resData: any, fallback: T): T {
   if (resData && typeof resData === 'object' && 'data' in resData) return resData.data;
@@ -13,15 +14,17 @@ function unwrap<T>(resData: any, fallback: T): T {
 export async function getServiceSuitesServerAction(isActive?: boolean, categoryId?: string): Promise<ServiceSuite[]> {
   try {
     const headers = await getAuthHeaders();
-    const response = await axiosInstance.get('/admin/catalog/service-suites', {
-      headers,
-      params: {
-        ...(isActive === undefined ? {} : { isActive }),
-        ...(categoryId ? { categoryId } : {}),
-      },
-    });
-    const data = unwrap<ServiceSuite[]>(response.data, []);
-    return Array.isArray(data) ? data : [];
+    return await fetchAllPaginated<ServiceSuite>((page, limit) =>
+      axiosInstance.get<PaginatedEnvelope<ServiceSuite>>('/admin/catalog/service-suites', {
+        headers,
+        params: {
+          ...(isActive === undefined ? {} : { isActive }),
+          ...(categoryId ? { categoryId } : {}),
+          page,
+          limit,
+        },
+      })
+    );
   } catch (error: any) {
     console.error('[getServiceSuitesServerAction]', error?.response?.data || error.message);
     return [];

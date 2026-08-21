@@ -4,6 +4,7 @@ import axiosInstance from '../axios';
 import { ServiceAddOn } from '../../types/catalogue';
 import { ActionResult, getAuthHeaders } from './category';
 import { parseServerError } from '../errorParser';
+import { fetchAllPaginated, PaginatedEnvelope } from './pagination';
 
 function unwrap<T>(resData: any, fallback: T): T {
   if (resData && typeof resData === 'object' && 'data' in resData) return resData.data;
@@ -32,9 +33,12 @@ export async function getServiceAddOnsServerAction(serviceItemId: string): Promi
 export async function getAllServiceAddOnsServerAction(): Promise<ServiceAddOn[]> {
   try {
     const headers = await getAuthHeaders();
-    const response = await axiosInstance.get('/admin/catalog/service-add-ons', { headers });
-    const data = unwrap<ServiceAddOn[]>(response.data, []);
-    return Array.isArray(data) ? data : [];
+    return await fetchAllPaginated<ServiceAddOn>((page, limit) =>
+      axiosInstance.get<PaginatedEnvelope<ServiceAddOn>>('/admin/catalog/service-add-ons', {
+        headers,
+        params: { page, limit },
+      })
+    );
   } catch (error: any) {
     console.error('[getAllServiceAddOnsServerAction]', error?.response?.data || error.message);
     return [];

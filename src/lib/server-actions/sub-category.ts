@@ -4,6 +4,7 @@ import axiosInstance from '../axios';
 import { ServiceSubCategory } from '../../types/catalogue';
 import { ActionResult, getAuthHeaders } from './category';
 import { parseServerError } from '../errorParser';
+import { fetchAllPaginated, PaginatedEnvelope } from './pagination';
 
 function unwrap<T>(resData: any, fallback: T): T {
   if (resData && typeof resData === 'object' && 'data' in resData) return resData.data;
@@ -13,12 +14,12 @@ function unwrap<T>(resData: any, fallback: T): T {
 export async function getSubCategoriesServerAction(isActive?: boolean): Promise<ServiceSubCategory[]> {
   try {
     const headers = await getAuthHeaders();
-    const response = await axiosInstance.get('/admin/catalog/sub-categories', {
-      headers,
-      params: isActive === undefined ? undefined : { isActive },
-    });
-    const data = unwrap<ServiceSubCategory[]>(response.data, []);
-    return Array.isArray(data) ? data : [];
+    return await fetchAllPaginated<ServiceSubCategory>((page, limit) =>
+      axiosInstance.get<PaginatedEnvelope<ServiceSubCategory>>('/admin/catalog/sub-categories', {
+        headers,
+        params: { ...(isActive === undefined ? {} : { isActive }), page, limit },
+      })
+    );
   } catch (error: any) {
     console.error('[getSubCategoriesServerAction]', error?.response?.data || error.message);
     return [];
