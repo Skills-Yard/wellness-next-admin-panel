@@ -26,6 +26,40 @@ export async function getSubCategoriesServerAction(isActive?: boolean): Promise<
   }
 }
 
+// Single-page counterpart to getSubCategoriesServerAction — one backend call, no
+// fetchAllPaginated walk. Used by CategoriesView's own Section 2 (Sub-Categories) table/
+// pagination. Suite/Gender are not real fields on GetSubCategoriesQueryDto or the
+// ServiceSubCategory Prisma model (only ServiceItem carries suiteId/genderId) — CategoriesView's
+// Suite/Gender dropdowns stay client-side filters over this action's (now much smaller, paged)
+// result set rather than inventing backend params that don't exist.
+export async function getSubCategoriesPagedServerAction(params: {
+  page?: number;
+  limit?: number;
+  q?: string;
+  categoryId?: string;
+  isActive?: boolean;
+}): Promise<PaginatedEnvelope<ServiceSubCategory>> {
+  const page = params.page ?? 1;
+  const limit = params.limit ?? 10;
+  try {
+    const headers = await getAuthHeaders();
+    const response = await axiosInstance.get<PaginatedEnvelope<ServiceSubCategory>>('/admin/catalog/sub-categories', {
+      headers,
+      params: {
+        ...(params.categoryId ? { categoryId: params.categoryId } : {}),
+        ...(params.isActive === undefined ? {} : { isActive: params.isActive }),
+        ...(params.q ? { q: params.q } : {}),
+        page,
+        limit,
+      },
+    });
+    return response.data;
+  } catch (error: any) {
+    console.error('[getSubCategoriesPagedServerAction]', error?.response?.data || error.message);
+    return { data: [], pagination: { total: 0, page, limit, totalPages: 1 } };
+  }
+}
+
 export async function getSubCategoryByIdServerAction(id: string): Promise<ServiceSubCategory | null> {
   try {
     const headers = await getAuthHeaders();

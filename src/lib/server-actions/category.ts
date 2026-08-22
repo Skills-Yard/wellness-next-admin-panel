@@ -42,6 +42,36 @@ export async function getCategoriesServerAction(isActive?: boolean): Promise<Ser
   }
 }
 
+// Single-page counterpart to getCategoriesServerAction — one backend call, no fetchAllPaginated
+// walk. Used by CategoriesView's own Section 1 (Main Categories) table/pagination; the tab
+// switcher (CategoryTabs) and Sections 1B/2's suite/gender derivations keep reading the full
+// `categories` list off CatalogueContext, unchanged.
+export async function getCategoriesPagedServerAction(params: {
+  page?: number;
+  limit?: number;
+  q?: string;
+  isActive?: boolean;
+}): Promise<PaginatedEnvelope<ServiceCategory>> {
+  const page = params.page ?? 1;
+  const limit = params.limit ?? 10;
+  try {
+    const headers = await getAuthHeaders();
+    const response = await axiosInstance.get<PaginatedEnvelope<ServiceCategory>>('/admin/catalog/categories', {
+      headers,
+      params: {
+        ...(params.isActive === undefined ? {} : { isActive: params.isActive }),
+        ...(params.q ? { q: params.q } : {}),
+        page,
+        limit,
+      },
+    });
+    return response.data;
+  } catch (error: any) {
+    console.error('[getCategoriesPagedServerAction]', error?.response?.data || error.message);
+    return { data: [], pagination: { total: 0, page, limit, totalPages: 1 } };
+  }
+}
+
 export async function getCategoryByIdServerAction(id: string): Promise<ServiceCategory | null> {
   try {
     const headers = await getAuthHeaders();

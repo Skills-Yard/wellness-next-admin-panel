@@ -2,10 +2,9 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
 import { UserListMetrics, UserListTable } from '../../components/users';
-import { getUsersServerAction, deleteUserServerAction, updateUserServerAction } from '../../lib/server-actions/user';
+import { getUsersServerAction, updateUserServerAction } from '../../lib/server-actions/user';
 import { User, CreateUserPayload } from '../../types/user';
-import { Card } from '../../components/ui/card';
-import { SkeletonTableRows } from '../../components/ui/skeleton';
+import { SkeletonCard } from '../../components/ui/skeleton';
 import { getCached, setCached } from '../../lib/sessionCache';
 import FetchErrorBanner from '../../components/common/FetchErrorBanner';
 
@@ -62,40 +61,24 @@ export default function UsersPage() {
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       {/* Metrics */}
-      <UserListMetrics users={users} />
+      {loading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <SkeletonCard key={i} />
+          ))}
+        </div>
+      ) : (
+        <UserListMetrics users={users} />
+      )}
 
       {error && <FetchErrorBanner message={error} onRetry={fetchUsers} />}
 
-      {/* Users Table */}
-      {loading ? (
-        <Card className="rounded-2xl border border-gray-100 shadow-xs overflow-hidden bg-white">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-gray-50/70 border-b border-gray-100 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
-                  <th className="py-3 px-4">User</th>
-                  <th className="py-3 px-4">Contact</th>
-                  <th className="py-3 px-4">Phone Verified</th>
-                  <th className="py-3 px-4">Joined</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4">Last Seen</th>
-                  <th className="py-3 px-4">Booking</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                <SkeletonTableRows rows={6} columns={5} />
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      ) : (
-        <UserListTable
-          users={users}
-          onAddUser={handleAddUser}
-          onDeactivateUser={handleDeactivateUser}
-        />
-      )}
+      {/* Users Table — fetches and paginates its own data server-side; `users` above is only
+          the full list used for the metrics cards. */}
+      <UserListTable
+        onAddUser={handleAddUser}
+        onDeactivateUser={handleDeactivateUser}
+      />
     </div>
   );
 }

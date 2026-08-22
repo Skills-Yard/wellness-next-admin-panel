@@ -39,6 +39,36 @@ export async function getPartnersServerAction(filter?: PartnerFilter): Promise<P
   );
 }
 
+// Single-page counterpart to getPartnersServerAction — one backend call, no fetchAllPaginated
+// walk. Used by PartnerListTable's own list rendering/pagination; getPartnersServerAction (full
+// list) stays alive for callers that still want everything (e.g. this page's metrics cards and
+// per-status dropdown counts).
+export async function getPartnersPagedServerAction(params: {
+  page?: number;
+  limit?: number;
+  q?: string;
+  status?: string;
+}): Promise<PaginatedEnvelope<Partner>> {
+  const page = params.page ?? 1;
+  const limit = params.limit ?? 10;
+  try {
+    const headers = await getAuthHeaders();
+    const response = await axiosInstance.get<PaginatedEnvelope<Partner>>('/admin/partners', {
+      headers,
+      params: {
+        ...(params.status ? { status: params.status } : {}),
+        ...(params.q ? { q: params.q } : {}),
+        page,
+        limit,
+      },
+    });
+    return response.data;
+  } catch (error: any) {
+    console.error('[getPartnersPagedServerAction]', error?.response?.data || error.message);
+    return { data: [], pagination: { total: 0, page, limit, totalPages: 1 } };
+  }
+}
+
 export async function getPartnerByIdServerAction(id: string): Promise<Partner | null> {
   try {
     const headers = await getAuthHeaders();

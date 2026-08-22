@@ -25,7 +25,7 @@ export default function BookingListFilters({
       <div className="relative flex-1">
         <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
         <Input
-          placeholder="Search by service, customer, partner, employee or booking ID..."
+          placeholder="Search by service, customer, partner or booking ID..."
           value={searchTerm}
           onChange={(e) => onSearchChange(e.target.value)}
           className="pl-9.5 h-10 text-xs rounded-xl bg-white border-gray-200 shadow-2xs focus:border-[#D4A373] transition-all"
@@ -42,9 +42,12 @@ export default function BookingListFilters({
           <option value="IN_PROGRESS">Ongoing</option>
           <option value="CONFIRMED">Confirmed</option>
           <option value="COMPLETED">Completed</option>
-          <option value="CANCELLED">Cancelled</option>
           <option value="PENDING_PAYMENT">Pending Payment</option>
           <option value="EXPIRED">Expired</option>
+          {/* No "Cancelled" option here — the backend's BookingStatus enum has no bare
+              CANCELLED value (it's CANCELLED_BY_CLIENT/CANCELLED_BY_PARTNER/CANCELLED_BY_ADMIN),
+              so sending status=CANCELLED to the now server-driven filter below would just 400.
+              Dropped rather than kept pointing at a status that was never real. */}
         </select>
 
         <Button variant="outline" size="sm" className="h-10 px-3.5 rounded-xl border-gray-200 font-semibold text-gray-700 bg-white shadow-2xs hover:bg-gray-50">

@@ -14,6 +14,11 @@ interface ZoneModalProps {
   onClose: () => void;
   mode: 'create' | 'edit';
   zone?: OperationalZone | null;
+  // Called after a successful create/update, before onClose — callers whose own zone list is no
+  // longer sourced from CatalogueContext's full `zones` array (see ZonesView, which fetches its
+  // own paginated page) use this to refetch instead of relying on the context array updating out
+  // from under them.
+  onSaved?: () => void;
 }
 
 // geojson.io exports either a bare Polygon/MultiPolygon geometry, a single Feature, or a
@@ -53,7 +58,7 @@ function parseGeoJsonToCoordinates(text: string): Coordinate[] {
   return trimmed.map(([longitude, latitude]) => ({ latitude, longitude }));
 }
 
-export default function ZoneModal({ isOpen, onClose, mode, zone }: ZoneModalProps) {
+export default function ZoneModal({ isOpen, onClose, mode, zone, onSaved }: ZoneModalProps) {
   const { createZone, updateZone } = useCatalogue();
 
   const [name, setName] = useState('');
@@ -112,6 +117,7 @@ export default function ZoneModal({ isOpen, onClose, mode, zone }: ZoneModalProp
         const res = await updateZone(zone.id, { name, city, isActive });
         if (res.ok) {
           toast.success('Zone updated!');
+          onSaved?.();
           onClose();
         } else {
           toast.error(res.message || 'Failed to update zone');
@@ -124,6 +130,7 @@ export default function ZoneModal({ isOpen, onClose, mode, zone }: ZoneModalProp
         const res = await createZone({ name, city, coordinates });
         if (res.ok) {
           toast.success('Zone created!');
+          onSaved?.();
           onClose();
         } else {
           toast.error(res.message || 'Failed to create zone');

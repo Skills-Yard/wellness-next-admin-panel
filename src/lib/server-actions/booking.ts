@@ -24,6 +24,44 @@ export async function getBookingsServerAction(): Promise<Booking[]> {
   );
 }
 
+// Single-page counterpart to getBookingsServerAction — one backend call, no fetchAllPaginated
+// walk. Used by BookingListTable's own list rendering/pagination.
+//
+// q searches customer name + partner name only — phone is encrypted at rest and not
+// substring-searchable server-side (see GetBookingsQueryDto.q on the backend), so the old
+// phone-search affordance in the search box's placeholder text is gone rather than pretended.
+//
+// status is passed straight through to the backend's `status` filter, which now accepts either
+// one value (e.g. "COMPLETED") or a comma-separated list (e.g.
+// "IN_PROGRESS,PARTNER_ARRIVED,PARTNER_EN_ROUTE") matched with an IN (...) — see
+// GetBookingsQueryDto.status on the backend and BookingListTable's TAB_STATUS for the groupings
+// each tab sends.
+export async function getBookingsPagedServerAction(params: {
+  page?: number;
+  limit?: number;
+  q?: string;
+  status?: string;
+}): Promise<PaginatedEnvelope<Booking>> {
+  const page = params.page ?? 1;
+  const limit = params.limit ?? 10;
+  try {
+    const headers = await getAuthHeaders();
+    const response = await axiosInstance.get<PaginatedEnvelope<Booking>>('/admin/bookings/all', {
+      headers,
+      params: {
+        ...(params.status ? { status: params.status } : {}),
+        ...(params.q ? { q: params.q } : {}),
+        page,
+        limit,
+      },
+    });
+    return response.data;
+  } catch (error: any) {
+    console.error('[getBookingsPagedServerAction]', error?.response?.data || error.message);
+    return { data: [], pagination: { total: 0, page, limit, totalPages: 1 } };
+  }
+}
+
 export async function getBookingByIdServerAction(id: string): Promise<Booking | null> {
   try {
     const headers = await getAuthHeaders();

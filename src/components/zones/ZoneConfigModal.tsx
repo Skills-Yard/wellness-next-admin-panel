@@ -26,6 +26,11 @@ interface ZoneConfigModalProps {
   onClose: () => void;
   zoneId: string;
   configType: ConfigType;
+  // Called after a successful save, quick-delete, or apply-to-all-zones — ZoneDetailView (the
+  // only caller) no longer reads its list from CatalogueContext's full zoneXConfigs arrays (see
+  // its own comment on why), so it uses this to refetch its own zoneId-scoped, paginated tab
+  // data instead of relying on that context array updating out from under it.
+  onSaved?: () => void;
 }
 
 const TITLES: Record<ConfigType, string> = {
@@ -80,7 +85,7 @@ interface SuiteCategoryGroup {
   suites: ServiceSuite[];
 }
 
-export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }: ZoneConfigModalProps) {
+export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType, onSaved }: ZoneConfigModalProps) {
   const {
     categories,
     subCategories,
@@ -280,6 +285,7 @@ export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }:
       const res = await deleter(existing.id);
       if (res.ok) {
         toast.success('Removed from this zone');
+        onSaved?.();
         if (editingConfigId === existing.id) {
           setEditingConfigId(null);
           setSubId('');
@@ -355,6 +361,7 @@ export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }:
 
       if (res.ok) {
         toast.success(editingConfigId ? 'Updated!' : 'Saved!');
+        onSaved?.();
         onClose();
       } else {
         toast.error(res.message || 'Failed to save');
@@ -433,6 +440,7 @@ export default function ZoneConfigModal({ isOpen, onClose, zoneId, configType }:
 
     const failed = results.filter((r) => !r.ok).length;
     await refreshZoneConfigs();
+    onSaved?.();
 
     if (failed === 0) {
       const skipped = alreadyConfiguredZoneIds.size;

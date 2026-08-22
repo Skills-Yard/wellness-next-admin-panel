@@ -54,6 +54,39 @@ export async function getUsersServerAction(filter?: UserFilter): Promise<User[]>
   );
 }
 
+// Single-page counterpart to getUsersServerAction — one backend call, no fetchAllPaginated walk.
+// Used by UserListTable's own list rendering/pagination; getUsersServerAction (full list) stays
+// alive for callers that still want everything (e.g. this page's metrics cards).
+//
+// isActive omitted here (unlike getUsersServerAction, which defaults it to true) — the "All
+// Statuses" option in the list's own status dropdown genuinely means both active and inactive,
+// and the backend already treats an omitted isActive as "no filter".
+export async function getUsersPagedServerAction(params: {
+  page?: number;
+  limit?: number;
+  q?: string;
+  isActive?: boolean;
+}): Promise<PaginatedEnvelope<User>> {
+  const page = params.page ?? 1;
+  const limit = params.limit ?? 10;
+  try {
+    const headers = await getAuthHeadersClientOrServer();
+    const response = await axiosInstance.get<PaginatedEnvelope<User>>('/admin/users', {
+      headers,
+      params: {
+        ...(params.isActive === undefined ? {} : { isActive: params.isActive }),
+        ...(params.q ? { q: params.q } : {}),
+        page,
+        limit,
+      },
+    });
+    return response.data;
+  } catch (error: any) {
+    console.error('[getUsersPagedServerAction]', error?.response?.data || error.message);
+    return { data: [], pagination: { total: 0, page, limit, totalPages: 1 } };
+  }
+}
+
 export async function getUserByIdServerAction(id: string): Promise<User | null> {
   try {
     const headers = await getAuthHeadersClientOrServer();

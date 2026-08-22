@@ -1,9 +1,23 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { ArrowLeft, Edit3, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useCatalogue } from '../../contexts/CatalogueContext';
+import {
+  ZoneServiceItemConfig,
+  ZoneDurationConfig,
+  ZonePackageConfig,
+  ZoneAddOnConfig,
+  ZoneSuiteConfig,
+} from '../../types/catalogue';
+import {
+  getZoneServiceItemConfigsPagedServerAction,
+  getZoneDurationConfigsPagedServerAction,
+  getZonePackageConfigsPagedServerAction,
+  getZoneAddOnConfigsPagedServerAction,
+  getZoneSuiteConfigsPagedServerAction,
+} from '../../lib/server-actions/zone';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
 import { StatusToggle } from '../ui/status-toggle';
@@ -11,6 +25,7 @@ import { useConfirm } from '../ui/confirm-dialog';
 import ZoneModal from './ZoneModal';
 import ZoneConfigModal from './ZoneConfigModal';
 import ServiceZoneCard, { PanelKind } from './ServiceZoneCard';
+import Pagination from '../shared/Pagination';
 
 type Tab = 'services' | 'durations' | 'packages' | 'addons' | 'suites';
 
@@ -31,11 +46,6 @@ export default function ZoneDetailView() {
     serviceItems,
     suites,
     setSelectedServiceItem,
-    zoneServiceItemConfigs,
-    zoneDurationConfigs,
-    zonePackageConfigs,
-    zoneAddOnConfigs,
-    zoneSuiteConfigs,
     deleteZoneServiceItemConfig,
     deleteZoneDurationConfig,
     deleteZonePackageConfig,
@@ -50,10 +60,131 @@ export default function ZoneDetailView() {
   const [configModalOpen, setConfigModalOpen] = useState(false);
   const [togglingStatus, setTogglingStatus] = useState(false);
 
-  // Which service card's Duration/Package/Add-on panel is expanded — only one at a time (see
+  // Which service card's Duration/Package/Add-on panel is expanded - only one at a time (see
   // ServiceZoneCard's note: they all read off CatalogueContext's single-slot selectedServiceItem).
   const [openServiceId, setOpenServiceId] = useState<string | null>(null);
   const [openPanel, setOpenPanel] = useState<PanelKind | null>(null);
+
+  // Each of the 5 zone-config tabs is now fetched directly, zoneId-scoped and paginated, instead
+  // of pulling every zone's rows into CatalogueContext (getZoneServiceItemConfigsServerAction et
+  // al. via fetchAllPaginated) and filtering client-side by selectedZone.id - that was the
+  // multiplicative (zones x catalog items) full-table pull this screen used to trigger on every
+  // load. CatalogueContext's own full 5 lists stay alive for the other consumers that still need
+  // them (ZoneConfigModal's "already configured" checks + "apply to all zones" fan-out,
+  // ServiceZoneCard's per-service duration/package/add-on zone-price theming) - see each state
+  // slot's own fetcher below.
+  const [servicesPage, setServicesPage] = useState(1);
+  const [durationsPage, setDurationsPage] = useState(1);
+  const [packagesPage, setPackagesPage] = useState(1);
+  const [addonsPage, setAddonsPage] = useState(1);
+  const [suitesPage, setSuitesPage] = useState(1);
+  // Shared across all 5 tabs - changing it resets every tab's own page back to 1.
+  const [tabPageSize, setTabPageSize] = useState(10);
+
+  const [services, setServices] = useState<ZoneServiceItemConfig[]>([]);
+  const [durations, setDurations] = useState<ZoneDurationConfig[]>([]);
+  const [packages, setPackages] = useState<ZonePackageConfig[]>([]);
+  const [addons, setAddons] = useState<ZoneAddOnConfig[]>([]);
+  const [suiteConfigs, setSuiteConfigs] = useState<ZoneSuiteConfig[]>([]);
+
+  const [tabPagination, setTabPagination] = useState({ total: 0, totalPages: 1 });
+  const [tabLoading, setTabLoading] = useState(true);
+
+  // Counts for all 5 tab labels at once (not just the active tab) - one cheap limit:1 request per
+  // type instead of pulling every row just to count them.
+  const [tabCounts, setTabCounts] = useState({ services: 0, durations: 0, packages: 0, addons: 0, suites: 0 });
+
+  const zoneId = selectedZone?.id;
+
+  const currentPage = tab === 'services' ? servicesPage
+    : tab === 'durations' ? durationsPage
+    : tab === 'packages' ? packagesPage
+    : tab === 'addons' ? addonsPage
+    : suitesPage;
+  const setCurrentPage = tab === 'services' ? setServicesPage
+    : tab === 'durations' ? setDurationsPage
+    : tab === 'packages' ? setPackagesPage
+    : tab === 'addons' ? setAddonsPage
+    : setSuitesPage;
+
+  const fetchTabCounts = useCallback(async () => {
+    if (!zoneId) return;
+    const [s, d, p, a, su] = await Promise.all([
+      getZoneServiceItemConfigsPagedServerAction(zoneId, 1, 1),
+      getZoneDurationConfigsPagedServerAction(zoneId, 1, 1),
+      getZonePackageConfigsPagedServerAction(zoneId, 1, 1),
+      getZoneAddOnConfigsPagedServerAction(zoneId, 1, 1),
+      getZoneSuiteConfigsPagedServerAction(zoneId, 1, 1),
+    ]);
+    setTabCounts({
+      services: s.pagination?.total ?? 0,
+      durations: d.pagination?.total ?? 0,
+      packages: p.pagination?.total ?? 0,
+      addons: a.pagination?.total ?? 0,
+      suites: su.pagination?.total ?? 0,
+    });
+  }, [zoneId]);
+
+  const fetchActiveTab = useCallback(async () => {
+    if (!zoneId) return;
+    setTabLoading(true);
+    try {
+      if (tab === 'services') {
+        const res = await getZoneServiceItemConfigsPagedServerAction(zoneId, servicesPage, tabPageSize);
+        setServices(res.data ?? []);
+        setTabPagination({ total: res.pagination?.total ?? 0, totalPages: res.pagination?.totalPages ?? 1 });
+      } else if (tab === 'durations') {
+        const res = await getZoneDurationConfigsPagedServerAction(zoneId, durationsPage, tabPageSize);
+        setDurations(res.data ?? []);
+        setTabPagination({ total: res.pagination?.total ?? 0, totalPages: res.pagination?.totalPages ?? 1 });
+      } else if (tab === 'packages') {
+        const res = await getZonePackageConfigsPagedServerAction(zoneId, packagesPage, tabPageSize);
+        setPackages(res.data ?? []);
+        setTabPagination({ total: res.pagination?.total ?? 0, totalPages: res.pagination?.totalPages ?? 1 });
+      } else if (tab === 'addons') {
+        const res = await getZoneAddOnConfigsPagedServerAction(zoneId, addonsPage, tabPageSize);
+        setAddons(res.data ?? []);
+        setTabPagination({ total: res.pagination?.total ?? 0, totalPages: res.pagination?.totalPages ?? 1 });
+      } else {
+        const res = await getZoneSuiteConfigsPagedServerAction(zoneId, suitesPage, tabPageSize);
+        setSuiteConfigs(res.data ?? []);
+        setTabPagination({ total: res.pagination?.total ?? 0, totalPages: res.pagination?.totalPages ?? 1 });
+      }
+    } finally {
+      setTabLoading(false);
+    }
+  }, [zoneId, tab, servicesPage, durationsPage, packagesPage, addonsPage, suitesPage, tabPageSize]);
+
+  // Reset every tab's own page back to 1 whenever the zone changes (switching zones shouldn't
+  // carry over "page 3" from whatever zone was open before) and refetch the 5 tab counts.
+  useEffect(() => {
+    setServicesPage(1);
+    setDurationsPage(1);
+    setPackagesPage(1);
+    setAddonsPage(1);
+    setSuitesPage(1);
+    fetchTabCounts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zoneId]);
+
+  useEffect(() => {
+    fetchActiveTab();
+  }, [fetchActiveTab]);
+
+  // Called after any add/edit/delete that touches a zone-config row - refreshes both the active
+  // tab's own page and every tab's count.
+  const refreshAfterMutation = useCallback(async () => {
+    await Promise.all([fetchActiveTab(), fetchTabCounts()]);
+  }, [fetchActiveTab, fetchTabCounts]);
+
+  const changePageSize = (size: number) => {
+    setTabPageSize(size);
+    setServicesPage(1);
+    setDurationsPage(1);
+    setPackagesPage(1);
+    setAddonsPage(1);
+    setSuitesPage(1);
+  };
 
   const togglePanel = (serviceItemId: string, panel: PanelKind) => {
     if (openServiceId === serviceItemId && openPanel === panel) {
@@ -68,18 +199,12 @@ export default function ZoneDetailView() {
 
   if (!selectedZone) return null;
 
-  const services = zoneServiceItemConfigs.filter((c) => c.zoneId === selectedZone.id);
-  const durations = zoneDurationConfigs.filter((c) => c.zoneId === selectedZone.id);
-  const packages = zonePackageConfigs.filter((c) => c.zoneId === selectedZone.id);
-  const addons = zoneAddOnConfigs.filter((c) => c.zoneId === selectedZone.id);
-  const suiteConfigs = zoneSuiteConfigs.filter((c) => c.zoneId === selectedZone.id);
-
   // Duration/package/add-on rows only carry the sub-entity's own label ("90 mins", "4 Sessions")
-  // — resolve the parent service item's name too so two services sharing a label aren't confused.
+  // - resolve the parent service item's name too so two services sharing a label aren't confused.
   const serviceNameFor = (serviceItemId?: string) =>
     serviceItems.find((s) => s.id === serviceItemId)?.name;
 
-  // A service's suite (ServiceItem.suiteId) — resolved here so ServiceZoneCard's Suite button
+  // A service's suite (ServiceItem.suiteId) - resolved here so ServiceZoneCard's Suite button
   // doesn't need its own copy of `suites` just to look up one name.
   const suiteForServiceItem = (serviceItemId?: string) => {
     const svc = serviceItems.find((s) => s.id === serviceItemId);
@@ -87,8 +212,10 @@ export default function ZoneDetailView() {
     return suites.find((s) => s.id === svc.suiteId);
   };
 
-  // Group the Services tab's rows by category (same "category-wise <select>" grouping as
-  // ZoneConfigModal) so the tab reads as a catalogue browse instead of a flat, unordered list.
+  // Group the Services tab's rows (this page only - grouping happens after pagination, so a
+  // category header can repeat across pages) by category (same "category-wise <select>"
+  // grouping as ZoneConfigModal) so the tab reads as a catalogue browse instead of a flat,
+  // unordered list.
   const serviceCategoryGroups = categories
     .map((cat) => ({
       categoryName: cat.name,
@@ -106,11 +233,11 @@ export default function ZoneDetailView() {
   }
 
   const tabs: { key: Tab; label: string; count: number }[] = [
-    { key: 'services', label: 'Services', count: services.length },
-    { key: 'durations', label: 'Durations', count: durations.length },
-    { key: 'packages', label: 'Packages', count: packages.length },
-    { key: 'addons', label: 'Add-ons', count: addons.length },
-    { key: 'suites', label: 'Suites', count: suiteConfigs.length },
+    { key: 'services', label: 'Services', count: tabCounts.services },
+    { key: 'durations', label: 'Durations', count: tabCounts.durations },
+    { key: 'packages', label: 'Packages', count: tabCounts.packages },
+    { key: 'addons', label: 'Add-ons', count: tabCounts.addons },
+    { key: 'suites', label: 'Suites', count: tabCounts.suites },
   ];
 
   return (
@@ -180,121 +307,145 @@ export default function ZoneDetailView() {
         </div>
 
         <div className="divide-y divide-gray-100">
-          {tab === 'services' && (
-            services.length === 0 ? (
-              <EmptyRow label="service availability overrides" />
-            ) : (
-              <div className="p-4 sm:p-6 space-y-6">
-                {serviceCategoryGroups.map((group) => (
-                  <div key={group.categoryName}>
-                    <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
-                      {group.categoryName} <span className="text-gray-300">({group.configs.length})</span>
-                    </h3>
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                      {group.configs.map((c) => {
-                        const suite = suiteForServiceItem(c.serviceItemId);
-                        return (
-                          <ServiceZoneCard
-                            key={c.id}
-                            config={c}
-                            serviceName={c.serviceItem?.name || serviceNameFor(c.serviceItemId) || c.serviceItemId}
-                            zoneId={selectedZone.id}
-                            zoneName={selectedZone.name}
-                            suiteId={suite?.id}
-                            suiteName={suite?.name}
-                            openPanel={openServiceId === c.serviceItemId ? openPanel : null}
-                            onTogglePanel={(panel) => togglePanel(c.serviceItemId, panel)}
-                            onDelete={async () => {
-                              const ok = await confirm({
-                                title: 'Remove this service from the zone?',
-                                description: `Availability, surge and every duration/package price override for "${c.serviceItem?.name || serviceNameFor(c.serviceItemId) || 'this service'}" in "${selectedZone.name}" will be removed. This can't be undone.`,
-                              });
-                              if (!ok) return;
-                              const res = await deleteZoneServiceItemConfig(c.id);
-                              if (res.ok) toast.success('Removed'); else toast.error(res.message || 'Failed to remove');
-                            }}
-                          />
-                        );
-                      })}
-                    </div>
+          {tabLoading ? (
+            <div className="p-6 text-center text-xs text-gray-400">Loading...</div>
+          ) : (
+            <>
+              {tab === 'services' && (
+                services.length === 0 ? (
+                  <EmptyRow label="service availability overrides" />
+                ) : (
+                  <div className="p-4 sm:p-6 space-y-6">
+                    {serviceCategoryGroups.map((group) => (
+                      <div key={group.categoryName}>
+                        <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
+                          {group.categoryName} <span className="text-gray-300">({group.configs.length})</span>
+                        </h3>
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                          {group.configs.map((c) => {
+                            const suite = suiteForServiceItem(c.serviceItemId);
+                            return (
+                              <ServiceZoneCard
+                                key={c.id}
+                                config={c}
+                                serviceName={c.serviceItem?.name || serviceNameFor(c.serviceItemId) || c.serviceItemId}
+                                zoneId={selectedZone.id}
+                                zoneName={selectedZone.name}
+                                suiteId={suite?.id}
+                                suiteName={suite?.name}
+                                openPanel={openServiceId === c.serviceItemId ? openPanel : null}
+                                onTogglePanel={(panel) => togglePanel(c.serviceItemId, panel)}
+                                onDelete={async () => {
+                                  const ok = await confirm({
+                                    title: 'Remove this service from the zone?',
+                                    description: `Availability, surge and every duration/package price override for "${c.serviceItem?.name || serviceNameFor(c.serviceItemId) || 'this service'}" in "${selectedZone.name}" will be removed. This can't be undone.`,
+                                  });
+                                  if (!ok) return;
+                                  const res = await deleteZoneServiceItemConfig(c.id);
+                                  if (res.ok) { toast.success('Removed'); await refreshAfterMutation(); }
+                                  else toast.error(res.message || 'Failed to remove');
+                                }}
+                              />
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            )
-          )}
+                )
+              )}
 
-          {tab === 'durations' && (
-            durations.length === 0 ? (
-              <EmptyRow label="duration price overrides" />
-            ) : (
-              durations.map((c) => (
-                <ConfigRow
-                  key={c.id}
-                  title={`${serviceNameFor(c.serviceDuration?.serviceItemId) || 'Unknown service'} — ${c.serviceDuration?.label || c.serviceDurationId}`}
-                  subtitle={`₹${c.price.toLocaleString()}${c.discountedPrice ? ` (₹${c.discountedPrice.toLocaleString()} discounted)` : ''}`}
-                  onDelete={async () => {
-                    const res = await deleteZoneDurationConfig(c.id);
-                    if (res.ok) toast.success('Removed'); else toast.error(res.message || 'Failed to remove');
-                  }}
-                />
-              ))
-            )
-          )}
+              {tab === 'durations' && (
+                durations.length === 0 ? (
+                  <EmptyRow label="duration price overrides" />
+                ) : (
+                  durations.map((c) => (
+                    <ConfigRow
+                      key={c.id}
+                      title={`${serviceNameFor(c.serviceDuration?.serviceItemId) || 'Unknown service'} - ${c.serviceDuration?.label || c.serviceDurationId}`}
+                      subtitle={`₹${c.price.toLocaleString()}${c.discountedPrice ? ` (₹${c.discountedPrice.toLocaleString()} discounted)` : ''}`}
+                      onDelete={async () => {
+                        const res = await deleteZoneDurationConfig(c.id);
+                        if (res.ok) { toast.success('Removed'); await refreshAfterMutation(); }
+                        else toast.error(res.message || 'Failed to remove');
+                      }}
+                    />
+                  ))
+                )
+              )}
 
-          {tab === 'packages' && (
-            packages.length === 0 ? (
-              <EmptyRow label="package price overrides" />
-            ) : (
-              packages.map((c) => (
-                <ConfigRow
-                  key={c.id}
-                  title={`${serviceNameFor(c.servicePackage?.serviceItemId) || 'Unknown service'} — ${c.servicePackage?.label || c.servicePackageId}`}
-                  subtitle={`₹${c.price.toLocaleString()}`}
-                  onDelete={async () => {
-                    const res = await deleteZonePackageConfig(c.id);
-                    if (res.ok) toast.success('Removed'); else toast.error(res.message || 'Failed to remove');
-                  }}
-                />
-              ))
-            )
-          )}
+              {tab === 'packages' && (
+                packages.length === 0 ? (
+                  <EmptyRow label="package price overrides" />
+                ) : (
+                  packages.map((c) => (
+                    <ConfigRow
+                      key={c.id}
+                      title={`${serviceNameFor(c.servicePackage?.serviceItemId) || 'Unknown service'} - ${c.servicePackage?.label || c.servicePackageId}`}
+                      subtitle={`₹${c.price.toLocaleString()}`}
+                      onDelete={async () => {
+                        const res = await deleteZonePackageConfig(c.id);
+                        if (res.ok) { toast.success('Removed'); await refreshAfterMutation(); }
+                        else toast.error(res.message || 'Failed to remove');
+                      }}
+                    />
+                  ))
+                )
+              )}
 
-          {tab === 'addons' && (
-            addons.length === 0 ? (
-              <EmptyRow label="add-on price overrides" />
-            ) : (
-              addons.map((c) => (
-                <ConfigRow
-                  key={c.id}
-                  title={c.serviceAddOn?.name || c.serviceAddOnId}
-                  subtitle={`₹${c.price.toLocaleString()}`}
-                  onDelete={async () => {
-                    const res = await deleteZoneAddOnConfig(c.id);
-                    if (res.ok) toast.success('Removed'); else toast.error(res.message || 'Failed to remove');
-                  }}
-                />
-              ))
-            )
-          )}
+              {tab === 'addons' && (
+                addons.length === 0 ? (
+                  <EmptyRow label="add-on price overrides" />
+                ) : (
+                  addons.map((c) => (
+                    <ConfigRow
+                      key={c.id}
+                      title={c.serviceAddOn?.name || c.serviceAddOnId}
+                      subtitle={`₹${c.price.toLocaleString()}`}
+                      onDelete={async () => {
+                        const res = await deleteZoneAddOnConfig(c.id);
+                        if (res.ok) { toast.success('Removed'); await refreshAfterMutation(); }
+                        else toast.error(res.message || 'Failed to remove');
+                      }}
+                    />
+                  ))
+                )
+              )}
 
-          {tab === 'suites' && (
-            suiteConfigs.length === 0 ? (
-              <EmptyRow label="suite availability overrides" />
-            ) : (
-              suiteConfigs.map((c) => (
-                <ConfigRow
-                  key={c.id}
-                  title={c.suite?.name || c.suiteId}
-                  subtitle={c.isAvailable ? 'Available' : 'Unavailable'}
-                  onDelete={async () => {
-                    const res = await deleteZoneSuiteConfig(c.id);
-                    if (res.ok) toast.success('Removed'); else toast.error(res.message || 'Failed to remove');
-                  }}
-                />
-              ))
-            )
+              {tab === 'suites' && (
+                suiteConfigs.length === 0 ? (
+                  <EmptyRow label="suite availability overrides" />
+                ) : (
+                  suiteConfigs.map((c) => (
+                    <ConfigRow
+                      key={c.id}
+                      title={c.suite?.name || c.suiteId}
+                      subtitle={c.isAvailable ? 'Available' : 'Unavailable'}
+                      onDelete={async () => {
+                        const res = await deleteZoneSuiteConfig(c.id);
+                        if (res.ok) { toast.success('Removed'); await refreshAfterMutation(); }
+                        else toast.error(res.message || 'Failed to remove');
+                      }}
+                    />
+                  ))
+                )
+              )}
+            </>
           )}
         </div>
+
+        {!tabLoading && tabPagination.total > 0 && (
+          <Pagination
+            page={currentPage}
+            totalPages={tabPagination.totalPages}
+            onPageChange={setCurrentPage}
+            pageSize={tabPageSize}
+            onPageSizeChange={changePageSize}
+            pageSizeOptions={[10, 20, 50]}
+            totalItems={tabPagination.total}
+            className="p-4 border-t border-gray-100"
+          />
+        )}
       </Card>
 
       <ZoneModal isOpen={editModalOpen} onClose={() => setEditModalOpen(false)} mode="edit" zone={selectedZone} />
@@ -303,6 +454,7 @@ export default function ZoneDetailView() {
         onClose={() => setConfigModalOpen(false)}
         zoneId={selectedZone.id}
         configType={CONFIG_TYPE_FOR_TAB[tab]}
+        onSaved={refreshAfterMutation}
       />
     </div>
   );

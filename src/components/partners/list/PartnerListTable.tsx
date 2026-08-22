@@ -1,14 +1,16 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Search, Calendar as CalendarIcon, Download, Plus, ChevronLeft, ChevronRight, UserCheck } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Search, Calendar as CalendarIcon, Download, Plus, UserCheck } from 'lucide-react';
 import { Partner, PartnerStatus } from '../../../types/partner';
+import { getPartnersPagedServerAction } from '../../../lib/server-actions/partner';
 import AddPartnerModal from './AddPartnerModal';
 import PartnerListMetrics from './PartnerListMetrics';
 import PartnerListRow from './PartnerListRow';
 import { Input } from '../../ui/input';
 import { Button } from '../../ui/button';
 import { Card } from '../../ui/card';
+import Pagination from '../../shared/Pagination';
 
 interface PartnerListTableProps {
   partners: Partner[];
@@ -17,16 +19,6 @@ interface PartnerListTableProps {
   onSuspend?: (id: string) => Promise<void>;
   onDelete?: (id: string) => Promise<void>;
 }
-
-const STATUS_PRIORITY: Record<string, number> = {
-  APPROVED: 1,
-  KYC_SUBMITTED: 2,
-  PENDING_APPROVAL: 3,
-  PENDING_KYC: 4,
-  INCOMPLETE: 5,
-  SUSPENDED: 6,
-  REJECTED: 7,
-};
 
 // A partner in any of these statuses still needs some admin action before going live. This is
 // the single definition of "Pending Approval" — used for both the metrics card above the table
@@ -44,40 +36,68 @@ export default function PartnerListTable({
   onSuspend,
   onDelete,
 }: PartnerListTableProps) {
+  const [searchInput, setSearchInput] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [actionMenuOpenId, setActionMenuOpenId] = useState<string | null>(null);
 
+  const [rows, setRows] = useState<Partner[]>([]);
+  const [pagination, setPagination] = useState({ total: 0, totalPages: 1 });
+  const [loading, setLoading] = useState(true);
+
+  // Metrics cards + the status dropdown's per-option counts still read off the FULL `partners`
+  // list (fetched by the parent page for exactly this reason) — those need every partner
+  // regardless of which page/filter the table below is currently showing.
   const totalPartners = partners.length;
   const pendingApprovalCount = partners.filter((p) => isPendingApproval(p.status)).length;
   const activePartnersCount = partners.filter((p) => p.status === 'APPROVED' && p.isActive).length;
   const suspendedCount = partners.filter((p) => p.status === 'SUSPENDED').length;
 
-  const filteredPartners = partners.filter((partner) => {
-    const matchesSearch = !searchTerm ||
-      (partner.name && partner.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (partner.email && partner.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (partner.city && partner.city.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (partner.phone && partner.phone.includes(searchTerm));
-    const matchesStatus = selectedStatus === 'ALL'
-      || (selectedStatus === 'PENDING_APPROVAL' ? isPendingApproval(partner.status) : partner.status === selectedStatus);
-    return matchesSearch && matchesStatus;
-  });
+  // Debounce the search input ~350ms before it turns into a backend request.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setSearchTerm(searchInput);
+      setPage(1);
+    }, 350);
+    return () => clearTimeout(t);
+  }, [searchInput]);
 
-  // Group and sort partners deterministically so approved partners stay together at top
-  const sortedPartners = [...filteredPartners].sort((a, b) => {
-    const priorityA = STATUS_PRIORITY[a.status] || 99;
-    const priorityB = STATUS_PRIORITY[b.status] || 99;
-    if (priorityA !== priorityB) return priorityA - priorityB;
-    return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
-  });
+  const fetchPage = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await getPartnersPagedServerAction({
+        page,
+        limit: pageSize,
+        q: searchTerm || undefined,
+        status: selectedStatus === 'ALL' ? undefined : selectedStatus,
+      });
+      setRows(res.data ?? []);
+      setPagination({
+        total: res.pagination?.total ?? 0,
+        totalPages: res.pagination?.totalPages ?? 1,
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [page, pageSize, searchTerm, selectedStatus]);
 
-  const totalPages = Math.ceil(sortedPartners.length / itemsPerPage) || 1;
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedPartners = sortedPartners.slice(startIndex, startIndex + itemsPerPage);
+  useEffect(() => {
+    fetchPage();
+  }, [fetchPage]);
+
+  // Row actions can move a partner out of whatever status filter is currently applied (e.g.
+  // approving one while filtered to "Pending Approval") — refetch this page after each so a
+  // now-filtered-out row actually disappears, instead of patching it in place.
+  const wrapAction = (action?: (id: string) => Promise<void>) =>
+    action
+      ? async (id: string) => {
+          await action(id);
+          await fetchPage();
+        }
+      : undefined;
 
   return (
     <div className="space-y-6">
@@ -90,8 +110,8 @@ export default function PartnerListTable({
           <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
           <Input
             placeholder="Search by name, email, city or phone..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
             className="pl-9"
           />
         </div>
@@ -106,19 +126,23 @@ export default function PartnerListTable({
 
       <Card className="rounded-2xl border border-gray-100 shadow-xs overflow-hidden bg-white">
         <div className="p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 border-b border-gray-100">
-          <h2 className="font-bold text-base text-gray-900">Partners List ({sortedPartners.length})</h2>
+          <h2 className="font-bold text-base text-gray-900">Partners List ({pagination.total})</h2>
           <div className="flex flex-wrap items-center gap-2.5">
             <select
               value={selectedStatus}
-              onChange={(e) => { setSelectedStatus(e.target.value); setCurrentPage(1); }}
+              onChange={(e) => { setSelectedStatus(e.target.value); setPage(1); }}
               className="px-3 py-2 text-xs font-medium bg-gray-50 border border-gray-200 rounded-xl text-gray-700 cursor-pointer focus:outline-none"
             >
               <option value="ALL">All Status ({partners.length})</option>
               <option value="APPROVED">Approved ({partners.filter(p => p.status === 'APPROVED').length})</option>
               <option value="KYC_SUBMITTED">KYC Submitted ({partners.filter(p => p.status === 'KYC_SUBMITTED').length})</option>
               {/* Same PENDING_KYC + KYC_SUBMITTED + PENDING_APPROVAL bucket as the metrics card
-                  above (isPendingApproval) — so this count and that card's never disagree. */}
-              <option value="PENDING_APPROVAL">Pending Approval ({partners.filter(p => isPendingApproval(p.status)).length})</option>
+                  above (isPendingApproval) — sent to the backend as the same comma-separated
+                  list (GetPartnersFilterDto.status now accepts one value or several, matched
+                  with an IN (...)), so this option's count and its actual filtered results
+                  agree with the metrics card instead of only matching the literal
+                  PENDING_APPROVAL status. */}
+              <option value={PENDING_APPROVAL_STATUSES.join(',')}>Pending Approval ({partners.filter(p => isPendingApproval(p.status)).length})</option>
               <option value="SUSPENDED">Suspended ({partners.filter(p => p.status === 'SUSPENDED').length})</option>
               <option value="INCOMPLETE">Incomplete ({partners.filter(p => p.status === 'INCOMPLETE').length})</option>
               <option value="TRAINING">Training ({partners.filter(p => p.status === 'TRAINING').length})</option>
@@ -155,7 +179,11 @@ export default function PartnerListTable({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 text-xs text-gray-700">
-              {paginatedPartners.length === 0 ? (
+              {loading ? (
+                <tr>
+                  <td colSpan={8} className="py-12 text-center text-gray-400">Loading partners...</td>
+                </tr>
+              ) : rows.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="py-12 text-center text-gray-400">
                     <UserCheck className="w-8 h-8 mx-auto mb-2 text-gray-300" />
@@ -163,15 +191,15 @@ export default function PartnerListTable({
                   </td>
                 </tr>
               ) : (
-                paginatedPartners.map((partner) => (
+                rows.map((partner) => (
                   <PartnerListRow
                     key={partner.id}
                     partner={partner}
                     actionMenuOpenId={actionMenuOpenId}
                     setActionMenuOpenId={setActionMenuOpenId}
-                    onApprove={onApprove}
-                    onSuspend={onSuspend}
-                    onDelete={onDelete}
+                    onApprove={wrapAction(onApprove)}
+                    onSuspend={wrapAction(onSuspend)}
+                    onDelete={wrapAction(onDelete)}
                   />
                 ))
               )}
@@ -179,30 +207,24 @@ export default function PartnerListTable({
           </table>
         </div>
 
-        <div className="p-4 border-t border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-gray-500">
-          <div>Showing <span className="font-semibold text-gray-900">{sortedPartners.length > 0 ? startIndex + 1 : 0}</span> to <span className="font-semibold text-gray-900">{Math.min(startIndex + itemsPerPage, sortedPartners.length)}</span> of <span className="font-semibold text-gray-900">{sortedPartners.length}</span> partners</div>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1">
-              <button disabled={currentPage === 1} onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))} className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center text-gray-600 hover:bg-gray-50 disabled:opacity-40"><ChevronLeft className="w-4 h-4" /></button>
-              <span className="px-2 font-semibold text-gray-900">{currentPage} / {totalPages}</span>
-              <button disabled={currentPage === totalPages} onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))} className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center text-gray-600 hover:bg-gray-50 disabled:opacity-40"><ChevronRight className="w-4 h-4" /></button>
-            </div>
-            <select
-              value={itemsPerPage}
-              onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
-              className="px-2.5 py-1 text-xs border border-gray-200 rounded-lg bg-white text-gray-700 cursor-pointer focus:outline-none"
-            >
-              <option value={10}>10/ Page</option>
-              <option value={20}>20/ Page</option>
-              <option value={50}>50/ Page</option>
-              <option value={100}>100/ Page</option>
-            </select>
-          </div>
-        </div>
+        <Pagination
+          page={page}
+          totalPages={pagination.totalPages}
+          onPageChange={setPage}
+          pageSize={pageSize}
+          onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
+          totalItems={pagination.total}
+          itemLabel="partners"
+          className="p-4 border-t border-gray-100"
+        />
       </Card>
 
       {isAddModalOpen && (
-        <AddPartnerModal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} onSuccess={() => { setIsAddModalOpen(false); onRefresh(); }} />
+        <AddPartnerModal
+          isOpen={isAddModalOpen}
+          onClose={() => setIsAddModalOpen(false)}
+          onSuccess={() => { setIsAddModalOpen(false); onRefresh(); fetchPage(); }}
+        />
       )}
     </div>
   );

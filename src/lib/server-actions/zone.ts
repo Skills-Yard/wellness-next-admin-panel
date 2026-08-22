@@ -40,6 +40,36 @@ export async function getZonesServerAction(filters?: { city?: string; isActive?:
   }
 }
 
+// Single-page counterpart to getZonesServerAction — one backend call, no fetchAllPaginated walk.
+// Used by ZonesView's own list rendering/pagination.
+export async function getZonesPagedServerAction(params: {
+  page?: number;
+  limit?: number;
+  q?: string;
+  city?: string;
+  isActive?: boolean;
+}): Promise<PaginatedEnvelope<OperationalZone>> {
+  const page = params.page ?? 1;
+  const limit = params.limit ?? 10;
+  try {
+    const headers = await getAuthHeaders();
+    const response = await axiosInstance.get<PaginatedEnvelope<OperationalZone>>('/admin/zones', {
+      headers,
+      params: {
+        ...(params.city ? { city: params.city } : {}),
+        ...(params.isActive === undefined ? {} : { isActive: String(params.isActive) }),
+        ...(params.q ? { q: params.q } : {}),
+        page,
+        limit,
+      },
+    });
+    return response.data;
+  } catch (error: any) {
+    console.error('[getZonesPagedServerAction]', error?.response?.data || error.message);
+    return { data: [], pagination: { total: 0, page, limit, totalPages: 1 } };
+  }
+}
+
 export async function getZoneByIdServerAction(id: string): Promise<OperationalZone | null> {
   try {
     const headers = await getAuthHeaders();
@@ -128,6 +158,31 @@ export async function getZoneServiceItemConfigsServerAction(): Promise<ZoneServi
   }
 }
 
+// zoneId-scoped, single-page counterpart to getZoneServiceItemConfigsServerAction — the same
+// GET endpoint, but with the zoneId filter applied server-side instead of pulling every zone's
+// rows and filtering client-side (see ZoneDetailView, the only caller: this is the fix for its
+// old zones × catalog-items full-table pull). getZoneServiceItemConfigsServerAction (unfiltered,
+// full list) stays alive — ZoneConfigModal/ServiceZoneCard/DurationModal/PackModal/
+// ZoneOverrideModal still need the complete cross-zone list for their "already configured in
+// zone X" checks and "apply to all zones" fan-out, which have no zoneId to scope by up front.
+export async function getZoneServiceItemConfigsPagedServerAction(
+  zoneId: string,
+  page = 1,
+  limit = 10
+): Promise<PaginatedEnvelope<ZoneServiceItemConfig>> {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await axiosInstance.get<PaginatedEnvelope<ZoneServiceItemConfig>>(
+      '/admin/zones/service-item-configs',
+      { headers, params: { zoneId, page, limit } }
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error('[getZoneServiceItemConfigsPagedServerAction]', error?.response?.data || error.message);
+    return { data: [], pagination: { total: 0, page, limit, totalPages: 1 } };
+  }
+}
+
 export interface ZoneServiceItemConfigPayload {
   zoneId: string;
   serviceItemId: string;
@@ -179,6 +234,26 @@ export async function getZoneDurationConfigsServerAction(): Promise<ZoneDuration
   }
 }
 
+// See getZoneServiceItemConfigsPagedServerAction's comment above — same zoneId-scoped, single-page
+// pattern.
+export async function getZoneDurationConfigsPagedServerAction(
+  zoneId: string,
+  page = 1,
+  limit = 10
+): Promise<PaginatedEnvelope<ZoneDurationConfig>> {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await axiosInstance.get<PaginatedEnvelope<ZoneDurationConfig>>(
+      '/admin/zones/duration-configs',
+      { headers, params: { zoneId, page, limit } }
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error('[getZoneDurationConfigsPagedServerAction]', error?.response?.data || error.message);
+    return { data: [], pagination: { total: 0, page, limit, totalPages: 1 } };
+  }
+}
+
 export interface ZoneDurationConfigPayload {
   zoneId: string;
   serviceDurationId: string;
@@ -227,6 +302,26 @@ export async function getZonePackageConfigsServerAction(): Promise<ZonePackageCo
   } catch (error: any) {
     console.error('[getZonePackageConfigsServerAction]', error?.response?.data || error.message);
     return [];
+  }
+}
+
+// See getZoneServiceItemConfigsPagedServerAction's comment above — same zoneId-scoped, single-page
+// pattern.
+export async function getZonePackageConfigsPagedServerAction(
+  zoneId: string,
+  page = 1,
+  limit = 10
+): Promise<PaginatedEnvelope<ZonePackageConfig>> {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await axiosInstance.get<PaginatedEnvelope<ZonePackageConfig>>(
+      '/admin/zones/package-configs',
+      { headers, params: { zoneId, page, limit } }
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error('[getZonePackageConfigsPagedServerAction]', error?.response?.data || error.message);
+    return { data: [], pagination: { total: 0, page, limit, totalPages: 1 } };
   }
 }
 
@@ -283,6 +378,26 @@ export async function getZoneAddOnConfigsServerAction(): Promise<ZoneAddOnConfig
   }
 }
 
+// See getZoneServiceItemConfigsPagedServerAction's comment above — same zoneId-scoped, single-page
+// pattern.
+export async function getZoneAddOnConfigsPagedServerAction(
+  zoneId: string,
+  page = 1,
+  limit = 10
+): Promise<PaginatedEnvelope<ZoneAddOnConfig>> {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await axiosInstance.get<PaginatedEnvelope<ZoneAddOnConfig>>(
+      '/admin/zones/add-on-configs',
+      { headers, params: { zoneId, page, limit } }
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error('[getZoneAddOnConfigsPagedServerAction]', error?.response?.data || error.message);
+    return { data: [], pagination: { total: 0, page, limit, totalPages: 1 } };
+  }
+}
+
 export interface ZoneAddOnConfigPayload {
   zoneId: string;
   serviceAddOnId: string;
@@ -333,6 +448,26 @@ export async function getZoneSuiteConfigsServerAction(): Promise<ZoneSuiteConfig
   } catch (error: any) {
     console.error('[getZoneSuiteConfigsServerAction]', error?.response?.data || error.message);
     return [];
+  }
+}
+
+// See getZoneServiceItemConfigsPagedServerAction's comment above — same zoneId-scoped, single-page
+// pattern.
+export async function getZoneSuiteConfigsPagedServerAction(
+  zoneId: string,
+  page = 1,
+  limit = 10
+): Promise<PaginatedEnvelope<ZoneSuiteConfig>> {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await axiosInstance.get<PaginatedEnvelope<ZoneSuiteConfig>>(
+      '/admin/zones/suite-configs',
+      { headers, params: { zoneId, page, limit } }
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error('[getZoneSuiteConfigsPagedServerAction]', error?.response?.data || error.message);
+    return { data: [], pagination: { total: 0, page, limit, totalPages: 1 } };
   }
 }
 

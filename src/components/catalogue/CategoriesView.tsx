@@ -1,8 +1,10 @@
 'use client';
 
-import React, { useState, useRef, useLayoutEffect, useEffect } from 'react';
-import { Plus, Edit3, Trash2, ChevronDown, ChevronLeft, ChevronRight, FolderPlus, MapPin } from 'lucide-react';
+import React, { useState, useRef, useLayoutEffect, useEffect, useCallback } from 'react';
+import { Plus, Edit3, Trash2, ChevronDown, FolderPlus, MapPin } from 'lucide-react';
 import { useCatalogue } from '../../contexts/CatalogueContext';
+import { getCategoriesPagedServerAction } from '../../lib/server-actions/category';
+import { getSubCategoriesPagedServerAction } from '../../lib/server-actions/sub-category';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Card } from '../ui/card';
@@ -11,7 +13,8 @@ import { StatusToggle } from '../ui/status-toggle';
 import { useConfirm } from '../ui/confirm-dialog';
 import { toast } from 'react-toastify';
 import SuiteZoneAvailabilityModal from './SuiteZoneAvailabilityModal';
-import { ServiceCategory, ServiceSuite } from '../../types/catalogue';
+import { ServiceCategory, ServiceSubCategory, ServiceSuite } from '../../types/catalogue';
+import Pagination from '../shared/Pagination';
 
 // Category "chip" tabs — replaces the old click-to-open dropdown so every category is visible at
 // a glance and switching is a single click. Shared by Section 1B (suites) and Section 2
@@ -101,6 +104,79 @@ export default function CategoriesView() {
     updateServiceSuiteStatus,
   } = useCatalogue();
   const confirm = useConfirm();
+
+  // ---- Section 1 (Main Categories table) — real server-driven pagination ----
+  // CategoryTabs (Section 1B/2) and every suite/gender derivation below still read the full
+  // `categories`/`subCategories` lists off CatalogueContext, unchanged — only this table's own
+  // rows + the dead pagination footer below it are converted.
+  const [catPage, setCatPage] = useState(1);
+  const [catPageSize, setCatPageSize] = useState(10);
+  const [catRows, setCatRows] = useState<ServiceCategory[]>([]);
+  const [catPagination, setCatPagination] = useState({ total: 0, totalPages: 1 });
+  const [catRowsLoading, setCatRowsLoading] = useState(true);
+
+  const fetchCatPage = useCallback(async () => {
+    setCatRowsLoading(true);
+    try {
+      const res = await getCategoriesPagedServerAction({ page: catPage, limit: catPageSize });
+      setCatRows(res.data ?? []);
+      setCatPagination({ total: res.pagination?.total ?? 0, totalPages: res.pagination?.totalPages ?? 1 });
+    } finally {
+      setCatRowsLoading(false);
+    }
+    // `categories` (CatalogueContext's full list) is included so this refetches whenever a
+    // category is created/edited/deleted/toggled anywhere (CategoryModal, the status toggles
+    // below) — every one of those writes goes through context's saveCategory/updateCategoryStatus/
+    // deleteCategory, which replace that array with a new reference, so it doubles as a "something
+    // changed, refresh your own page" signal without CategoryModal needing to know this table
+    // fetches its own data separately.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catPage, catPageSize, categories]);
+
+  useEffect(() => {
+    fetchCatPage();
+  }, [fetchCatPage]);
+
+  // ---- Section 2 (Sub-Categories table) — real server-driven pagination ----
+  const [subPage, setSubPage] = useState(1);
+  const [subPageSize, setSubPageSize] = useState(10);
+  const [subRows, setSubRows] = useState<ServiceSubCategory[]>([]);
+  const [subPagination, setSubPagination] = useState({ total: 0, totalPages: 1 });
+  const [subRowsLoading, setSubRowsLoading] = useState(true);
+
+  const fetchSubPage = useCallback(async () => {
+    if (!selectedCategory) {
+      setSubRows([]);
+      setSubPagination({ total: 0, totalPages: 1 });
+      setSubRowsLoading(false);
+      return;
+    }
+    setSubRowsLoading(true);
+    try {
+      const res = await getSubCategoriesPagedServerAction({
+        page: subPage,
+        limit: subPageSize,
+        categoryId: selectedCategory.id,
+      });
+      setSubRows(res.data ?? []);
+      setSubPagination({ total: res.pagination?.total ?? 0, totalPages: res.pagination?.totalPages ?? 1 });
+    } finally {
+      setSubRowsLoading(false);
+    }
+    // See fetchCatPage's comment above — `subCategories` (context's full list) doubles as the
+    // "something changed" signal here too.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subPage, subPageSize, selectedCategory, subCategories]);
+
+  useEffect(() => {
+    fetchSubPage();
+  }, [fetchSubPage]);
+
+  // Switching category starts back at page 1 of its sub-categories instead of carrying over
+  // whatever page was open under the previous category.
+  useEffect(() => {
+    setSubPage(1);
+  }, [selectedCategory?.id]);
 
   // The tab switcher (Section 1B/2) is a quick-navigation control, not the management table —
   // an inactive category has nothing active to manage under it, so it's dropped from the tabs
@@ -192,7 +268,12 @@ export default function CategoriesView() {
     ? 'All Genders'
     : genders.find(g => g.id === activeGenderFilter)?.name || 'All Genders';
 
-  const filteredSubCategories = currentSubCategories.filter(sub => {
+  // Suite/Gender aren't real fields on GetSubCategoriesQueryDto or the ServiceSubCategory Prisma
+  // model (only ServiceItem carries suiteId/genderId) — these two filters stay client-side, but
+  // now over `subRows` (this category's current fetched PAGE of sub-categories) instead of the
+  // full context list, since Section 2's rows are now paginated. A filter can therefore narrow
+  // within a page without changing which page's worth of rows was fetched.
+  const filteredSubCategories = subRows.filter(sub => {
     const suiteOk = activeSuiteFilter === 'all' || suiteIdsForSubCategory(sub.id).includes(activeSuiteFilter);
     const genderOk = activeGenderFilter === 'all' || genderIdsForSubCategory(sub.id).includes(activeGenderFilter);
     return suiteOk && genderOk;
@@ -484,7 +565,7 @@ export default function CategoriesView() {
 
         {/* Main Categories Table Card */}
         <Card className="w-full">
-          {loading ? (
+          {loading || catRowsLoading ? (
             <div className="overflow-x-auto w-full">
               <table className="w-full text-left border-collapse min-w-[600px]">
                 <thead>
@@ -501,7 +582,7 @@ export default function CategoriesView() {
                 </tbody>
               </table>
             </div>
-          ) : categories.length === 0 ? (
+          ) : catPagination.total === 0 ? (
             <div className="py-16 flex flex-col items-center justify-center text-center p-6 space-y-3">
               <div className="w-12 h-12 rounded-full bg-[#FAF5F0] text-[#C68A4C] flex items-center justify-center">
                 <FolderPlus className="w-6 h-6" />
@@ -532,7 +613,7 @@ export default function CategoriesView() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 text-sm text-gray-700">
-                    {categories.map((category) => (
+                    {catRows.map((category) => (
                       <tr 
                         key={category.id} 
                         className={`hover:bg-[#FAF9F6]/80 transition-colors cursor-pointer ${
@@ -604,18 +685,17 @@ export default function CategoriesView() {
                 </table>
               </div>
 
-              {/* Footer Pagination */}
-              <div className="px-4 sm:px-6 py-4 bg-white border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
-                <span>Showing 1 to {categories.length} of {categories.length} categories</span>
-                <div className="flex items-center gap-2">
-                  <button className="w-8 h-8 rounded-full bg-gray-200 text-gray-400 flex items-center justify-center cursor-not-allowed">
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                  <button className="w-8 h-8 rounded-full bg-[#1C1512] text-white flex items-center justify-center shadow-xs hover:bg-black transition-colors">
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
+              {/* Footer Pagination — real, backend-driven */}
+              <Pagination
+                page={catPage}
+                totalPages={catPagination.totalPages}
+                onPageChange={setCatPage}
+                pageSize={catPageSize}
+                onPageSizeChange={(size) => { setCatPageSize(size); setCatPage(1); }}
+                totalItems={catPagination.total}
+                itemLabel="categories"
+                className="px-4 sm:px-6 py-4 bg-white border-t border-gray-100"
+              />
             </>
           )}
         </Card>
@@ -895,7 +975,7 @@ export default function CategoriesView() {
 
         {/* Sub-Categories Table Card */}
         <Card className="w-full">
-          {loading ? (
+          {loading || subRowsLoading ? (
             <div className="overflow-x-auto w-full">
               <table className="w-full text-left border-collapse min-w-[640px]">
                 <thead>
@@ -913,7 +993,7 @@ export default function CategoriesView() {
                 </tbody>
               </table>
             </div>
-          ) : currentSubCategories.length === 0 ? (
+          ) : subPagination.total === 0 ? (
             <div className="py-14 flex flex-col items-center justify-center text-center p-6 space-y-3">
               <div className="w-12 h-12 rounded-full bg-[#FAF5F0] text-[#C68A4C] flex items-center justify-center">
                 <FolderPlus className="w-6 h-6" />
@@ -1058,18 +1138,19 @@ export default function CategoriesView() {
                 </table>
               </div>
 
-              {/* Footer Pagination */}
-              <div className="px-4 sm:px-6 py-4 bg-white border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
-                <span>Showing 1 to {filteredSubCategories.length} of {filteredSubCategories.length} sub-categories</span>
-                <div className="flex items-center gap-2">
-                  <button className="w-8 h-8 rounded-full bg-gray-200 text-gray-400 flex items-center justify-center cursor-not-allowed">
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                  <button className="w-8 h-8 rounded-full bg-[#1C1512] text-white flex items-center justify-center shadow-xs hover:bg-black transition-colors">
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
+              {/* Footer Pagination — real, backend-driven (categoryId-scoped); the Suite/Gender
+                  filters above narrow within whichever page this shows, they don't change the
+                  query, so "showing" counts the fetched page, not the post-filter row count. */}
+              <Pagination
+                page={subPage}
+                totalPages={subPagination.totalPages}
+                onPageChange={setSubPage}
+                pageSize={subPageSize}
+                onPageSizeChange={(size) => { setSubPageSize(size); setSubPage(1); }}
+                totalItems={subPagination.total}
+                itemLabel="sub-categories"
+                className="px-4 sm:px-6 py-4 bg-white border-t border-gray-100"
+              />
             </div>
           )}
         </Card>

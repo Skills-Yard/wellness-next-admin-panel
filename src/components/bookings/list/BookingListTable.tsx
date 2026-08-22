@@ -1,13 +1,15 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Calendar as CalendarIcon, Download, ChevronLeft, ChevronRight, ShoppingBag } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Calendar as CalendarIcon, Download, ShoppingBag } from 'lucide-react';
 import { Booking } from '../../../types/booking';
+import { getBookingsPagedServerAction } from '../../../lib/server-actions/booking';
 import BookingListMetrics from './BookingListMetrics';
 import BookingListRow from './BookingListRow';
 import BookingListFilters from './BookingListFilters';
 import { Button } from '../../ui/button';
 import { Card } from '../../ui/card';
+import Pagination from '../../shared/Pagination';
 
 interface BookingListTableProps {
   bookings: Booking[];
@@ -17,6 +19,22 @@ interface BookingListTableProps {
   onCancelBooking?: (id: string) => void;
 }
 
+// The backend's status filter (GetBookingsQueryDto.status) now accepts a comma-separated list,
+// matched with an `IN (...)` — so a tab that groups several statuses (e.g. "Active Services")
+// sends them all in one request instead of needing an unsupported OR-of-statuses. Real
+// BookingStatus values only (PARTNER_ASSIGNED/ASSIGNING_PARTNER/bare CANCELLED referenced by the
+// old client-side filter were never real enum members — see prisma/schema/enums.prisma in the
+// backend repo): active = the partner is actively en route/arrived/mid-service; upcoming =
+// confirmed and in the matching pipeline but not yet started; cancelled = all three
+// CANCELLED_BY_* variants.
+const TAB_STATUS: Record<string, string | undefined> = {
+  all: undefined,
+  active: 'IN_PROGRESS,PARTNER_ARRIVED,PARTNER_EN_ROUTE',
+  upcoming: 'CONFIRMED,BROADCASTED,ACCEPTED',
+  completed: 'COMPLETED',
+  cancelled: 'CANCELLED_BY_CLIENT,CANCELLED_BY_PARTNER,CANCELLED_BY_ADMIN',
+};
+
 export default function BookingListTable({
   bookings,
   activeTab,
@@ -24,37 +42,70 @@ export default function BookingListTable({
   onRefresh,
   onCancelBooking,
 }: BookingListTableProps) {
+  const [searchInput, setSearchInput] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(50);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   const [actionMenuOpenId, setActionMenuOpenId] = useState<string | null>(null);
 
+  const [rows, setRows] = useState<Booking[]>([]);
+  const [pagination, setPagination] = useState({ total: 0, totalPages: 1 });
+  const [loading, setLoading] = useState(true);
+
+  // Metrics cards still read off the full `bookings` list the parent page fetches — see that
+  // page's own fetch/cache for why (unrelated to this table's own paginated rows).
   const activeBookings = bookings.filter((b) => b.status === 'CONFIRMED' || b.status === 'PARTNER_ASSIGNED' || b.status === 'IN_PROGRESS').length;
   const ongoingServices = bookings.filter((b) => b.status === 'IN_PROGRESS' || b.status === 'PARTNER_ARRIVED' || b.status === 'PARTNER_EN_ROUTE').length;
   const todaysServices = bookings.length;
   const totalActiveRevenue = bookings.reduce((sum, b) => sum + (b.totalAmount || 0), 0);
 
-  const filteredBookings = bookings.filter((b) => {
-    let matchesTab = true;
-    if (activeTab === 'active') matchesTab = b.status === 'IN_PROGRESS' || b.status === 'PARTNER_ARRIVED' || b.status === 'PARTNER_EN_ROUTE';
-    else if (activeTab === 'upcoming') matchesTab = b.status === 'CONFIRMED' || b.status === 'PARTNER_ASSIGNED' || b.status === 'ASSIGNING_PARTNER';
-    else if (activeTab === 'completed') matchesTab = b.status === 'COMPLETED';
-    else if (activeTab === 'cancelled') matchesTab = b.status === 'CANCELLED' || b.status === 'EXPIRED';
+  // Debounce the search input ~350ms before it turns into a backend request.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setSearchTerm(searchInput);
+      setPage(1);
+    }, 350);
+    return () => clearTimeout(t);
+  }, [searchInput]);
 
-    const matchesStatus = selectedStatus === 'ALL' || b.status === selectedStatus;
-    const matchesSearch = !searchTerm ||
-      (b.bookingCode && b.bookingCode.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (b.user?.name && b.user.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (b.user?.phone && b.user.phone.includes(searchTerm)) ||
-      (b.partner?.name && b.partner.name.toLowerCase().includes(searchTerm.toLowerCase()));
+  // The dropdown wins over the tab when both could apply — picking any specific status there is
+  // a more precise request than a tab's (mostly unfilterable) grouping.
+  const effectiveStatus = selectedStatus !== 'ALL' ? selectedStatus : TAB_STATUS[activeTab];
 
-    return matchesTab && matchesStatus && matchesSearch;
-  });
+  const fetchPage = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await getBookingsPagedServerAction({
+        page,
+        limit: pageSize,
+        q: searchTerm || undefined,
+        status: effectiveStatus,
+      });
+      setRows(res.data ?? []);
+      setPagination({
+        total: res.pagination?.total ?? 0,
+        totalPages: res.pagination?.totalPages ?? 1,
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [page, pageSize, searchTerm, effectiveStatus]);
 
-  const totalPages = Math.ceil(filteredBookings.length / itemsPerPage) || 1;
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedBookings = filteredBookings.slice(startIndex, startIndex + itemsPerPage);
+  useEffect(() => {
+    fetchPage();
+  }, [fetchPage]);
+
+  const handleCancel = onCancelBooking
+    ? async (id: string) => {
+        // onCancelBooking is declared void-returning but the parent page's implementation is
+        // actually async (prompts, calls the API, then silently refetches the full list for the
+        // metrics cards) — await it before refetching this table's own current page, so a
+        // just-cancelled row's status is already updated server-side by the time it reloads.
+        await onCancelBooking(id);
+        await fetchPage();
+      }
+    : undefined;
 
   const TABS = [
     { id: 'all', label: 'All Bookings' },
@@ -88,7 +139,7 @@ export default function BookingListTable({
       <div className="border-b border-gray-200">
         <nav className="flex space-x-6">
           {TABS.map((tab) => (
-            <button key={tab.id} onClick={() => { onTabChange(tab.id); setCurrentPage(1); }} className={`pb-3 text-xs font-semibold border-b-2 transition-all cursor-pointer ${activeTab === tab.id ? 'border-[#D4A373] text-[#D4A373]' : 'border-transparent text-gray-500 hover:text-gray-900'}`}>
+            <button key={tab.id} onClick={() => { onTabChange(tab.id); setPage(1); }} className={`pb-3 text-xs font-semibold border-b-2 transition-all cursor-pointer ${activeTab === tab.id ? 'border-[#D4A373] text-[#D4A373]' : 'border-transparent text-gray-500 hover:text-gray-900'}`}>
               {tab.label}
             </button>
           ))}
@@ -96,7 +147,7 @@ export default function BookingListTable({
       </div>
 
       <Card className="rounded-2xl border border-gray-100 shadow-xs overflow-hidden bg-white">
-        <BookingListFilters searchTerm={searchTerm} onSearchChange={setSearchTerm} selectedStatus={selectedStatus} onStatusChange={(val) => { setSelectedStatus(val); setCurrentPage(1); }} totalCount={bookings.length} />
+        <BookingListFilters searchTerm={searchInput} onSearchChange={setSearchInput} selectedStatus={selectedStatus} onStatusChange={(val) => { setSelectedStatus(val); setPage(1); }} totalCount={pagination.total} />
 
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -112,7 +163,11 @@ export default function BookingListTable({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 text-xs text-gray-700">
-              {paginatedBookings.length === 0 ? (
+              {loading ? (
+                <tr>
+                  <td colSpan={7} className="py-12 text-center text-gray-400">Loading bookings...</td>
+                </tr>
+              ) : rows.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="py-12 text-center text-gray-400">
                     <ShoppingBag className="w-8 h-8 mx-auto mb-2 text-gray-300" />
@@ -120,27 +175,23 @@ export default function BookingListTable({
                   </td>
                 </tr>
               ) : (
-                paginatedBookings.map((b) => <BookingListRow key={b.id} booking={b} actionMenuOpenId={actionMenuOpenId} setActionMenuOpenId={setActionMenuOpenId} onCancelBooking={onCancelBooking} />)
+                rows.map((b) => <BookingListRow key={b.id} booking={b} actionMenuOpenId={actionMenuOpenId} setActionMenuOpenId={setActionMenuOpenId} onCancelBooking={handleCancel} />)
               )}
             </tbody>
           </table>
         </div>
 
-        <div className="p-4 border-t border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-gray-500">
-          <div>Showing <span className="font-semibold text-gray-900">{filteredBookings.length > 0 ? startIndex + 1 : 0}</span> to <span className="font-semibold text-gray-900">{Math.min(startIndex + itemsPerPage, filteredBookings.length)}</span> of <span className="font-semibold text-gray-900">{filteredBookings.length}</span> bookings</div>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1">
-              <button disabled={currentPage === 1} onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))} className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center text-gray-600 hover:bg-gray-50 disabled:opacity-40"><ChevronLeft className="w-4 h-4" /></button>
-              <span className="px-2 font-semibold text-gray-900">{currentPage} / {totalPages}</span>
-              <button disabled={currentPage === totalPages} onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))} className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center text-gray-600 hover:bg-gray-50 disabled:opacity-40"><ChevronRight className="w-4 h-4" /></button>
-            </div>
-            <select value={itemsPerPage} onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }} className="px-2.5 py-1 text-xs border border-gray-200 rounded-lg bg-white text-gray-700 cursor-pointer focus:outline-none">
-              <option value={10}>10/ Page</option>
-              <option value={50}>50/ Page</option>
-              <option value={100}>100/ Page</option>
-            </select>
-          </div>
-        </div>
+        <Pagination
+          page={page}
+          totalPages={pagination.totalPages}
+          onPageChange={setPage}
+          pageSize={pageSize}
+          onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
+          pageSizeOptions={[10, 50, 100]}
+          totalItems={pagination.total}
+          itemLabel="bookings"
+          className="p-4 border-t border-gray-100"
+        />
       </Card>
     </div>
   );
