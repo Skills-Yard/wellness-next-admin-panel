@@ -17,6 +17,10 @@ export interface AuthContextType {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; message?: string }>;
   logout: () => void;
+  // Merges a partial User (e.g. the response from PATCH /admin/{id}) into the current session and
+  // re-persists it — so a profile edit shows up immediately in Header/Sidebar without requiring
+  // a re-login. Never touches accessToken; that only ever changes via login/logout.
+  updateUser: (partial: Partial<Omit<User, 'accessToken'>>) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -108,6 +112,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     document.cookie = 'wellness_admin_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
   };
 
+  const updateUser = (partial: Partial<Omit<User, 'accessToken'>>) => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, ...partial };
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -116,6 +129,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoading,
         login,
         logout,
+        updateUser,
       }}
     >
       {children}
