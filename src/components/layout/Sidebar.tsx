@@ -15,6 +15,7 @@ import {
   Megaphone,
   MapPinned,
   GraduationCap,
+  ShieldCheck,
   X,
   ChevronDown,
   ChevronLeft,
@@ -54,6 +55,7 @@ const menuItems: MenuItem[] = [
     ],
   },
   { label: "Users", icon: Users, href: "/users" },
+  { label: "Admins", icon: ShieldCheck, href: "/admins" },
   { label: "Settings", icon: Settings, href: "/settings" },
 ];
 
