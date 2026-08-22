@@ -8,41 +8,51 @@ import { getPartnersServerAction } from '../lib/server-actions/partner';
 import { User } from '../types/user';
 import { Booking } from '../types/booking';
 import { Partner } from '../types/partner';
-import { getCached, setCached } from '../lib/sessionCache';
+import { getCached, setCached, CACHE_KEYS } from '../lib/sessionCache';
 import DashboardView from '../components/dashboard/DashboardView';
 import FetchErrorBanner from '../components/common/FetchErrorBanner';
 
-const CACHE_KEY = 'dashboard:users-bookings-partners';
-
-interface DashboardData {
-  users: User[];
-  bookings: Booking[];
-  partners: Partner[];
-}
-
 export default function DashboardPage() {
-  const cached = getCached<DashboardData>(CACHE_KEY);
-  const [data, setData] = useState<DashboardData>(cached || { users: [], bookings: [], partners: [] });
-  // Only the very first, never-cached load shows the full skeleton — a revisit this session
-  // renders the cached data immediately while refreshing quietly underneath.
-  const [loading, setLoading] = useState(cached === undefined);
+  // These three read/write the SAME cache keys as the standalone Users/Bookings/Partners list
+  // pages (see CACHE_KEYS in sessionCache) — whichever page loads first this session primes the
+  // cache for the others, instead of each one independently re-walking the same full collection.
+  const cachedUsers = getCached<User[]>(CACHE_KEYS.users);
+  const cachedBookings = getCached<Booking[]>(CACHE_KEYS.bookings);
+  const cachedPartners = getCached<Partner[]>(CACHE_KEYS.partners);
+
+  const [users, setUsers] = useState<User[]>(cachedUsers || []);
+  const [bookings, setBookings] = useState<Booking[]>(cachedBookings || []);
+  const [partners, setPartners] = useState<Partner[]>(cachedPartners || []);
+  // Only the very first, never-cached load shows the full skeleton — a revisit this session (or
+  // arriving after Users/Bookings/Partners already primed the cache) renders immediately while
+  // refreshing quietly underneath.
+  const [loading, setLoading] = useState(
+    cachedUsers === undefined || cachedBookings === undefined || cachedPartners === undefined
+  );
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
     let cancelled = false;
     (async () => {
-      if (getCached<DashboardData>(CACHE_KEY) === undefined) setLoading(true);
+      const allCached =
+        getCached<User[]>(CACHE_KEYS.users) !== undefined &&
+        getCached<Booking[]>(CACHE_KEYS.bookings) !== undefined &&
+        getCached<Partner[]>(CACHE_KEYS.partners) !== undefined;
+      if (!allCached) setLoading(true);
       setError(null);
       try {
-        const [users, bookings, partners] = await Promise.all([
+        const [freshUsers, freshBookings, freshPartners] = await Promise.all([
           getUsersServerAction(),
           getBookingsServerAction(),
           getPartnersServerAction(),
         ]);
         if (cancelled) return;
-        const fresh = { users, bookings, partners };
-        setCached(CACHE_KEY, fresh);
-        setData(fresh);
+        setCached(CACHE_KEYS.users, freshUsers);
+        setCached(CACHE_KEYS.bookings, freshBookings);
+        setCached(CACHE_KEYS.partners, freshPartners);
+        setUsers(freshUsers);
+        setBookings(freshBookings);
+        setPartners(freshPartners);
       } catch (err: any) {
         if (cancelled) return;
         console.error('[DashboardPage] load failed:', err?.response?.data || err?.message || err);
@@ -83,7 +93,7 @@ export default function DashboardPage() {
           <Skeleton className="h-64 rounded-2xl" />
         </div>
       ) : (
-        <DashboardView users={data.users} bookings={data.bookings} partners={data.partners} />
+        <DashboardView users={users} bookings={bookings} partners={partners} />
       )}
     </section>
   );

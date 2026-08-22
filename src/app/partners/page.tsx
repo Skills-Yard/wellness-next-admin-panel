@@ -11,10 +11,10 @@ import {
 import { Partner } from '../../types/partner';
 import { Card } from '../../components/ui/card';
 import { Skeleton, SkeletonCard, SkeletonTableRows } from '../../components/ui/skeleton';
-import { getCached, setCached } from '../../lib/sessionCache';
+import { getCached, setCached, CACHE_KEYS } from '../../lib/sessionCache';
 import FetchErrorBanner from '../../components/common/FetchErrorBanner';
 
-const CACHE_KEY = 'partners:list';
+const CACHE_KEY = CACHE_KEYS.partners;
 
 export default function PartnersPage() {
   const cached = getCached<Partner[]>(CACHE_KEY);
@@ -86,6 +86,17 @@ export default function PartnersPage() {
     }
   };
 
+  // AddPartnerModal hands back the partner it just created — append it here instead of
+  // re-fetching the entire list a second time (PartnerListTable's own fetchPage() already
+  // refreshes the paged rows actually on screen).
+  const handlePartnerCreated = (partner: Partner) => {
+    setPartners(prev => {
+      const next = [partner, ...prev];
+      setCached(CACHE_KEY, next);
+      return next;
+    });
+  };
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -131,7 +142,7 @@ export default function PartnersPage() {
       {error && <FetchErrorBanner message={error} onRetry={fetchPartners} />}
       <PartnerListTable
         partners={partners}
-        onRefresh={fetchPartners}
+        onPartnerCreated={handlePartnerCreated}
         onApprove={handleApprove}
         onSuspend={handleSuspend}
         onDelete={handleDelete}

@@ -5,10 +5,10 @@ import { UserListMetrics, UserListTable } from '../../components/users';
 import { getUsersServerAction, updateUserServerAction } from '../../lib/server-actions/user';
 import { User, CreateUserPayload } from '../../types/user';
 import { SkeletonCard } from '../../components/ui/skeleton';
-import { getCached, setCached } from '../../lib/sessionCache';
+import { getCached, setCached, CACHE_KEYS } from '../../lib/sessionCache';
 import FetchErrorBanner from '../../components/common/FetchErrorBanner';
 
-const CACHE_KEY = 'users:list';
+const CACHE_KEY = CACHE_KEYS.users;
 
 export default function UsersPage() {
   const cached = getCached<User[]>(CACHE_KEY);
@@ -40,8 +40,11 @@ export default function UsersPage() {
   }, [fetchUsers]);
 
   const handleAddUser = async (payload: CreateUserPayload) => {
+    // No real create-user endpoint is wired up yet (see the alert) — nothing actually changed
+    // server-side, so there's nothing here for this page's own full list to re-fetch. UserListTable
+    // still re-fetches its own paged view after this resolves; once a real create action lands,
+    // append the created user to `users` here instead of adding a fetchUsers() call back.
     alert(`User creation simulated for ${payload.name}.`);
-    await fetchUsers();
   };
 
   const handleDeactivateUser = async (userId: string, reason?: string) => {

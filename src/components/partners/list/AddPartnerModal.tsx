@@ -5,11 +5,14 @@ import { X, Loader2, UserPlus } from 'lucide-react';
 import axiosInstance from '../../../lib/axios';
 import { Input } from '../../ui/input';
 import { Button } from '../../ui/button';
+import { Partner } from '../../../types/partner';
 
 interface AddPartnerModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: () => void;
+  // Hands back the partner the backend just created so the caller can append it locally instead
+  // of re-fetching the whole partners list for one new row.
+  onSuccess: (partner: Partner) => void;
 }
 
 export default function AddPartnerModal({ isOpen, onClose, onSuccess }: AddPartnerModalProps) {
@@ -31,8 +34,11 @@ export default function AddPartnerModal({ isOpen, onClose, onSuccess }: AddPartn
     setLoading(true);
     setError(null);
     try {
-      await axiosInstance.post('/admin/partners', formData);
-      onSuccess();
+      const res = await axiosInstance.post('/admin/partners', formData);
+      // Same response-wrapping convention as the server actions (see `unwrap` in
+      // lib/server-actions/partner.ts): body is either `{ data: {...} }` or the partner directly.
+      const created: Partner = res.data?.data ?? res.data;
+      onSuccess(created);
     } catch (err: any) {
       console.error(err);
       setError(err?.response?.data?.message || 'Failed to create partner.');

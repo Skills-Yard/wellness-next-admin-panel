@@ -6,10 +6,10 @@ import { getBookingsServerAction, cancelBookingServerAction } from '../../lib/se
 import { Booking } from '../../types/booking';
 import { Card } from '../../components/ui/card';
 import { SkeletonTableRows } from '../../components/ui/skeleton';
-import { getCached, setCached } from '../../lib/sessionCache';
+import { getCached, setCached, CACHE_KEYS } from '../../lib/sessionCache';
 import FetchErrorBanner from '../../components/common/FetchErrorBanner';
 
-const CACHE_KEY = 'bookings:list';
+const CACHE_KEY = CACHE_KEYS.bookings;
 
 export default function BookingsPage() {
   const cached = getCached<Booking[]>(CACHE_KEY);

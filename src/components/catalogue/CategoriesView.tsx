@@ -1,10 +1,8 @@
 'use client';
 
-import React, { useState, useRef, useLayoutEffect, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useLayoutEffect, useEffect } from 'react';
 import { Plus, Edit3, Trash2, ChevronDown, FolderPlus, MapPin } from 'lucide-react';
 import { useCatalogue } from '../../contexts/CatalogueContext';
-import { getCategoriesPagedServerAction } from '../../lib/server-actions/category';
-import { getSubCategoriesPagedServerAction } from '../../lib/server-actions/sub-category';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Card } from '../ui/card';
@@ -13,7 +11,7 @@ import { StatusToggle } from '../ui/status-toggle';
 import { useConfirm } from '../ui/confirm-dialog';
 import { toast } from 'react-toastify';
 import SuiteZoneAvailabilityModal from './SuiteZoneAvailabilityModal';
-import { ServiceCategory, ServiceSubCategory, ServiceSuite } from '../../types/catalogue';
+import { ServiceCategory, ServiceSuite } from '../../types/catalogue';
 import Pagination from '../shared/Pagination';
 
 // Category "chip" tabs — replaces the old click-to-open dropdown so every category is visible at
@@ -105,75 +103,32 @@ export default function CategoriesView() {
   } = useCatalogue();
   const confirm = useConfirm();
 
-  // ---- Section 1 (Main Categories table) — real server-driven pagination ----
-  // CategoryTabs (Section 1B/2) and every suite/gender derivation below still read the full
-  // `categories`/`subCategories` lists off CatalogueContext, unchanged — only this table's own
-  // rows + the dead pagination footer below it are converted.
+  // ---- Section 1 (Main Categories table) — client-side pagination over CatalogueContext's
+  // already-loaded full `categories` list. This used to hit its own getCategoriesPagedServerAction
+  // on top of the context's full fetch (and again on every category create/edit/delete/toggle,
+  // since it re-fetched whenever the context's `categories` array got a new reference) — that was
+  // a second full round-trip for data the page already had in memory. Categories are an admin-
+  // curated list (never anywhere near "walk multiple backend pages" territory), so slicing the
+  // already-fetched array client-side is strictly less network traffic for the same result.
   const [catPage, setCatPage] = useState(1);
   const [catPageSize, setCatPageSize] = useState(10);
-  const [catRows, setCatRows] = useState<ServiceCategory[]>([]);
-  const [catPagination, setCatPagination] = useState({ total: 0, totalPages: 1 });
-  const [catRowsLoading, setCatRowsLoading] = useState(true);
+  const catPagination = { total: categories.length, totalPages: Math.max(1, Math.ceil(categories.length / catPageSize)) };
+  const catRows = categories.slice((catPage - 1) * catPageSize, catPage * catPageSize);
 
-  const fetchCatPage = useCallback(async () => {
-    setCatRowsLoading(true);
-    try {
-      const res = await getCategoriesPagedServerAction({ page: catPage, limit: catPageSize });
-      setCatRows(res.data ?? []);
-      setCatPagination({ total: res.pagination?.total ?? 0, totalPages: res.pagination?.totalPages ?? 1 });
-    } finally {
-      setCatRowsLoading(false);
-    }
-    // `categories` (CatalogueContext's full list) is included so this refetches whenever a
-    // category is created/edited/deleted/toggled anywhere (CategoryModal, the status toggles
-    // below) — every one of those writes goes through context's saveCategory/updateCategoryStatus/
-    // deleteCategory, which replace that array with a new reference, so it doubles as a "something
-    // changed, refresh your own page" signal without CategoryModal needing to know this table
-    // fetches its own data separately.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [catPage, catPageSize, categories]);
-
+  // Deleting the last row on the last page (or the list just getting shorter) can leave `catPage`
+  // pointing past the new last page — snap back instead of showing an empty table.
   useEffect(() => {
-    fetchCatPage();
-  }, [fetchCatPage]);
+    if (catPage > catPagination.totalPages) setCatPage(catPagination.totalPages);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catPagination.totalPages]);
 
-  // ---- Section 2 (Sub-Categories table) — real server-driven pagination ----
+  // ---- Section 2 (Sub-Categories table) — same client-side pagination, over the context's
+  // already-loaded full `subCategories` list filtered to the selected category. ----
   const [subPage, setSubPage] = useState(1);
   const [subPageSize, setSubPageSize] = useState(10);
-  const [subRows, setSubRows] = useState<ServiceSubCategory[]>([]);
-  const [subPagination, setSubPagination] = useState({ total: 0, totalPages: 1 });
-  const [subRowsLoading, setSubRowsLoading] = useState(true);
 
-  const fetchSubPage = useCallback(async () => {
-    if (!selectedCategory) {
-      setSubRows([]);
-      setSubPagination({ total: 0, totalPages: 1 });
-      setSubRowsLoading(false);
-      return;
-    }
-    setSubRowsLoading(true);
-    try {
-      const res = await getSubCategoriesPagedServerAction({
-        page: subPage,
-        limit: subPageSize,
-        categoryId: selectedCategory.id,
-      });
-      setSubRows(res.data ?? []);
-      setSubPagination({ total: res.pagination?.total ?? 0, totalPages: res.pagination?.totalPages ?? 1 });
-    } finally {
-      setSubRowsLoading(false);
-    }
-    // See fetchCatPage's comment above — `subCategories` (context's full list) doubles as the
-    // "something changed" signal here too.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [subPage, subPageSize, selectedCategory, subCategories]);
-
-  useEffect(() => {
-    fetchSubPage();
-  }, [fetchSubPage]);
-
-  // Switching category starts back at page 1 of its sub-categories instead of carrying over
-  // whatever page was open under the previous category.
+  // Switching category (or either suite/gender filter below) starts back at page 1 instead of
+  // carrying over whatever page was open under the previous selection.
   useEffect(() => {
     setSubPage(1);
   }, [selectedCategory?.id]);
@@ -269,15 +224,28 @@ export default function CategoriesView() {
     : genders.find(g => g.id === activeGenderFilter)?.name || 'All Genders';
 
   // Suite/Gender aren't real fields on GetSubCategoriesQueryDto or the ServiceSubCategory Prisma
-  // model (only ServiceItem carries suiteId/genderId) — these two filters stay client-side, but
-  // now over `subRows` (this category's current fetched PAGE of sub-categories) instead of the
-  // full context list, since Section 2's rows are now paginated. A filter can therefore narrow
-  // within a page without changing which page's worth of rows was fetched.
-  const filteredSubCategories = subRows.filter(sub => {
+  // model (only ServiceItem carries suiteId/genderId) — these two filters stay client-side, over
+  // the full `currentSubCategories` for the selected category (already in memory via
+  // CatalogueContext, no extra fetch), narrowed by suite/gender and THEN paginated below — so
+  // "showing X of Y" reflects the actual filtered set instead of just whichever raw page came
+  // back from the backend.
+  const filteredSubCategoriesAll = currentSubCategories.filter(sub => {
     const suiteOk = activeSuiteFilter === 'all' || suiteIdsForSubCategory(sub.id).includes(activeSuiteFilter);
     const genderOk = activeGenderFilter === 'all' || genderIdsForSubCategory(sub.id).includes(activeGenderFilter);
     return suiteOk && genderOk;
   });
+  const subPagination = {
+    total: filteredSubCategoriesAll.length,
+    totalPages: Math.max(1, Math.ceil(filteredSubCategoriesAll.length / subPageSize)),
+  };
+  const filteredSubCategories = filteredSubCategoriesAll.slice((subPage - 1) * subPageSize, subPage * subPageSize);
+
+  // A filter change can leave `subPage` past the new (smaller) filtered result's last page —
+  // snap back instead of showing an empty table under an otherwise-valid filter.
+  useEffect(() => {
+    setSubPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSuiteFilter, activeGenderFilter]);
 
   // Human-readable summary of whichever filters are currently narrowing the table, used by the
   // "no matches" empty state below.
@@ -565,7 +533,7 @@ export default function CategoriesView() {
 
         {/* Main Categories Table Card */}
         <Card className="w-full">
-          {loading || catRowsLoading ? (
+          {loading ? (
             <div className="overflow-x-auto w-full">
               <table className="w-full text-left border-collapse min-w-[600px]">
                 <thead>
@@ -975,7 +943,7 @@ export default function CategoriesView() {
 
         {/* Sub-Categories Table Card */}
         <Card className="w-full">
-          {loading || subRowsLoading ? (
+          {loading ? (
             <div className="overflow-x-auto w-full">
               <table className="w-full text-left border-collapse min-w-[640px]">
                 <thead>

@@ -16,3 +16,15 @@ export function getCached<T>(key: string): T | undefined {
 export function setCached<T>(key: string, value: T): void {
   store.set(key, value);
 }
+
+// Canonical keys for the full-collection lists that more than one page reads (Users, Partners,
+// Bookings each have their own standalone list page AND appear again on the Dashboard). All of
+// them read/write the SAME key for the same collection instead of each page walking the entire
+// backend collection again under its own private key — whichever one loads first this session
+// primes the cache for the others, who then paint instantly from it while still quietly
+// refetching underneath (same stale-while-revalidate behavior as before, just shared).
+export const CACHE_KEYS = {
+  users: 'users:list',
+  partners: 'partners:list',
+  bookings: 'bookings:list',
+} as const;

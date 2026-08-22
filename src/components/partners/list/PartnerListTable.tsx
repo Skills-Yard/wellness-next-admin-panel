@@ -14,7 +14,9 @@ import Pagination from '../../shared/Pagination';
 
 interface PartnerListTableProps {
   partners: Partner[];
-  onRefresh: () => void;
+  // Appends a freshly-created partner into the parent page's full `partners` list (used for the
+  // metrics cards + status dropdown counts) — replaces a full onRefresh() re-fetch after Add.
+  onPartnerCreated: (partner: Partner) => void;
   onApprove?: (id: string) => Promise<void>;
   onSuspend?: (id: string) => Promise<void>;
   onDelete?: (id: string) => Promise<void>;
@@ -31,7 +33,7 @@ const isPendingApproval = (status: PartnerStatus) => PENDING_APPROVAL_STATUSES.i
 
 export default function PartnerListTable({
   partners,
-  onRefresh,
+  onPartnerCreated,
   onApprove,
   onSuspend,
   onDelete,
@@ -223,7 +225,7 @@ export default function PartnerListTable({
         <AddPartnerModal
           isOpen={isAddModalOpen}
           onClose={() => setIsAddModalOpen(false)}
-          onSuccess={() => { setIsAddModalOpen(false); onRefresh(); fetchPage(); }}
+          onSuccess={(partner) => { setIsAddModalOpen(false); onPartnerCreated(partner); fetchPage(); }}
         />
       )}
     </div>
