@@ -1,5 +1,3 @@
-'use server';
-
 import axiosInstance from '../axios';
 import {
   OperationalZone,

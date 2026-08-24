@@ -13,11 +13,13 @@ import {
 import { getBookingByIdServerAction, updateBookingServerAction } from '../../../lib/server-actions/booking';
 import { Booking } from '../../../types/booking';
 import { Skeleton, SkeletonText } from '../../../components/ui/skeleton';
+import { useBreadcrumb } from '../../../contexts/BreadcrumbContext';
 
 export default function BookingDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = params?.id as string;
+  const { setLabel: setBreadcrumbLabel } = useBreadcrumb();
 
   const [booking, setBooking] = useState<Booking | null>(null);
   const [loading, setLoading] = useState(true);
@@ -42,6 +44,17 @@ export default function BookingDetailPage() {
   useEffect(() => {
     fetchBooking();
   }, [id]);
+
+  // Feeds Header's breadcrumb (see BreadcrumbContext) a "customer × partner" label instead of
+  // the raw booking id once the booking's loaded — cleared on unmount/id change so a stale label
+  // never flashes for the next booking/page while it loads.
+  useEffect(() => {
+    const userName = booking?.user?.name?.trim();
+    const partnerName = booking?.partner?.name?.trim();
+    const label = userName && partnerName ? `${userName} × ${partnerName}` : userName || partnerName || null;
+    setBreadcrumbLabel(label);
+    return () => setBreadcrumbLabel(null);
+  }, [booking, setBreadcrumbLabel]);
 
   if (loading) {
     return (

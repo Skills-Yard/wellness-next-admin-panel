@@ -1,5 +1,3 @@
-'use server';
-
 import axiosInstance from '../axios';
 import { getAuthHeaders, ActionResult } from './category';
 import { parseServerError } from '../errorParser';
