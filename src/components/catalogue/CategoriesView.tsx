@@ -10,6 +10,13 @@ import { SkeletonTableRows } from '../ui/skeleton';
 import { StatusToggle } from '../ui/status-toggle';
 import { useConfirm } from '../ui/confirm-dialog';
 import { toast } from 'react-toastify';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '../ui/dialog';
 import SuiteZoneAvailabilityModal from './SuiteZoneAvailabilityModal';
 import { ServiceCategory, ServiceSuite } from '../../types/catalogue';
 import Pagination from '../shared/Pagination';
@@ -100,8 +107,10 @@ export default function CategoriesView() {
     updateSubCategoryStatus,
     updateServiceGenderStatus,
     updateServiceSuiteStatus,
+    updateServiceItemStatus,
   } = useCatalogue();
   const confirm = useConfirm();
+  const activeServiceItems = serviceItems.filter(service => service.isActive);
 
   // ---- Section 1 (Main Categories table) — client-side pagination over CatalogueContext's
   // already-loaded full `categories` list. This used to hit its own getCategoriesPagedServerAction
@@ -137,6 +146,42 @@ export default function CategoriesView() {
   // an inactive category has nothing active to manage under it, so it's dropped from the tabs
   // while still showing up (with its status toggle) in the main table above.
   const activeCategories = categories.filter(c => c.isActive !== false);
+  const [isRecycleBinOpen, setIsRecycleBinOpen] = useState(false);
+  const [activatingItemKey, setActivatingItemKey] = useState<string | null>(null);
+
+  const inactiveItemsByCategory = (() => {
+    const categoryNames = new Map(categories.map(category => [category.id, category.name]));
+    const categoryBySubCategory = new Map(
+      subCategories.map(subCategory => [subCategory.id, subCategory.categoryId])
+    );
+    const grouped = new Map<string, { id: string; name: string; type: string }[]>();
+
+    serviceItems
+      .filter(service => !service.isActive)
+      .forEach(service => {
+        const categoryId = categoryBySubCategory.get(service.subCategoryId) || 'uncategorized';
+        const services = grouped.get(categoryId) || [];
+        services.push({ id: service.id, name: service.name, type: 'Service' });
+        grouped.set(categoryId, services);
+      });
+
+    subCategories
+      .filter(subCategory => !subCategory.isActive)
+      .forEach(subCategory => {
+        const categoryId = subCategory.categoryId || 'uncategorized';
+        const items = grouped.get(categoryId) || [];
+        items.push({ id: subCategory.id, name: subCategory.name, type: 'Sub-category' });
+        grouped.set(categoryId, items);
+      });
+
+    return [...grouped.entries()]
+      .map(([categoryId, services]) => ({
+        name: categoryNames.get(categoryId) || 'Uncategorized',
+        items: services.sort((a, b) => a.name.localeCompare(b.name)),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  })();
+  const inactiveItemCount = inactiveItemsByCategory.reduce((count, group) => count + group.items.length, 0);
 
   // If the selected category drops out of the active set (toggled inactive, or it was inactive
   // on load) fall back to the first active one instead of leaving the tabs with nothing
@@ -170,7 +215,7 @@ export default function CategoriesView() {
 
   // Filter subcategories by active category
   const currentSubCategories = subCategories.filter(
-    s => s.categoryId === selectedCategory?.id
+    s => s.categoryId === selectedCategory?.id && s.isActive !== false
   );
 
   // Sub-categories, suites and genders are all scoped to a category but not to each other
@@ -179,7 +224,7 @@ export default function CategoriesView() {
   // from that join.
   const suiteIdsForSubCategory = (subCategoryId: string) =>
     Array.from(new Set(
-      serviceItems.filter(s => s.subCategoryId === subCategoryId).map(s => s.suiteId).filter(Boolean)
+    activeServiceItems.filter(s => s.subCategoryId === subCategoryId).map(s => s.suiteId).filter(Boolean)
     ));
   const suitesForSubCategory = (subCategoryId: string) =>
     suiteIdsForSubCategory(subCategoryId)
@@ -188,7 +233,7 @@ export default function CategoriesView() {
 
   const genderIdsForSubCategory = (subCategoryId: string) =>
     Array.from(new Set(
-      serviceItems.filter(s => s.subCategoryId === subCategoryId).map(s => s.genderId).filter(Boolean)
+    activeServiceItems.filter(s => s.subCategoryId === subCategoryId).map(s => s.genderId).filter(Boolean)
     ));
   const gendersForSubCategory = (subCategoryId: string) =>
     genderIdsForSubCategory(subCategoryId)
@@ -257,7 +302,7 @@ export default function CategoriesView() {
   // The backend doesn't return subCategoriesCount/servicesCount on category/sub-category
   // responses — compute them client-side from the already-loaded lists.
   const servicesCountBySubCategory = (subCategoryId: string) =>
-    serviceItems.filter(s => s.subCategoryId === subCategoryId).length;
+    activeServiceItems.filter(s => s.subCategoryId === subCategoryId).length;
 
   const servicesCountByCategory = (categoryId: string) =>
     subCategories
@@ -265,9 +310,9 @@ export default function CategoriesView() {
       .reduce((total, sub) => total + servicesCountBySubCategory(sub.id), 0);
 
   const servicesCountBySuite = (suiteId: string) =>
-    serviceItems.filter(s => s.suiteId === suiteId).length;
+    activeServiceItems.filter(s => s.suiteId === suiteId).length;
   const servicesCountByGender = (genderId: string) =>
-    serviceItems.filter(s => s.genderId === genderId).length;
+    activeServiceItems.filter(s => s.genderId === genderId).length;
 
   const handleDeleteCategory = async (id: string, name: string) => {
     const ok = await confirm({
@@ -387,8 +432,86 @@ export default function CategoriesView() {
     }
   };
 
+  const handleActivateRecycleBinItem = async (item: { id: string; type: string }) => {
+    const itemKey = `${item.type}-${item.id}`;
+    setActivatingItemKey(itemKey);
+    try {
+      const res = item.type === 'Service'
+        ? await updateServiceItemStatus(item.id, true)
+        : await updateSubCategoryStatus(item.id, true);
+      if (res.ok) toast.success(`${item.type} activated successfully`);
+      else toast.error(res.message || `Failed to activate ${item.type.toLowerCase()}`);
+    } finally {
+      setActivatingItemKey(null);
+    }
+  };
+
   return (
     <div className="space-y-8 md:space-y-10 max-w-7xl mx-auto pb-12 animate-in fade-in duration-300 w-full">
+
+      <button
+        type="button"
+        onClick={() => setIsRecycleBinOpen(true)}
+        className="fixed right-6 bottom-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-[#C68A4C] text-white shadow-lg shadow-[#C68A4C]/30 transition-transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/40 focus:ring-offset-2 cursor-pointer"
+        aria-label={`Open recycle bin with ${inactiveItemCount} inactive catalogue items`}
+        title="Recycle Bin"
+      >
+        <Trash2 className="h-6 w-6" />
+        {inactiveItemCount > 0 && (
+          <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#25180F] px-1 text-[10px] font-bold text-white">
+            {inactiveItemCount}
+          </span>
+        )}
+      </button>
+
+      <Dialog open={isRecycleBinOpen} onOpenChange={setIsRecycleBinOpen}>
+        <DialogContent className="max-h-[85vh] max-w-2xl overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Trash2 className="h-5 w-5 text-[#C68A4C]" />
+              Recycle Bin
+            </DialogTitle>
+            <DialogDescription>Inactive services grouped by catalogue category.</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 overflow-y-auto pr-1">
+            {inactiveItemsByCategory.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-gray-200 px-5 py-10 text-center text-sm text-gray-500">
+                No inactive services.
+              </div>
+            ) : (
+              inactiveItemsByCategory.map(group => (
+                <section key={group.name} className="overflow-hidden rounded-xl border border-[#F2E5D9]">
+                  <div className="flex items-center justify-between bg-[#FAF5F0] px-4 py-3">
+                    <h3 className="text-sm font-semibold text-[#25180F]">{group.name}</h3>
+                    <span className="text-xs text-gray-500">
+                      {group.items.length} item{group.items.length === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                  <div className="divide-y divide-gray-100">
+                    {group.items.map(item => (
+                      <div key={`${item.type}-${item.id}`} className="flex items-center justify-between gap-3 px-4 py-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-gray-900">{item.name}</p>
+                          <p className="text-xs text-gray-400">{item.type} · Inactive</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleActivateRecycleBinItem(item)}
+                          disabled={activatingItemKey === `${item.type}-${item.id}`}
+                          className="shrink-0 rounded-lg border border-[#C68A4C]/50 px-3 py-1.5 text-xs font-semibold text-[#9A612D] transition-colors hover:bg-[#FAF5F0] disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {activatingItemKey === `${item.type}-${item.id}` ? 'Activating...' : 'Activate'}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              ))
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* SECTION 0: GENDERS (global — not scoped to a category, see ServiceGender in catalog.prisma) */}
       <div className="space-y-4 w-full">

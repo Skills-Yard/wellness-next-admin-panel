@@ -92,6 +92,7 @@ export default function ServiceDetailView() {
     zoneServiceItemConfigs,
     deleteZoneServiceItemConfig,
   } = useCatalogue();
+  const activeServiceItems = serviceItems.filter(service => service.isActive);
 
   // Core Form states
   const [serviceName, setServiceName] = useState('');
@@ -202,7 +203,7 @@ export default function ServiceDetailView() {
   });
 
   // Filter services by active subcategory
-  const filteredServices = serviceItems.filter(
+  const filteredServices = activeServiceItems.filter(
     s => s.subCategoryId === selectedSubCategory?.id
   );
 

@@ -342,7 +342,15 @@ export const CatalogueProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       setGenders(backendGenders);
       setSuites(backendSuites);
 
-      const backendServices = await getServiceItemsServerAction();
+      // The service-items endpoint defaults to active services when no filter is supplied.
+      // Load both sides explicitly so CategoriesView's recycle bin can display inactive rows too.
+      const [activeServices, inactiveServices] = await Promise.all([
+        getServiceItemsServerAction(undefined, true),
+        getServiceItemsServerAction(undefined, false),
+      ]);
+      const backendServices = Array.from(
+        new Map([...activeServices, ...inactiveServices].map(service => [service.id, service])).values()
+      );
       setServiceItems(backendServices);
       setSelectedServiceItem(prev => {
         if (prev) {
