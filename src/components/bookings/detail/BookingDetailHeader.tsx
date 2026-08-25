@@ -3,6 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Copy, Calendar, Tag, CreditCard } from 'lucide-react';
+import { toast } from 'react-toastify';
 import { Booking } from '../../../types/booking';
 import { Card } from '../../ui/card';
 import { Badge } from '../../ui/badge';
@@ -12,8 +13,16 @@ interface BookingDetailHeaderProps {
   booking: Booking;
 }
 
+// Booking IDs are real cuids (~25 chars) — too long to sit comfortably in this stat grid, but a
+// fabricated "BKD-XXXXXX" label (the old approach) isn't the booking's actual id at all, just a
+// made-up display string. Truncate the REAL id instead: first 3 chars + last 5, so what's shown
+// is still recognizably this booking's own id, not a synthetic stand-in.
+function truncateId(id: string): string {
+  return id.length > 8 ? `${id.slice(0, 3)}-${id.slice(-5)}` : id;
+}
+
 export default function BookingDetailHeader({ booking }: BookingDetailHeaderProps) {
-  const code = booking.bookingCode || `BKD-${booking.id.slice(-6).toUpperCase()}`;
+  const displayId = truncateId(booking.id);
   const customerName = booking.user?.name || 'Customer';
   const customerPhone = booking.user?.phone || 'N/A';
 
@@ -24,8 +33,11 @@ export default function BookingDetailHeader({ booking }: BookingDetailHeaderProp
   const totalServices = booking.items?.length || 0;
   const totalAmount = `₹${(booking.totalAmount || 0).toLocaleString()}`;
 
+  // Always copies the full, real id — never the truncated display string — regardless of what's
+  // shown on screen.
   const copyToClipboard = () => {
-    navigator.clipboard.writeText(code);
+    navigator.clipboard.writeText(booking.id);
+    toast.success('Booking ID copied!');
   };
 
   return (
@@ -47,8 +59,8 @@ export default function BookingDetailHeader({ booking }: BookingDetailHeaderProp
           <div>
             <p className="text-gray-400 font-medium">Booking ID</p>
             <div className="flex items-center gap-1 mt-1 font-bold text-gray-900">
-              <span>{code}</span>
-              <button onClick={copyToClipboard} className="text-gray-400 hover:text-gray-600 cursor-pointer">
+              <span title={booking.id}>{displayId}</span>
+              <button onClick={copyToClipboard} className="text-gray-400 hover:text-gray-600 cursor-pointer" title="Copy full booking ID">
                 <Copy className="w-3.5 h-3.5" />
               </button>
             </div>

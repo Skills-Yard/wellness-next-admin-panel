@@ -1,5 +1,3 @@
-'use server';
-
 import axiosInstance from '../axios';
 import { ServiceItem } from '../../types/catalogue';
 import { ActionResult, getAuthHeaders } from './category';

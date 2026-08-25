@@ -1,5 +1,3 @@
-'use server';
-
 import axiosInstance from '../axios';
 import { PromotionalCampaign, CampaignType, CampaignTargetType, MediaType } from '../../types/catalogue';
 import { ActionResult, getAuthHeaders } from './category';
