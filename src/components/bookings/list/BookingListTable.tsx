@@ -51,6 +51,11 @@ export default function BookingListTable({
 
   const [rows, setRows] = useState<Booking[]>([]);
   const [pagination, setPagination] = useState({ total: 0, totalPages: 1 });
+  // Per-BookingStatus counts across every booking matching the current search (independent of
+  // whichever tab/status is actually selected — the backend computes this scoped to q only, not
+  // the status filter) — comes back on the same paged response already being fetched below, no
+  // extra request. Used to derive each tab's own count by summing TAB_STATUS's grouped statuses.
+  const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
 
   // Metrics cards still read off the full `bookings` list the parent page fetches — see that
@@ -87,6 +92,7 @@ export default function BookingListTable({
         total: res.pagination?.total ?? 0,
         totalPages: res.pagination?.totalPages ?? 1,
       });
+      if (res.counts) setStatusCounts(res.counts);
     } finally {
       setLoading(false);
     }
@@ -106,6 +112,14 @@ export default function BookingListTable({
         await fetchPage();
       }
     : undefined;
+
+  // Sums the individual BookingStatus counts TAB_STATUS's comma-separated list groups together
+  // (e.g. "active" = IN_PROGRESS + PARTNER_ARRIVED + PARTNER_EN_ROUTE) — `undefined` (the "all"
+  // tab) sums every status in statusCounts instead.
+  const tabCount = (statusList: string | undefined) => {
+    const statuses = statusList ? statusList.split(',') : Object.keys(statusCounts);
+    return statuses.reduce((sum, status) => sum + (statusCounts[status] ?? 0), 0);
+  };
 
   const TABS = [
     { id: 'all', label: 'All Bookings' },
@@ -141,6 +155,9 @@ export default function BookingListTable({
           {TABS.map((tab) => (
             <button key={tab.id} onClick={() => { onTabChange(tab.id); setPage(1); }} className={`pb-3 text-xs font-semibold border-b-2 transition-all cursor-pointer ${activeTab === tab.id ? 'border-[#D4A373] text-[#D4A373]' : 'border-transparent text-gray-500 hover:text-gray-900'}`}>
               {tab.label}
+              {Object.keys(statusCounts).length > 0 && (
+                <span className="ml-1 tabular-nums">({tabCount(TAB_STATUS[tab.id])})</span>
+              )}
             </button>
           ))}
         </nav>

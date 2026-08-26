@@ -322,8 +322,16 @@ export default function CategoriesView() {
     activeGenderFilter !== 'all' ? `the "${subCategoryGenderFilterLabel}" gender` : null,
   ].filter((d): d is string => !!d).join(' and ');
 
-  // The backend doesn't return subCategoriesCount/servicesCount on category/sub-category
-  // responses — compute them client-side from the already-loaded lists.
+  // The backend now returns _count.serviceItems/serviceItemsCount on sub-category/category
+  // responses, but those count ALL service items (active + inactive) — this column is
+  // specifically "active only" (see the header comment below), so it stays a client-side
+  // count over activeServiceItems rather than switching to the backend field.
+  //
+  // That client-side count is only as good as `activeServiceItems` itself: it used to be
+  // silently truncated to the backend's first page (getServiceItemsServerAction did a bare
+  // single-page fetch), so a sub-category whose items happened to fall past that page showed
+  // fewer than it actually had. Fixed by having getServiceItemsServerAction walk every page
+  // (see pagination.ts's fetchAllPaginated) — this now counts over the complete list.
   const servicesCountBySubCategory = (subCategoryId: string) =>
     activeServiceItems.filter(s => s.subCategoryId === subCategoryId).length;
 

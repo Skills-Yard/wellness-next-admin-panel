@@ -13,10 +13,13 @@ import { Card } from '../../ui/card';
 import Pagination from '../../shared/Pagination';
 
 interface PartnerListTableProps {
-  partners: Partner[];
-  // Appends a freshly-created partner into the parent page's full `partners` list (used for the
-  // metrics cards + status dropdown counts) — replaces a full onRefresh() re-fetch after Add.
-  onPartnerCreated: (partner: Partner) => void;
+  // One key per PartnerStatus (see getPartnerStatusCountsServerAction), independent of whichever
+  // page/filter the table below is currently showing — backend-computed, so it no longer takes
+  // the full partners list to derive these.
+  statusCounts: Record<string, number>;
+  // Tells the parent page a partner was added so it can refresh statusCounts — replaces a full
+  // onRefresh() re-fetch after Add.
+  onPartnerCreated: () => void;
   onApprove?: (id: string) => Promise<void>;
   onSuspend?: (id: string) => Promise<void>;
   onDelete?: (id: string) => Promise<void>;
@@ -29,10 +32,23 @@ interface PartnerListTableProps {
 // matched PENDING_APPROVAL itself, so e.g. a partner sitting in KYC_SUBMITTED counted toward
 // the card's "4" but not the dropdown's "0" for the exact same label).
 const PENDING_APPROVAL_STATUSES: PartnerStatus[] = ['PENDING_KYC', 'KYC_SUBMITTED', 'PENDING_APPROVAL'];
-const isPendingApproval = (status: PartnerStatus) => PENDING_APPROVAL_STATUSES.includes(status);
+
+// Every real PartnerStatus value — used to sum statusCounts into a total without picking up the
+// parent page's synthetic '__activeApproved' key.
+const PARTNER_STATUS_KEYS: PartnerStatus[] = [
+  'INCOMPLETE',
+  'PENDING_KYC',
+  'KYC_SUBMITTED',
+  'TRAINING',
+  'PENDING_APPROVAL',
+  'APPROVED',
+  'SUSPENDED',
+  'REJECTED',
+  'DEACTIVATED',
+];
 
 export default function PartnerListTable({
-  partners,
+  statusCounts,
   onPartnerCreated,
   onApprove,
   onSuspend,
@@ -50,13 +66,18 @@ export default function PartnerListTable({
   const [pagination, setPagination] = useState({ total: 0, totalPages: 1 });
   const [loading, setLoading] = useState(true);
 
-  // Metrics cards + the status dropdown's per-option counts still read off the FULL `partners`
-  // list (fetched by the parent page for exactly this reason) — those need every partner
-  // regardless of which page/filter the table below is currently showing.
-  const totalPartners = partners.length;
-  const pendingApprovalCount = partners.filter((p) => isPendingApproval(p.status)).length;
-  const activePartnersCount = partners.filter((p) => p.status === 'APPROVED' && p.isActive).length;
-  const suspendedCount = partners.filter((p) => p.status === 'SUSPENDED').length;
+  // '__activeApproved' is a synthetic key the parent page folds in alongside the real
+  // per-PartnerStatus ones — see getActivePartnerCountServerAction's doc comment for why
+  // "Active Partners" needs its own dedicated (status=APPROVED AND isActive=true) count rather
+  // than reading statusCounts.APPROVED directly (which also includes soft-deleted APPROVED rows).
+  const countFor = (status: string) => statusCounts[status] ?? 0;
+  // Metrics cards + the status dropdown's per-option counts now come straight from the backend's
+  // per-status counts — no need for the full partners list this used to require. Only real
+  // PartnerStatus keys are summed for the total (excludes the synthetic one above).
+  const totalPartners = PARTNER_STATUS_KEYS.reduce((sum, s) => sum + countFor(s), 0);
+  const pendingApprovalCount = PENDING_APPROVAL_STATUSES.reduce((sum, s) => sum + countFor(s), 0);
+  const activePartnersCount = countFor('__activeApproved');
+  const suspendedCount = countFor('SUSPENDED');
 
   // Debounce the search input ~350ms before it turns into a backend request.
   useEffect(() => {
@@ -135,21 +156,21 @@ export default function PartnerListTable({
               onChange={(e) => { setSelectedStatus(e.target.value); setPage(1); }}
               className="px-3 py-2 text-xs font-medium bg-gray-50 border border-gray-200 rounded-xl text-gray-700 cursor-pointer focus:outline-none"
             >
-              <option value="ALL">All Status ({partners.length})</option>
-              <option value="APPROVED">Approved ({partners.filter(p => p.status === 'APPROVED').length})</option>
-              <option value="KYC_SUBMITTED">KYC Submitted ({partners.filter(p => p.status === 'KYC_SUBMITTED').length})</option>
+              <option value="ALL">All Status ({totalPartners})</option>
+              <option value="APPROVED">Approved ({countFor('APPROVED')})</option>
+              <option value="KYC_SUBMITTED">KYC Submitted ({countFor('KYC_SUBMITTED')})</option>
               {/* Same PENDING_KYC + KYC_SUBMITTED + PENDING_APPROVAL bucket as the metrics card
-                  above (isPendingApproval) — sent to the backend as the same comma-separated
+                  above (pendingApprovalCount) — sent to the backend as the same comma-separated
                   list (GetPartnersFilterDto.status now accepts one value or several, matched
                   with an IN (...)), so this option's count and its actual filtered results
                   agree with the metrics card instead of only matching the literal
                   PENDING_APPROVAL status. */}
-              <option value={PENDING_APPROVAL_STATUSES.join(',')}>Pending Approval ({partners.filter(p => isPendingApproval(p.status)).length})</option>
-              <option value="SUSPENDED">Suspended ({partners.filter(p => p.status === 'SUSPENDED').length})</option>
-              <option value="INCOMPLETE">Incomplete ({partners.filter(p => p.status === 'INCOMPLETE').length})</option>
-              <option value="TRAINING">Training ({partners.filter(p => p.status === 'TRAINING').length})</option>
-              <option value="REJECTED">Rejected ({partners.filter(p => p.status === 'REJECTED').length})</option>
-              <option value="DEACTIVATED">Deactivated ({partners.filter(p => p.status === 'DEACTIVATED').length})</option>
+              <option value={PENDING_APPROVAL_STATUSES.join(',')}>Pending Approval ({pendingApprovalCount})</option>
+              <option value="SUSPENDED">Suspended ({countFor('SUSPENDED')})</option>
+              <option value="INCOMPLETE">Incomplete ({countFor('INCOMPLETE')})</option>
+              <option value="TRAINING">Training ({countFor('TRAINING')})</option>
+              <option value="REJECTED">Rejected ({countFor('REJECTED')})</option>
+              <option value="DEACTIVATED">Deactivated ({countFor('DEACTIVATED')})</option>
             </select>
             <div className="flex items-center gap-2 px-3 py-2 text-xs font-medium bg-gray-50 border border-gray-200 rounded-xl text-gray-600">
               <CalendarIcon className="w-3.5 h-3.5 text-gray-400" />
@@ -225,7 +246,7 @@ export default function PartnerListTable({
         <AddPartnerModal
           isOpen={isAddModalOpen}
           onClose={() => setIsAddModalOpen(false)}
-          onSuccess={(partner) => { setIsAddModalOpen(false); onPartnerCreated(partner); fetchPage(); }}
+          onSuccess={() => { setIsAddModalOpen(false); onPartnerCreated(); fetchPage(); }}
         />
       )}
     </div>

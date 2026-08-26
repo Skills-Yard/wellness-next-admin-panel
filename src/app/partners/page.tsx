@@ -3,36 +3,48 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import PartnerListTable from '../../components/partners/list/PartnerListTable';
 import {
-  getPartnersServerAction,
+  getPartnerStatusCountsServerAction,
+  getActivePartnerCountServerAction,
   approvePartnerServerAction,
   suspendPartnerServerAction,
   deletePartnerServerAction,
 } from '../../lib/server-actions/partner';
-import { Partner } from '../../types/partner';
 import { Card } from '../../components/ui/card';
 import { Skeleton, SkeletonCard, SkeletonTableRows } from '../../components/ui/skeleton';
 import { getCached, setCached, CACHE_KEYS } from '../../lib/sessionCache';
 import FetchErrorBanner from '../../components/common/FetchErrorBanner';
 
-const CACHE_KEY = CACHE_KEYS.partners;
+const CACHE_KEY = CACHE_KEYS.partnerStatusCounts;
+// Synthetic key folded into the same statusCounts object — see
+// getActivePartnerCountServerAction's doc comment for why "Active Partners" isn't just
+// statusCounts.APPROVED.
+const ACTIVE_APPROVED_KEY = '__activeApproved';
 
 export default function PartnersPage() {
-  const cached = getCached<Partner[]>(CACHE_KEY);
-  const [partners, setPartners] = useState<Partner[]>(cached || []);
+  // Was the FULL partners list (walked across every backend page) fetched solely to derive the
+  // metrics cards + status dropdown's per-option counts — the backend now returns those counts
+  // directly (one key per PartnerStatus), so this page no longer needs every partner in memory
+  // at all; PartnerListTable's rows come from its own separate paged fetch regardless.
+  const cached = getCached<Record<string, number>>(CACHE_KEY);
+  const [statusCounts, setStatusCounts] = useState<Record<string, number>>(cached || {});
   // Only the very first, never-cached load shows the full skeleton — a revisit this session
-  // renders the cached list immediately while refreshing quietly underneath.
+  // renders the cached counts immediately while refreshing quietly underneath.
   const [loading, setLoading] = useState(cached === undefined);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchPartners = useCallback(async () => {
-    if (getCached<Partner[]>(CACHE_KEY) === undefined) setLoading(true);
+  const fetchStatusCounts = useCallback(async () => {
+    if (getCached<Record<string, number>>(CACHE_KEY) === undefined) setLoading(true);
     setError(null);
     try {
-      const data = await getPartnersServerAction();
+      const [statusData, activeApproved] = await Promise.all([
+        getPartnerStatusCountsServerAction(),
+        getActivePartnerCountServerAction(),
+      ]);
+      const data = { ...statusData, [ACTIVE_APPROVED_KEY]: activeApproved };
       setCached(CACHE_KEY, data);
-      setPartners(data);
+      setStatusCounts(data);
     } catch (err: any) {
-      console.error('Error loading partners:', err?.response?.data || err?.message || err);
+      console.error('Error loading partner status counts:', err?.response?.data || err?.message || err);
       // Keep whatever's already on screen (cached or previous) — a failed refresh shouldn't
       // wipe out good data, it should just say so.
       setError("Couldn't load the latest partners list.");
@@ -42,19 +54,15 @@ export default function PartnersPage() {
   }, []);
 
   useEffect(() => {
-    fetchPartners();
-  }, [fetchPartners]);
+    fetchStatusCounts();
+  }, [fetchStatusCounts]);
 
-  // Each patches just the one row it touched from the response the write already returns —
-  // no full refetch (and no page-wide skeleton flash) for a single partner's status/removal.
+  // Each of these already refetches the visible page's rows itself (PartnerListTable's
+  // wrapAction) — status counts just need a lightweight refresh alongside, not a full row patch.
   const handleApprove = async (id: string) => {
     const res = await approvePartnerServerAction(id);
     if (res.ok) {
-      setPartners(prev => {
-        const next = prev.map(p => (p.id === id ? res.data : p));
-        setCached(CACHE_KEY, next);
-        return next;
-      });
+      fetchStatusCounts();
     } else {
       alert(res.message || 'Failed to approve partner');
     }
@@ -63,11 +71,7 @@ export default function PartnersPage() {
   const handleSuspend = async (id: string) => {
     const res = await suspendPartnerServerAction(id);
     if (res.ok) {
-      setPartners(prev => {
-        const next = prev.map(p => (p.id === id ? res.data : p));
-        setCached(CACHE_KEY, next);
-        return next;
-      });
+      fetchStatusCounts();
     } else {
       alert(res.message || 'Failed to suspend partner');
     }
@@ -76,25 +80,16 @@ export default function PartnersPage() {
   const handleDelete = async (id: string) => {
     const res = await deletePartnerServerAction(id);
     if (res.ok) {
-      setPartners(prev => {
-        const next = prev.filter(p => p.id !== id);
-        setCached(CACHE_KEY, next);
-        return next;
-      });
+      fetchStatusCounts();
     } else {
       alert(res.message || 'Failed to delete partner');
     }
   };
 
-  // AddPartnerModal hands back the partner it just created — append it here instead of
-  // re-fetching the entire list a second time (PartnerListTable's own fetchPage() already
-  // refreshes the paged rows actually on screen).
-  const handlePartnerCreated = (partner: Partner) => {
-    setPartners(prev => {
-      const next = [partner, ...prev];
-      setCached(CACHE_KEY, next);
-      return next;
-    });
+  // AddPartnerModal hands back the partner it just created — refresh the counts (one lightweight
+  // call) instead of appending to a full list this page no longer keeps.
+  const handlePartnerCreated = () => {
+    fetchStatusCounts();
   };
 
   if (loading) {
@@ -139,9 +134,9 @@ export default function PartnersPage() {
 
   return (
     <div className="space-y-4">
-      {error && <FetchErrorBanner message={error} onRetry={fetchPartners} />}
+      {error && <FetchErrorBanner message={error} onRetry={fetchStatusCounts} />}
       <PartnerListTable
-        partners={partners}
+        statusCounts={statusCounts}
         onPartnerCreated={handlePartnerCreated}
         onApprove={handleApprove}
         onSuspend={handleSuspend}

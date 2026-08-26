@@ -178,8 +178,12 @@ export interface ServiceSubCategory {
   homeBannerType?: MediaType;
   displayOrder: number;
   isActive: boolean;
-  // Not returned by the backend — computed client-side from the loaded serviceItems list.
-  servicesCount?: number;
+  // Backend-computed live count of ServiceItems under this sub-category (see
+  // SubCategoryRepository.findAllSubCategoriesPaginated/findSubCategoryById) —
+  // present on both the paginated list and single-record GET. Prefer this over
+  // counting the client-side serviceItems list, which may not hold every item
+  // (see servicesCountBySubCategory in CategoriesView.tsx).
+  _count?: { serviceItems?: number };
   category?: ServiceCategory;
 }
 
@@ -196,9 +200,12 @@ export interface ServiceCategory {
   homeBannerType?: MediaType;
   displayOrder: number;
   isActive: boolean;
-  // Not returned by the backend — computed client-side from the loaded subCategories/serviceItems lists.
-  subCategoriesCount?: number;
-  servicesCount?: number;
+  // Backend-computed live counts (see CategoryRepository.findAllCategoriesPaginated/
+  // findCategoryById) — present on both the paginated list and single-record GET.
+  // `serviceItemsCount` is the total across every sub-category (a 2-hop aggregate the
+  // backend computes directly, since ServiceItem isn't a direct relation of ServiceCategory).
+  _count?: { subCategories?: number };
+  serviceItemsCount?: number;
 }
 
 // ---- Zones (see wellness-backend/prisma/schema/zone.prisma) ----
