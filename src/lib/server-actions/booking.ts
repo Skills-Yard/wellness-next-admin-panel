@@ -1,5 +1,3 @@
-'use server';
-
 import axiosInstance from '../axios';
 import { Booking } from '../../types/booking';
 import { getAuthHeaders, ActionResult } from './category';

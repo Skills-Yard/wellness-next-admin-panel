@@ -76,6 +76,25 @@ export default function Header({ onOpenMobileMenu }: HeaderProps) {
         </>
       );
     }
+    if (pathname.startsWith('/bookings/')) {
+      return (
+        <>
+          <Link
+            href="/bookings"
+            className="text-gray-500 hover:text-gray-800 transition-colors"
+          >
+            Bookings
+          </Link>
+          <span className="text-gray-300 font-light">&gt;</span>
+          {/* breadcrumbLabel is set by the booking detail page once it has loaded the booking
+              (see BreadcrumbContext) as "customer × partner" — show a neutral placeholder
+              instead of the raw id from the URL while that fetch is still in flight. */}
+          <span className="text-[#C68A4C] font-semibold truncate max-w-52 sm:max-w-none">
+            {breadcrumbLabel || 'Booking Details'}
+          </span>
+        </>
+      );
+    }
     if (pathname.startsWith('/training/')) {
       return (
         <>

@@ -1,6 +1,3 @@
-'use server';
-
-import { cookies } from 'next/headers';
 import axiosInstance from '../axios';
 import { ServiceCategory } from '../../types/catalogue';
 import { parseServerError } from '../errorParser';
@@ -10,8 +7,24 @@ export type ActionResult<T> =
   | { ok: true; data: T }
   | { ok: false; message: string };
 
+// Was `'use server'` + a bare `cookies()` read — every function in this directory that imported
+// getAuthHeaders was therefore a genuine Next.js Server Action, which meant the actual axios
+// call to the backend ran inside the Next.js server process: the browser's Network tab never
+// saw the real request/response at all, just an opaque POST to the current page with a
+// `Next-Action` header, and any backend error got folded into that same 200 response instead of
+// showing up as a failed request. Dropping `'use server'` here (and from every file that spreads
+// from this one) makes these plain client-side calls instead — same pattern getUsersServerAction
+// already used — so they show up in the Network tab like any normal fetch, with real status
+// codes and real response bodies. `cookies()` only works in an actual server context, so this
+// reads the token from localStorage on the client and falls back to the (dynamically imported,
+// so it's never bundled for the client) cookie read for the rare server-rendered case.
 export async function getAuthHeaders() {
+  if (typeof window !== 'undefined') {
+    const token = localStorage.getItem('wellness_admin_token');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }
   try {
+    const { cookies } = await import('next/headers');
     const cookieStore = await cookies();
     const token = cookieStore.get('wellness_admin_token')?.value;
     return token ? { Authorization: `Bearer ${token}` } : {};

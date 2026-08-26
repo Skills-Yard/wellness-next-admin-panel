@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import axiosInstance from '../lib/axios';
+import { isTokenExpired } from '../lib/token';
 
 export interface User {
   id?: string;
@@ -38,14 +39,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (storedUser) {
         const parsed = JSON.parse(storedUser);
         // A stored session without an access token can't authenticate against the admin API —
-        // every request would 401 and the panel would silently render empty lists. Treat it as
-        // logged out so the user is sent back to a clean login instead.
-        if (parsed?.accessToken) {
+        // every request would 401 and the panel would silently render empty lists. Same story
+        // for a token that has already expired: rather than wait for the first API call to
+        // fail, check its `exp` claim right away so an expired session is treated as logged out
+        // from the very first render and sent back to a clean login instead.
+        if (parsed?.accessToken && !isTokenExpired(parsed.accessToken)) {
           setUser(parsed);
           document.cookie = `wellness_admin_token=${parsed.accessToken}; path=/; max-age=604800; SameSite=Lax`;
         } else {
           localStorage.removeItem(AUTH_STORAGE_KEY);
           localStorage.removeItem(TOKEN_STORAGE_KEY);
+          document.cookie = 'wellness_admin_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
         }
       }
     } catch (err) {
