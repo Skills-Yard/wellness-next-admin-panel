@@ -10,6 +10,13 @@ import { SkeletonTableRows } from '../ui/skeleton';
 import { StatusToggle } from '../ui/status-toggle';
 import { useConfirm } from '../ui/confirm-dialog';
 import { toast } from 'react-toastify';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '../ui/dialog';
 import SuiteZoneAvailabilityModal from './SuiteZoneAvailabilityModal';
 import { ServiceCategory, ServiceSuite } from '../../types/catalogue';
 import Pagination from '../shared/Pagination';
@@ -100,20 +107,31 @@ export default function CategoriesView() {
     updateSubCategoryStatus,
     updateServiceGenderStatus,
     updateServiceSuiteStatus,
+    updateServiceItemStatus,
   } = useCatalogue();
   const confirm = useConfirm();
+  const activeServiceItems = serviceItems.filter(service => service.isActive);
+
+  // Categories that are still active — inactive ones now live only in the recycle bin (matching
+  // Sub-Categories/Services below), so this feeds both the main table (Section 1) and the tab
+  // switcher (Sections 1B/2).
+  const activeCategories = categories.filter(c => c.isActive !== false);
+  // Same treatment for Genders (global, Section 0) — inactive ones drop out of the main table and
+  // surface only in the recycle bin.
+  const activeGenders = genders.filter(g => g.isActive !== false);
 
   // ---- Section 1 (Main Categories table) — client-side pagination over CatalogueContext's
-  // already-loaded full `categories` list. This used to hit its own getCategoriesPagedServerAction
-  // on top of the context's full fetch (and again on every category create/edit/delete/toggle,
-  // since it re-fetched whenever the context's `categories` array got a new reference) — that was
-  // a second full round-trip for data the page already had in memory. Categories are an admin-
-  // curated list (never anywhere near "walk multiple backend pages" territory), so slicing the
-  // already-fetched array client-side is strictly less network traffic for the same result.
+  // already-loaded full `categories` list, narrowed to active categories. This used to hit its own
+  // getCategoriesPagedServerAction on top of the context's full fetch (and again on every category
+  // create/edit/delete/toggle, since it re-fetched whenever the context's `categories` array got a
+  // new reference) — that was a second full round-trip for data the page already had in memory.
+  // Categories are an admin-curated list (never anywhere near "walk multiple backend pages"
+  // territory), so slicing the already-fetched array client-side is strictly less network traffic
+  // for the same result.
   const [catPage, setCatPage] = useState(1);
   const [catPageSize, setCatPageSize] = useState(10);
-  const catPagination = { total: categories.length, totalPages: Math.max(1, Math.ceil(categories.length / catPageSize)) };
-  const catRows = categories.slice((catPage - 1) * catPageSize, catPage * catPageSize);
+  const catPagination = { total: activeCategories.length, totalPages: Math.max(1, Math.ceil(activeCategories.length / catPageSize)) };
+  const catRows = activeCategories.slice((catPage - 1) * catPageSize, catPage * catPageSize);
 
   // Deleting the last row on the last page (or the list just getting shorter) can leave `catPage`
   // pointing past the new last page — snap back instead of showing an empty table.
@@ -133,10 +151,60 @@ export default function CategoriesView() {
     setSubPage(1);
   }, [selectedCategory?.id]);
 
-  // The tab switcher (Section 1B/2) is a quick-navigation control, not the management table —
-  // an inactive category has nothing active to manage under it, so it's dropped from the tabs
-  // while still showing up (with its status toggle) in the main table above.
-  const activeCategories = categories.filter(c => c.isActive !== false);
+  const [isRecycleBinOpen, setIsRecycleBinOpen] = useState(false);
+  const [activatingItemKey, setActivatingItemKey] = useState<string | null>(null);
+
+  // Inactive categories themselves — shown as their own section in the recycle bin (they don't
+  // have a parent category to be grouped under the way inactive services/sub-categories/suites do).
+  const inactiveCategories = categories.filter(category => !category.isActive);
+  // Genders are global (no categoryId) — same reasoning, own section in the bin.
+  const inactiveGenders = genders.filter(gender => !gender.isActive);
+
+  const inactiveItemsByCategory = (() => {
+    const categoryNames = new Map(categories.map(category => [category.id, category.name]));
+    const categoryBySubCategory = new Map(
+      subCategories.map(subCategory => [subCategory.id, subCategory.categoryId])
+    );
+    const grouped = new Map<string, { id: string; name: string; type: string }[]>();
+
+    serviceItems
+      .filter(service => !service.isActive)
+      .forEach(service => {
+        const categoryId = categoryBySubCategory.get(service.subCategoryId) || 'uncategorized';
+        const services = grouped.get(categoryId) || [];
+        services.push({ id: service.id, name: service.name, type: 'Service' });
+        grouped.set(categoryId, services);
+      });
+
+    subCategories
+      .filter(subCategory => !subCategory.isActive)
+      .forEach(subCategory => {
+        const categoryId = subCategory.categoryId || 'uncategorized';
+        const items = grouped.get(categoryId) || [];
+        items.push({ id: subCategory.id, name: subCategory.name, type: 'Sub-category' });
+        grouped.set(categoryId, items);
+      });
+
+    suites
+      .filter(suite => !suite.isActive)
+      .forEach(suite => {
+        const categoryId = suite.categoryId || 'uncategorized';
+        const items = grouped.get(categoryId) || [];
+        items.push({ id: suite.id, name: suite.name, type: 'Suite' });
+        grouped.set(categoryId, items);
+      });
+
+    return [...grouped.entries()]
+      .map(([categoryId, services]) => ({
+        name: categoryNames.get(categoryId) || 'Uncategorized',
+        items: services.sort((a, b) => a.name.localeCompare(b.name)),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  })();
+  const inactiveItemCount =
+    inactiveItemsByCategory.reduce((count, group) => count + group.items.length, 0) +
+    inactiveCategories.length +
+    inactiveGenders.length;
 
   // If the selected category drops out of the active set (toggled inactive, or it was inactive
   // on load) fall back to the first active one instead of leaving the tabs with nothing
@@ -170,7 +238,7 @@ export default function CategoriesView() {
 
   // Filter subcategories by active category
   const currentSubCategories = subCategories.filter(
-    s => s.categoryId === selectedCategory?.id
+    s => s.categoryId === selectedCategory?.id && s.isActive !== false
   );
 
   // Sub-categories, suites and genders are all scoped to a category but not to each other
@@ -179,7 +247,7 @@ export default function CategoriesView() {
   // from that join.
   const suiteIdsForSubCategory = (subCategoryId: string) =>
     Array.from(new Set(
-      serviceItems.filter(s => s.subCategoryId === subCategoryId).map(s => s.suiteId).filter(Boolean)
+    activeServiceItems.filter(s => s.subCategoryId === subCategoryId).map(s => s.suiteId).filter(Boolean)
     ));
   const suitesForSubCategory = (subCategoryId: string) =>
     suiteIdsForSubCategory(subCategoryId)
@@ -188,7 +256,7 @@ export default function CategoriesView() {
 
   const genderIdsForSubCategory = (subCategoryId: string) =>
     Array.from(new Set(
-      serviceItems.filter(s => s.subCategoryId === subCategoryId).map(s => s.genderId).filter(Boolean)
+    activeServiceItems.filter(s => s.subCategoryId === subCategoryId).map(s => s.genderId).filter(Boolean)
     ));
   const gendersForSubCategory = (subCategoryId: string) =>
     genderIdsForSubCategory(subCategoryId)
@@ -196,8 +264,8 @@ export default function CategoriesView() {
       .filter((g): g is typeof genders[number] => !!g);
 
   // Suites for the active category (see ServiceSuite in catalog.prisma) — scoped the same way
-  // sub-categories are.
-  const currentSuites = suites.filter(s => s.categoryId === selectedCategory?.id);
+  // sub-categories are, and likewise narrowed to active-only (inactive suites live in the bin).
+  const currentSuites = suites.filter(s => s.categoryId === selectedCategory?.id && s.isActive !== false);
 
   // Genders are global (no categoryId) — "current" here means whichever genders are actually in
   // use by a service under one of the active category's sub-categories, not every gender that
@@ -257,7 +325,7 @@ export default function CategoriesView() {
   // The backend doesn't return subCategoriesCount/servicesCount on category/sub-category
   // responses — compute them client-side from the already-loaded lists.
   const servicesCountBySubCategory = (subCategoryId: string) =>
-    serviceItems.filter(s => s.subCategoryId === subCategoryId).length;
+    activeServiceItems.filter(s => s.subCategoryId === subCategoryId).length;
 
   const servicesCountByCategory = (categoryId: string) =>
     subCategories
@@ -265,9 +333,9 @@ export default function CategoriesView() {
       .reduce((total, sub) => total + servicesCountBySubCategory(sub.id), 0);
 
   const servicesCountBySuite = (suiteId: string) =>
-    serviceItems.filter(s => s.suiteId === suiteId).length;
+    activeServiceItems.filter(s => s.suiteId === suiteId).length;
   const servicesCountByGender = (genderId: string) =>
-    serviceItems.filter(s => s.genderId === genderId).length;
+    activeServiceItems.filter(s => s.genderId === genderId).length;
 
   const handleDeleteCategory = async (id: string, name: string) => {
     const ok = await confirm({
@@ -387,8 +455,150 @@ export default function CategoriesView() {
     }
   };
 
+  const handleActivateRecycleBinItem = async (item: { id: string; type: string }) => {
+    const itemKey = `${item.type}-${item.id}`;
+    setActivatingItemKey(itemKey);
+    try {
+      const res = item.type === 'Service'
+        ? await updateServiceItemStatus(item.id, true)
+        : item.type === 'Category'
+        ? await updateCategoryStatus(item.id, true)
+        : item.type === 'Suite'
+        ? await updateServiceSuiteStatus(item.id, true)
+        : item.type === 'Gender'
+        ? await updateServiceGenderStatus(item.id, true)
+        : await updateSubCategoryStatus(item.id, true);
+      if (res.ok) toast.success(`${item.type} activated successfully`);
+      else toast.error(res.message || `Failed to activate ${item.type.toLowerCase()}`);
+    } finally {
+      setActivatingItemKey(null);
+    }
+  };
+
   return (
     <div className="space-y-8 md:space-y-10 max-w-7xl mx-auto pb-12 animate-in fade-in duration-300 w-full">
+
+      <button
+        type="button"
+        onClick={() => setIsRecycleBinOpen(true)}
+        className="fixed right-6 bottom-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-[#C68A4C] text-white shadow-lg shadow-[#C68A4C]/30 transition-transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/40 focus:ring-offset-2 cursor-pointer"
+        aria-label={`Open recycle bin with ${inactiveItemCount} inactive catalogue items`}
+        title="Recycle Bin"
+      >
+        <Trash2 className="h-6 w-6" />
+        {inactiveItemCount > 0 && (
+          <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#25180F] px-1 text-[10px] font-bold text-white">
+            {inactiveItemCount}
+          </span>
+        )}
+      </button>
+
+      <Dialog open={isRecycleBinOpen} onOpenChange={setIsRecycleBinOpen}>
+        <DialogContent className="max-h-[85vh] max-w-2xl overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Trash2 className="h-5 w-5 text-[#C68A4C]" />
+              Recycle Bin
+            </DialogTitle>
+            <DialogDescription>Inactive genders, categories, suites, sub-categories and services.</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 overflow-y-auto pr-1">
+            {inactiveItemCount === 0 ? (
+              <div className="rounded-xl border border-dashed border-gray-200 px-5 py-10 text-center text-sm text-gray-500">
+                No inactive items.
+              </div>
+            ) : (
+              <>
+              {inactiveGenders.length > 0 && (
+                <section className="overflow-hidden rounded-xl border border-[#F2E5D9]">
+                  <div className="flex items-center justify-between bg-[#FAF5F0] px-4 py-3">
+                    <h3 className="text-sm font-semibold text-[#25180F]">Genders</h3>
+                    <span className="text-xs text-gray-500">
+                      {inactiveGenders.length} item{inactiveGenders.length === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                  <div className="divide-y divide-gray-100">
+                    {inactiveGenders.map(gender => (
+                      <div key={`Gender-${gender.id}`} className="flex items-center justify-between gap-3 px-4 py-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-gray-900">{gender.name}</p>
+                          <p className="text-xs text-gray-400">Gender · Inactive</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleActivateRecycleBinItem({ id: gender.id, type: 'Gender' })}
+                          disabled={activatingItemKey === `Gender-${gender.id}`}
+                          className="shrink-0 rounded-lg border border-[#C68A4C]/50 px-3 py-1.5 text-xs font-semibold text-[#9A612D] transition-colors hover:bg-[#FAF5F0] disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {activatingItemKey === `Gender-${gender.id}` ? 'Activating...' : 'Activate'}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+              {inactiveCategories.length > 0 && (
+                <section className="overflow-hidden rounded-xl border border-[#F2E5D9]">
+                  <div className="flex items-center justify-between bg-[#FAF5F0] px-4 py-3">
+                    <h3 className="text-sm font-semibold text-[#25180F]">Categories</h3>
+                    <span className="text-xs text-gray-500">
+                      {inactiveCategories.length} item{inactiveCategories.length === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                  <div className="divide-y divide-gray-100">
+                    {inactiveCategories.map(category => (
+                      <div key={`Category-${category.id}`} className="flex items-center justify-between gap-3 px-4 py-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-gray-900">{category.name}</p>
+                          <p className="text-xs text-gray-400">Category · Inactive</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleActivateRecycleBinItem({ id: category.id, type: 'Category' })}
+                          disabled={activatingItemKey === `Category-${category.id}`}
+                          className="shrink-0 rounded-lg border border-[#C68A4C]/50 px-3 py-1.5 text-xs font-semibold text-[#9A612D] transition-colors hover:bg-[#FAF5F0] disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {activatingItemKey === `Category-${category.id}` ? 'Activating...' : 'Activate'}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+              {inactiveItemsByCategory.map(group => (
+                <section key={group.name} className="overflow-hidden rounded-xl border border-[#F2E5D9]">
+                  <div className="flex items-center justify-between bg-[#FAF5F0] px-4 py-3">
+                    <h3 className="text-sm font-semibold text-[#25180F]">{group.name}</h3>
+                    <span className="text-xs text-gray-500">
+                      {group.items.length} item{group.items.length === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                  <div className="divide-y divide-gray-100">
+                    {group.items.map(item => (
+                      <div key={`${item.type}-${item.id}`} className="flex items-center justify-between gap-3 px-4 py-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-gray-900">{item.name}</p>
+                          <p className="text-xs text-gray-400">{item.type} · Inactive</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleActivateRecycleBinItem(item)}
+                          disabled={activatingItemKey === `${item.type}-${item.id}`}
+                          className="shrink-0 rounded-lg border border-[#C68A4C]/50 px-3 py-1.5 text-xs font-semibold text-[#9A612D] transition-colors hover:bg-[#FAF5F0] disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {activatingItemKey === `${item.type}-${item.id}` ? 'Activating...' : 'Activate'}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              ))}
+              </>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* SECTION 0: GENDERS (global — not scoped to a category, see ServiceGender in catalog.prisma) */}
       <div className="space-y-4 w-full">
@@ -426,7 +636,7 @@ export default function CategoriesView() {
                 </tbody>
               </table>
             </div>
-          ) : genders.length === 0 ? (
+          ) : activeGenders.length === 0 ? (
             <div className="py-16 flex flex-col items-center justify-center text-center p-6 space-y-3">
               <div className="w-12 h-12 rounded-full bg-[#FAF5F0] text-[#C68A4C] flex items-center justify-center">
                 <FolderPlus className="w-6 h-6" />
@@ -456,7 +666,7 @@ export default function CategoriesView() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 text-sm text-gray-700">
-                  {genders.map((gender) => (
+                  {activeGenders.map((gender) => (
                     <tr key={gender.id} className="hover:bg-[#FAF9F6]/80 transition-colors">
                       <td className="py-4 px-4 sm:px-6">
                         <div className="flex items-center gap-3 sm:gap-4">
@@ -606,9 +816,9 @@ export default function CategoriesView() {
                           </div>
                         </td>
 
-                        {/* Sub-Categories count */}
+                        {/* Sub-Categories count (active only, matching the Services count next to it) */}
                         <td className="py-4 px-4 sm:px-6 text-center font-medium text-gray-600">
-                          {subCategories.filter(s => s.categoryId === category.id).length}
+                          {subCategories.filter(s => s.categoryId === category.id && s.isActive !== false).length}
                         </td>
 
                         {/* Services count */}

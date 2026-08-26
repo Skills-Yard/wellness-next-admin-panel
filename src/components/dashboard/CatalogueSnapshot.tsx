@@ -27,7 +27,7 @@ export default function CatalogueSnapshot() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {chips.map((c) => (
           <div key={c.label} className="flex items-center gap-2.5 rounded-xl bg-[#FAF5F0] border border-[#F2E5D9] px-3 py-2.5">
-            <div className="w-7 h-7 rounded-lg bg-white flex items-center justify-center text-[#C68A4C] flex-shrink-0">
+            <div className="w-7 h-7 rounded-lg bg-white flex items-center justify-center text-[#C68A4C] shrink-0">
               <c.icon className="w-3.5 h-3.5" />
             </div>
             <div className="min-w-0">
