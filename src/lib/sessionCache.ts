@@ -27,4 +27,8 @@ export const CACHE_KEYS = {
   users: 'users:list',
   partners: 'partners:list',
   bookings: 'bookings:list',
+  // Separate from `partners` above — the Partners list page now only ever needs the per-status
+  // counts (see getPartnerStatusCountsServerAction), not the full walked list Dashboard still
+  // caches under `partners`. Different shape, so it can't share that key.
+  partnerStatusCounts: 'partners:status-counts',
 } as const;

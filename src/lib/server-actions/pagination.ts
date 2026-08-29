@@ -9,6 +9,10 @@
 export interface PaginatedEnvelope<T> {
   data: T[];
   pagination?: { total: number; page: number; limit: number; totalPages: number };
+  /** Aggregate counts alongside a paginated list, independent of the
+   *  current page/filter — e.g. one key per status. See the backend's
+   *  `paginateWithCounts()`. */
+  counts?: Record<string, number>;
 }
 
 export async function fetchAllPaginated<T>(

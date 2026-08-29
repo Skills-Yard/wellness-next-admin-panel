@@ -37,10 +37,47 @@ export async function getPartnersServerAction(filter?: PartnerFilter): Promise<P
   );
 }
 
+// One lightweight backend call (limit: 1 — the rows themselves are never read) for the metrics
+// cards + per-status dropdown counts on the Partners list page. Used to require
+// getPartnersServerAction's full-list walk (every partner, every page) just to compute these
+// numbers; the backend now returns them directly as `counts` (one key per PartnerStatus,
+// independent of whatever status filter the table itself is applying) alongside any paginated
+// /admin/partners response.
+export async function getPartnerStatusCountsServerAction(): Promise<Record<string, number>> {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await axiosInstance.get<PaginatedEnvelope<Partner>>('/admin/partners', {
+      headers,
+      params: { page: 1, limit: 1 },
+    });
+    return response.data.counts ?? {};
+  } catch (error: any) {
+    console.error('[getPartnerStatusCountsServerAction]', error?.response?.data || error.message);
+    return {};
+  }
+}
+
+// The backend's per-status counts above are computed across isActive AND inactive rows alike
+// (softDelete only flips isActive, it doesn't move status off APPROVED) — so counts.APPROVED
+// alone would overcount "Active Partners" by including soft-deleted ones. That specific
+// cross-tabulation (status=APPROVED AND isActive=true) isn't in the counts bag, so read it the
+// same lightweight way: one row-less request, real backend-computed pagination.total.
+export async function getActivePartnerCountServerAction(): Promise<number> {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await axiosInstance.get<PaginatedEnvelope<Partner>>('/admin/partners', {
+      headers,
+      params: { status: 'APPROVED', isActive: true, page: 1, limit: 1 },
+    });
+    return response.data.pagination?.total ?? 0;
+  } catch (error: any) {
+    console.error('[getActivePartnerCountServerAction]', error?.response?.data || error.message);
+    return 0;
+  }
+}
+
 // Single-page counterpart to getPartnersServerAction — one backend call, no fetchAllPaginated
-// walk. Used by PartnerListTable's own list rendering/pagination; getPartnersServerAction (full
-// list) stays alive for callers that still want everything (e.g. this page's metrics cards and
-// per-status dropdown counts).
+// walk. Used by PartnerListTable's own list rendering/pagination.
 export async function getPartnersPagedServerAction(params: {
   page?: number;
   limit?: number;

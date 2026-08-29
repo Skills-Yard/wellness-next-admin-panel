@@ -30,6 +30,10 @@ export default function UserListTable({
 
   const [users, setUsers] = useState<User[]>([]);
   const [pagination, setPagination] = useState({ total: 0, totalPages: 1 });
+  // Active/inactive split across ALL users matching the current search (independent of
+  // whichever status option is actually selected) — comes back on the same paged response
+  // already being fetched below, no extra request. See UserRepository.findAll's `counts`.
+  const [statusCounts, setStatusCounts] = useState<{ active?: number; inactive?: number }>({});
   const [loading, setLoading] = useState(true);
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -61,6 +65,9 @@ export default function UserListTable({
         total: res.pagination?.total ?? 0,
         totalPages: res.pagination?.totalPages ?? 1,
       });
+      if (res.counts) {
+        setStatusCounts({ active: res.counts.active, inactive: res.counts.inactive });
+      }
     } finally {
       setLoading(false);
     }
@@ -100,9 +107,18 @@ export default function UserListTable({
               }}
               className="flex h-9 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C68A4C]/30 focus-visible:border-[#C68A4C] transition-all cursor-pointer hover:bg-gray-50"
             >
-              <option value="ALL">All Statuses</option>
-              <option value="ACTIVE">Active Users</option>
-              <option value="INACTIVE">Inactive Users</option>
+              <option value="ALL">
+                All Statuses
+                {statusCounts.active !== undefined && statusCounts.inactive !== undefined
+                  ? ` (${statusCounts.active + statusCounts.inactive})`
+                  : ''}
+              </option>
+              <option value="ACTIVE">
+                Active Users{statusCounts.active !== undefined ? ` (${statusCounts.active})` : ''}
+              </option>
+              <option value="INACTIVE">
+                Inactive Users{statusCounts.inactive !== undefined ? ` (${statusCounts.inactive})` : ''}
+              </option>
             </select>
           </div>
 

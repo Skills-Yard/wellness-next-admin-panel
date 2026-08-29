@@ -35,17 +35,18 @@ export async function getAuthHeadersClientOrServer() {
 // users" apart from "the request failed", so they can show a retry state instead of silently
 // rendering an empty/zeroed page as if it were real data. Let the error propagate; callers catch it.
 //
-// isActive: the backend used to hardcode active-only server-side; it's now an optional filter
-// (omitting it returns deactivated users too). Defaulted to true here so this list keeps
-// showing only active users unless a caller explicitly asks otherwise — same behavior as
-// before, just explicit now instead of implicit.
+// isActive is left unfiltered unless the caller asks otherwise — both callers use this as their
+// "give me literally everyone" full list (Dashboard's totalCustomers, UserListMetrics' four
+// cards), so defaulting it to active-only silently dropped every deactivated user from both:
+// Dashboard undercounted totalCustomers, and UserListMetrics' "Deactivated Users" card could
+// never show anything but 0/near-0 (its own filter over an already active-only list).
 export async function getUsersServerAction(filter?: UserFilter): Promise<User[]> {
   const headers = await getAuthHeadersClientOrServer();
   return fetchAllPaginated<User>((page, limit) =>
     axiosInstance.get<PaginatedEnvelope<User>>('/admin/users', {
       headers,
       params: {
-        isActive: filter?.isActive ?? true,
+        ...(filter?.isActive === undefined ? {} : { isActive: filter.isActive }),
         ...(filter?.search ? { q: filter.search } : {}),
         page,
         limit,

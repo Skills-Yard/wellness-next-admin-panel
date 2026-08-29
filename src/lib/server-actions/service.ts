@@ -2,24 +2,33 @@ import axiosInstance from '../axios';
 import { ServiceItem } from '../../types/catalogue';
 import { ActionResult, getAuthHeaders } from './category';
 import { parseServerError } from '../errorParser';
+import { fetchAllPaginated, PaginatedEnvelope } from './pagination';
 
 function unwrap<T>(resData: any, fallback: T): T {
   if (resData && typeof resData === 'object' && 'data' in resData) return resData.data;
   return (resData ?? fallback) as T;
 }
 
+// Was a single unpaginated GET that only ever read the backend's first page
+// (default 20/page) via a bare `unwrap` — any subCategory/isActive scope with
+// more than one page's worth of items silently lost everything past #20, which
+// is exactly what made CategoriesView's client-side per-subCategory counts
+// (servicesCountBySubCategory et al.) undercount. Walk every page like every
+// other "give me everything" list in this app already does — see pagination.ts.
 export async function getServiceItemsServerAction(subCategoryId?: string, isActive?: boolean): Promise<ServiceItem[]> {
   try {
     const headers = await getAuthHeaders();
-    const response = await axiosInstance.get('/admin/catalog/service-items', {
-      headers,
-      params: {
-        ...(subCategoryId ? { subCategoryId } : {}),
-        ...(isActive === undefined ? {} : { isActive }),
-      },
-    });
-    const data = unwrap<ServiceItem[]>(response.data, []);
-    return Array.isArray(data) ? data : [];
+    return await fetchAllPaginated<ServiceItem>((page, limit) =>
+      axiosInstance.get<PaginatedEnvelope<ServiceItem>>('/admin/catalog/service-items', {
+        headers,
+        params: {
+          ...(subCategoryId ? { subCategoryId } : {}),
+          ...(isActive === undefined ? {} : { isActive }),
+          page,
+          limit,
+        },
+      })
+    );
   } catch (error: any) {
     console.error('[getServiceItemsServerAction]', error?.response?.data || error.message);
     return [];
