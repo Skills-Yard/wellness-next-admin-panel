@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useLayoutEffect, useEffect } from 'react';
-import { Plus, Edit3, Trash2, ChevronDown, FolderPlus, MapPin } from 'lucide-react';
+import { Plus, Edit3, Trash2, ChevronDown, FolderPlus, MapPin, RefreshCw } from 'lucide-react';
 import { useCatalogue } from '../../contexts/CatalogueContext';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
@@ -20,6 +20,7 @@ import {
 import SuiteZoneAvailabilityModal from './SuiteZoneAvailabilityModal';
 import { ServiceCategory, ServiceSuite } from '../../types/catalogue';
 import Pagination from '../shared/Pagination';
+import { flushCatalogCacheServerAction } from '../../lib/server-actions/catalog-cache';
 
 // Category "chip" tabs — replaces the old click-to-open dropdown so every category is visible at
 // a glance and switching is a single click. Shared by Section 1B (suites) and Section 2
@@ -111,6 +112,30 @@ export default function CategoriesView() {
   } = useCatalogue();
   const confirm = useConfirm();
   const activeServiceItems = serviceItems.filter(service => service.isActive);
+
+  // Manual catalog-cache flush. Ordinary edits here already invalidate the
+  // Redis/edge cache on the backend — this covers the case where a cached
+  // response predates a backend change (e.g. a new field on /catalog/home)
+  // and the 24h backstop TTL would otherwise keep serving the old shape.
+  const [isFlushingCache, setIsFlushingCache] = useState(false);
+  const handleFlushCache = async () => {
+    const ok = await confirm({
+      title: 'Clear catalog cache?',
+      description:
+        'Forces every cached catalog response (Redis + CDN edge) to rebuild on the next request. Safe to run anytime; the storefront may be a touch slower for the first hit after.',
+      confirmText: 'Clear cache',
+      variant: 'default',
+    });
+    if (!ok) return;
+    setIsFlushingCache(true);
+    try {
+      const result = await flushCatalogCacheServerAction();
+      if (result.ok) toast.success(result.data.message);
+      else toast.error(result.message);
+    } finally {
+      setIsFlushingCache(false);
+    }
+  };
 
   // Categories that are still active — inactive ones now live only in the recycle bin (matching
   // Sub-Categories/Services below), so this feeds both the main table (Section 1) and the tab
@@ -740,13 +765,25 @@ export default function CategoriesView() {
             <h1 className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight">Eezit</h1>
             <p className="text-xs md:text-sm text-gray-500 mt-0.5">Manage your main categories</p>
           </div>
-          <Button
-            onClick={() => openCategoryModal('category')}
-            className="self-start sm:self-auto bg-[#1C1512] hover:bg-black text-white rounded-xl shadow-xs"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add Category</span>
-          </Button>
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            <Button
+              variant="outline"
+              onClick={handleFlushCache}
+              disabled={isFlushingCache}
+              className="rounded-xl"
+              title="Force-rebuild every cached catalog response (Redis + CDN edge)"
+            >
+              <RefreshCw className={`w-4 h-4 ${isFlushingCache ? 'animate-spin' : ''}`} />
+              <span>{isFlushingCache ? 'Clearing…' : 'Clear cache'}</span>
+            </Button>
+            <Button
+              onClick={() => openCategoryModal('category')}
+              className="bg-[#1C1512] hover:bg-black text-white rounded-xl shadow-xs"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Category</span>
+            </Button>
+          </div>
         </div>
 
         {/* Main Categories Table Card */}
