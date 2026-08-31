@@ -115,6 +115,21 @@ export interface PartnerAvailabilityItem {
   isActive: boolean;
 }
 
+export interface EmployeeTrainingProgress {
+  id: string;
+  employeeId: string;
+  courseId: string;
+  status: 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED';
+  score?: number | null;
+  completedAt?: string | null;
+  course?: {
+    id: string;
+    title: string;
+    isMandatory?: boolean;
+    estimatedMinutes?: number;
+  };
+}
+
 export interface PartnerEmployee {
   id: string;
   partnerId: string;
@@ -129,6 +144,9 @@ export interface PartnerEmployee {
   approvedBy?: string | null;
   joinedAt: string;
   kyc?: EmployeeKyc | null;
+  // Only populated on the single-employee admin detail response
+  // (getPartnerEmployeeByIdServerAction), not the inline partner.employees list.
+  trainingProgress?: EmployeeTrainingProgress[];
 }
 
 export interface PartnerTrainingCourse {

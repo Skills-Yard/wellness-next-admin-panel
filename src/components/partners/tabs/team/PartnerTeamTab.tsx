@@ -316,6 +316,9 @@ function EmployeeKycReviewPanel({
               </Button>
 
               <div className="pt-2 mt-1 border-t border-gray-100 grid grid-cols-1 gap-2">
+                <p className="text-[10px] text-gray-400 leading-snug">
+                  Employees normally auto-approve on training completion — these are manual overrides.
+                </p>
                 {detail.status !== 'APPROVED' && (
                   <Button
                     size="sm"
@@ -379,6 +382,41 @@ function EmployeeKycReviewPanel({
             </form>
           )}
         </div>
+      </Card>
+
+      <Card className="lg:col-span-3 p-6 shadow-xs space-y-3 bg-white border-gray-100">
+        <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+          <h3 className="font-bold text-base text-gray-900">Training</h3>
+          <span className="text-[11px] text-gray-400">
+            Employees auto-approve once mandatory training is complete
+          </span>
+        </div>
+        {(detail.trainingProgress?.length ?? 0) === 0 ? (
+          <p className="py-6 text-center text-xs text-gray-400">
+            No training courses assigned yet — they&apos;re added automatically when KYC is approved.
+          </p>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {detail.trainingProgress!.map((tp) => {
+              const done = tp.status === 'COMPLETED';
+              return (
+                <div key={tp.id} className="flex items-center justify-between py-2.5 text-xs">
+                  <div>
+                    <p className="font-semibold text-gray-900">{tp.course?.title || tp.courseId}</p>
+                    <p className="text-gray-400">
+                      {tp.course?.isMandatory === false ? 'Optional' : 'Mandatory'}
+                      {tp.course?.estimatedMinutes ? ` · ${tp.course.estimatedMinutes} min` : ''}
+                      {tp.completedAt ? ` · ${formatDate(tp.completedAt)}` : ''}
+                    </p>
+                  </div>
+                  <Badge variant={done ? 'active' : 'secondary'} className="px-2.5 py-0.5 text-[10px]">
+                    {pretty(tp.status)}
+                  </Badge>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </Card>
 
       {lightbox && (
