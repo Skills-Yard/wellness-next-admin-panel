@@ -9,6 +9,7 @@ export { default as PartnerHeaderProfile } from './header/PartnerHeaderProfile';
 export { default as PartnerOverviewTab } from './tabs/PartnerOverviewTab';
 export { default as PartnerKycTab } from './tabs/PartnerKycTab';
 export { default as PartnerBankTab } from './tabs/PartnerBankTab';
+export { default as PartnerTeamTab } from './tabs/team/PartnerTeamTab';
 export { default as PartnerScheduleTab } from './tabs/PartnerScheduleTab';
 export { default as PartnerTrainingTab } from './tabs/PartnerTrainingTab';
 export { default as PartnerReviewsTab } from './tabs/PartnerReviewsTab';
