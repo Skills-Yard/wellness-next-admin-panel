@@ -7,6 +7,7 @@ import {
   PartnerHeaderCard,
   PartnerOverviewTab,
   PartnerKycTab,
+  PartnerTeamTab,
   PartnerBankTab,
   PartnerServicesTab,
   PartnerScheduleTab,
@@ -21,6 +22,11 @@ import {
   deletePartnerServerAction,
   approvePartnerKycServerAction,
   rejectPartnerKycServerAction,
+  approvePartnerEmployeeKycServerAction,
+  rejectPartnerEmployeeKycServerAction,
+  approvePartnerEmployeeServerAction,
+  rejectPartnerEmployeeServerAction,
+  suspendPartnerEmployeeServerAction,
   verifyPartnerBankServerAction,
   getPartnerServicesServerAction,
   setPartnerServicesServerAction,
@@ -185,6 +191,39 @@ export default function PartnerDetailPage() {
     else alert(res.message || 'Failed to reject KYC');
   };
 
+  // Employee KYC / status writes return a bare {success,message} or the updated
+  // employee row, never the parent partner — so refetch the partner (which now
+  // carries each active employee's `kyc` inline) to refresh the Team tab.
+  const handleApproveEmployeeKyc = async (employeeId: string) => {
+    const res = await approvePartnerEmployeeKycServerAction(employeeId);
+    if (res.ok) await refetchPartnerOnly();
+    else alert(res.message || 'Failed to approve employee KYC');
+  };
+
+  const handleRejectEmployeeKyc = async (employeeId: string, reason: string) => {
+    const res = await rejectPartnerEmployeeKycServerAction(employeeId, reason);
+    if (res.ok) await refetchPartnerOnly();
+    else alert(res.message || 'Failed to reject employee KYC');
+  };
+
+  const handleApproveEmployee = async (employeeId: string) => {
+    const res = await approvePartnerEmployeeServerAction(employeeId);
+    if (res.ok) await refetchPartnerOnly();
+    else alert(res.message || 'Failed to approve employee');
+  };
+
+  const handleRejectEmployee = async (employeeId: string) => {
+    const res = await rejectPartnerEmployeeServerAction(employeeId);
+    if (res.ok) await refetchPartnerOnly();
+    else alert(res.message || 'Failed to reject employee');
+  };
+
+  const handleSuspendEmployee = async (employeeId: string) => {
+    const res = await suspendPartnerEmployeeServerAction(employeeId);
+    if (res.ok) await refetchPartnerOnly();
+    else alert(res.message || 'Failed to suspend employee');
+  };
+
   const handleVerifyBank = async (isVerified: boolean) => {
     const res = await verifyPartnerBankServerAction(id, isVerified);
     if (res.ok) await refetchPartnerOnly();
@@ -237,6 +276,17 @@ export default function PartnerDetailPage() {
           partner={partner}
           onApproveKyc={handleApproveKyc}
           onRejectKyc={handleRejectKyc}
+        />
+      )}
+
+      {activeTab === 'team' && (
+        <PartnerTeamTab
+          partner={partner}
+          onApproveEmployeeKyc={handleApproveEmployeeKyc}
+          onRejectEmployeeKyc={handleRejectEmployeeKyc}
+          onApproveEmployee={handleApproveEmployee}
+          onRejectEmployee={handleRejectEmployee}
+          onSuspendEmployee={handleSuspendEmployee}
         />
       )}
 

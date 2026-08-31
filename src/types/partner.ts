@@ -48,6 +48,31 @@ export interface PartnerKyc {
   updatedAt: string;
 }
 
+// Per-employee KYC for BUSINESS partners. Same personal-document set as
+// PartnerKyc (no business fields — those live on the owner's PartnerKyc).
+// `aadhaarNumber` / `panNumber` are the decrypted values, present only on the
+// single-employee admin detail response (see findEmployeeDetail on the backend).
+export interface EmployeeKyc {
+  id: string;
+  employeeId: string;
+  aadhaarFrontKey?: string | null;
+  aadhaarBackKey?: string | null;
+  panKey?: string | null;
+  selfieKey?: string | null;
+  videoKycKey?: string | null;
+  videoKycDurationSec?: number | null;
+  certificateKeys?: string[];
+  aadhaarNumber?: string | null;
+  panNumber?: string | null;
+  status: KycStatus;
+  adminNotes?: string | null;
+  reviewedBy?: string | null;
+  reviewedAt?: string | null;
+  submittedAt?: string | null;
+  resubmittedAt?: string | null;
+  updatedAt: string;
+}
+
 export interface BankAccount {
   id: string;
   partnerId: string;
@@ -103,6 +128,7 @@ export interface PartnerEmployee {
   approvedAt?: string | null;
   approvedBy?: string | null;
   joinedAt: string;
+  kyc?: EmployeeKyc | null;
 }
 
 export interface PartnerTrainingCourse {

@@ -97,8 +97,33 @@ export default function PartnerKycTab({ partner, onApproveKyc, onRejectKyc }: Pa
     } finally { setLoading(false); }
   };
 
+  const isBusiness = partner.type === 'BUSINESS';
+  const businessFields: Array<{ label: string; value?: string | null }> = [
+    { label: 'Business Name', value: kyc?.businessName },
+    { label: 'Business Type', value: kyc?.businessType },
+    { label: 'GSTIN', value: kyc?.gstin },
+    { label: 'Registration No.', value: kyc?.businessRegistrationNumber },
+    { label: 'Business Address', value: kyc?.businessAddress },
+  ];
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {isBusiness && (
+        <Card className="lg:col-span-3 p-6 shadow-xs space-y-4 bg-white border-gray-100">
+          <h3 className="font-bold text-base text-gray-900 border-b border-gray-100 pb-3">Business Details</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
+            {businessFields.map((f) => (
+              <div key={f.label}>
+                <p className="text-gray-400 font-medium">{f.label}</p>
+                <p className="font-semibold text-gray-900 mt-0.5 wrap-break-word">
+                  {f.value ? f.value.replace(/_/g, ' ') : '—'}
+                </p>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
       <Card className="lg:col-span-2 p-6 shadow-xs space-y-4 bg-white border-gray-100">
         <div className="flex items-center justify-between border-b border-gray-100 pb-3">
           <h3 className="font-bold text-base text-gray-900">Documents</h3>

@@ -19,6 +19,8 @@ interface PartnerHeaderCardProps {
 const TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'kyc', label: 'KYC & Verification' },
+  // Team KYC review — only meaningful for BUSINESS partners; filtered in below.
+  { id: 'team', label: 'Team KYC', businessOnly: true },
   { id: 'bank', label: 'Bank & Payouts' },
   { id: 'services', label: 'Services' },
   { id: 'schedule', label: 'Schedule' },
@@ -37,6 +39,8 @@ export default function PartnerHeaderCard({
 }: PartnerHeaderCardProps) {
   const completedSteps = partner.onboardingStep || 1;
   const onboardingPercent = Math.min(Math.max((completedSteps / 4) * 100, 25), 100);
+
+  const visibleTabs = TABS.filter((tab) => !tab.businessOnly || partner.type === 'BUSINESS');
 
   return (
     <div className="space-y-4">
@@ -82,7 +86,7 @@ export default function PartnerHeaderCard({
 
         <div className="border-t border-gray-100 pt-3 -mb-2 overflow-x-auto">
           <nav className="flex items-center gap-1 min-w-max">
-            {TABS.map((tab) => (
+            {visibleTabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => onTabChange(tab.id)}

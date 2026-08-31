@@ -9,6 +9,7 @@ import {
   PartnerAvailabilityItem,
   PartnerBooking,
   PartnerReview,
+  PartnerEmployee,
 } from '../../types/partner';
 
 function unwrap<T>(resData: any, fallback: T): T {
@@ -216,6 +217,101 @@ export async function verifyPartnerBankServerAction(id: string, isVerified: bool
   } catch (error: any) {
     console.error('[verifyPartnerBankServerAction]', error?.response?.data || error.message);
     return { ok: false, message: parseServerError(error, 'Failed to verify bank account') };
+  }
+}
+
+// ---- Business partner employees: KYC review ----
+// Routes live under the admin partners module but on their own controller
+// (AdminPartnerEmployeeController, @Controller('partner-employees')), so the
+// full path is /admin/partners/partner-employees/:employeeId/...
+const EMPLOYEE_BASE = '/admin/partners/partner-employees';
+
+// Short-lived presigned GET URLs for one employee's KYC documents, keyed the
+// same way PartnerKycDocUrls is (minus the business-only fields) — see
+// EmployeeKycService.getKycDocumentUrls on the backend.
+export interface EmployeeKycDocUrls {
+  aadhaarFront?: string;
+  aadhaarBack?: string;
+  pan?: string;
+  selfie?: string;
+  video?: string;
+  certificates?: string[];
+}
+
+export async function getPartnerEmployeeByIdServerAction(employeeId: string): Promise<PartnerEmployee | null> {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await axiosInstance.get(`${EMPLOYEE_BASE}/${employeeId}`, { headers });
+    return unwrap<PartnerEmployee | null>(response.data, null);
+  } catch (error: any) {
+    console.error('[getPartnerEmployeeByIdServerAction]', error?.response?.data || error.message);
+    return null;
+  }
+}
+
+export async function getPartnerEmployeeKycDocUrlsServerAction(employeeId: string): Promise<EmployeeKycDocUrls> {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await axiosInstance.get(`${EMPLOYEE_BASE}/${employeeId}/kyc/document-urls`, { headers });
+    return unwrap<EmployeeKycDocUrls>(response.data, {});
+  } catch (error: any) {
+    console.error('[getPartnerEmployeeKycDocUrlsServerAction]', error?.response?.data || error.message);
+    return {};
+  }
+}
+
+export async function approvePartnerEmployeeKycServerAction(employeeId: string): Promise<ActionResult<{ success: boolean; message: string }>> {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await axiosInstance.patch(`${EMPLOYEE_BASE}/${employeeId}/approve-kyc`, {}, { headers });
+    return { ok: true, data: unwrap(response.data, response.data) };
+  } catch (error: any) {
+    console.error('[approvePartnerEmployeeKycServerAction]', error?.response?.data || error.message);
+    return { ok: false, message: parseServerError(error, 'Failed to approve employee KYC') };
+  }
+}
+
+export async function rejectPartnerEmployeeKycServerAction(employeeId: string, reason: string): Promise<ActionResult<{ success: boolean; message: string }>> {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await axiosInstance.patch(`${EMPLOYEE_BASE}/${employeeId}/reject-kyc`, { reason }, { headers });
+    return { ok: true, data: unwrap(response.data, response.data) };
+  } catch (error: any) {
+    console.error('[rejectPartnerEmployeeKycServerAction]', error?.response?.data || error.message);
+    return { ok: false, message: parseServerError(error, 'Failed to reject employee KYC') };
+  }
+}
+
+export async function approvePartnerEmployeeServerAction(employeeId: string): Promise<ActionResult<any>> {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await axiosInstance.patch(`${EMPLOYEE_BASE}/${employeeId}/approve`, {}, { headers });
+    return { ok: true, data: unwrap(response.data, response.data) };
+  } catch (error: any) {
+    console.error('[approvePartnerEmployeeServerAction]', error?.response?.data || error.message);
+    return { ok: false, message: parseServerError(error, 'Failed to approve employee') };
+  }
+}
+
+export async function rejectPartnerEmployeeServerAction(employeeId: string): Promise<ActionResult<any>> {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await axiosInstance.patch(`${EMPLOYEE_BASE}/${employeeId}/reject`, {}, { headers });
+    return { ok: true, data: unwrap(response.data, response.data) };
+  } catch (error: any) {
+    console.error('[rejectPartnerEmployeeServerAction]', error?.response?.data || error.message);
+    return { ok: false, message: parseServerError(error, 'Failed to reject employee') };
+  }
+}
+
+export async function suspendPartnerEmployeeServerAction(employeeId: string): Promise<ActionResult<any>> {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await axiosInstance.patch(`${EMPLOYEE_BASE}/${employeeId}/suspend`, {}, { headers });
+    return { ok: true, data: unwrap(response.data, response.data) };
+  } catch (error: any) {
+    console.error('[suspendPartnerEmployeeServerAction]', error?.response?.data || error.message);
+    return { ok: false, message: parseServerError(error, 'Failed to suspend employee') };
   }
 }
 
