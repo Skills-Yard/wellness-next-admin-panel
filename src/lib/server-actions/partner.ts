@@ -44,12 +44,12 @@ export async function getPartnersServerAction(filter?: PartnerFilter): Promise<P
 // numbers; the backend now returns them directly as `counts` (one key per PartnerStatus,
 // independent of whatever status filter the table itself is applying) alongside any paginated
 // /admin/partners response.
-export async function getPartnerStatusCountsServerAction(): Promise<Record<string, number>> {
+export async function getPartnerStatusCountsServerAction(type?: string): Promise<Record<string, number>> {
   try {
     const headers = await getAuthHeaders();
     const response = await axiosInstance.get<PaginatedEnvelope<Partner>>('/admin/partners', {
       headers,
-      params: { page: 1, limit: 1 },
+      params: { ...(type ? { type } : {}), page: 1, limit: 1 },
     });
     return response.data.counts ?? {};
   } catch (error: any) {
@@ -63,12 +63,12 @@ export async function getPartnerStatusCountsServerAction(): Promise<Record<strin
 // alone would overcount "Active Partners" by including soft-deleted ones. That specific
 // cross-tabulation (status=APPROVED AND isActive=true) isn't in the counts bag, so read it the
 // same lightweight way: one row-less request, real backend-computed pagination.total.
-export async function getActivePartnerCountServerAction(): Promise<number> {
+export async function getActivePartnerCountServerAction(type?: string): Promise<number> {
   try {
     const headers = await getAuthHeaders();
     const response = await axiosInstance.get<PaginatedEnvelope<Partner>>('/admin/partners', {
       headers,
-      params: { status: 'APPROVED', isActive: true, page: 1, limit: 1 },
+      params: { status: 'APPROVED', isActive: true, ...(type ? { type } : {}), page: 1, limit: 1 },
     });
     return response.data.pagination?.total ?? 0;
   } catch (error: any) {
@@ -84,6 +84,8 @@ export async function getPartnersPagedServerAction(params: {
   limit?: number;
   q?: string;
   status?: string;
+  // 'INDIVIDUAL' | 'BUSINESS' — GetPartnersFilterDto.type on the backend.
+  type?: string;
 }): Promise<PaginatedEnvelope<Partner>> {
   const page = params.page ?? 1;
   const limit = params.limit ?? 10;
@@ -93,6 +95,7 @@ export async function getPartnersPagedServerAction(params: {
       headers,
       params: {
         ...(params.status ? { status: params.status } : {}),
+        ...(params.type ? { type: params.type } : {}),
         ...(params.q ? { q: params.q } : {}),
         page,
         limit,

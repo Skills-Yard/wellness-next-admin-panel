@@ -1,7 +1,9 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import PartnerListTable from '../../components/partners/list/PartnerListTable';
+import { PartnerType } from '../../types/partner';
 import {
   getPartnerStatusCountsServerAction,
   getActivePartnerCountServerAction,
@@ -14,34 +16,50 @@ import { Skeleton, SkeletonCard, SkeletonTableRows } from '../../components/ui/s
 import { getCached, setCached, CACHE_KEYS } from '../../lib/sessionCache';
 import FetchErrorBanner from '../../components/common/FetchErrorBanner';
 
-const CACHE_KEY = CACHE_KEYS.partnerStatusCounts;
+// Counts are cached per partner-type scope — the plain list, Individual and Business each get
+// their own bag so switching between them doesn't flash the wrong numbers.
+const cacheKeyFor = (type?: string) =>
+  type ? `${CACHE_KEYS.partnerStatusCounts}:${type}` : CACHE_KEYS.partnerStatusCounts;
 // Synthetic key folded into the same statusCounts object — see
 // getActivePartnerCountServerAction's doc comment for why "Active Partners" isn't just
 // statusCounts.APPROVED.
 const ACTIVE_APPROVED_KEY = '__activeApproved';
 
 export default function PartnersPage() {
+  // Sidebar's Partner > Individual / Business entries route here as ?type=INDIVIDUAL|BUSINESS;
+  // the plain Partner entry has no ?type= and shows everything.
+  const searchParams = useSearchParams();
+  const rawType = searchParams.get('type');
+  const typeFilter: PartnerType | undefined =
+    rawType === 'INDIVIDUAL' || rawType === 'BUSINESS' ? rawType : undefined;
+  const cacheKey = cacheKeyFor(typeFilter);
+
   // Was the FULL partners list (walked across every backend page) fetched solely to derive the
   // metrics cards + status dropdown's per-option counts — the backend now returns those counts
   // directly (one key per PartnerStatus), so this page no longer needs every partner in memory
   // at all; PartnerListTable's rows come from its own separate paged fetch regardless.
-  const cached = getCached<Record<string, number>>(CACHE_KEY);
-  const [statusCounts, setStatusCounts] = useState<Record<string, number>>(cached || {});
+  const [statusCounts, setStatusCounts] = useState<Record<string, number>>(
+    () => getCached<Record<string, number>>(cacheKey) || {},
+  );
   // Only the very first, never-cached load shows the full skeleton — a revisit this session
   // renders the cached counts immediately while refreshing quietly underneath.
-  const [loading, setLoading] = useState(cached === undefined);
+  const [loading, setLoading] = useState(getCached<Record<string, number>>(cacheKey) === undefined);
   const [error, setError] = useState<string | null>(null);
 
   const fetchStatusCounts = useCallback(async () => {
-    if (getCached<Record<string, number>>(CACHE_KEY) === undefined) setLoading(true);
+    const hit = getCached<Record<string, number>>(cacheKey);
+    // Switching to a type-scope we've never loaded shows the skeleton; a revisit shows its
+    // cached numbers immediately and refreshes underneath.
+    setStatusCounts(hit || {});
+    if (hit === undefined) setLoading(true);
     setError(null);
     try {
       const [statusData, activeApproved] = await Promise.all([
-        getPartnerStatusCountsServerAction(),
-        getActivePartnerCountServerAction(),
+        getPartnerStatusCountsServerAction(typeFilter),
+        getActivePartnerCountServerAction(typeFilter),
       ]);
       const data = { ...statusData, [ACTIVE_APPROVED_KEY]: activeApproved };
-      setCached(CACHE_KEY, data);
+      setCached(cacheKey, data);
       setStatusCounts(data);
     } catch (err: any) {
       console.error('Error loading partner status counts:', err?.response?.data || err?.message || err);
@@ -51,7 +69,7 @@ export default function PartnersPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [cacheKey, typeFilter]);
 
   useEffect(() => {
     fetchStatusCounts();
@@ -136,7 +154,11 @@ export default function PartnersPage() {
     <div className="space-y-4">
       {error && <FetchErrorBanner message={error} onRetry={fetchStatusCounts} />}
       <PartnerListTable
+        // Remount on a type switch so page number, search and status filter all reset to a
+        // clean slate for the newly-scoped list.
+        key={typeFilter ?? 'ALL'}
         statusCounts={statusCounts}
+        typeFilter={typeFilter}
         onPartnerCreated={handlePartnerCreated}
         onApprove={handleApprove}
         onSuspend={handleSuspend}
