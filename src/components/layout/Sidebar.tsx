@@ -55,6 +55,7 @@ const menuItems: MenuItem[] = [
       { label: "All", icon: UserCheck, href: "/partners" },
       { label: "Individual", icon: User, href: "/partners?type=INDIVIDUAL" },
       { label: "Business", icon: Building2, href: "/partners?type=BUSINESS" },
+      { label: "Team memberships", icon: Users, href: "/partners/memberships" },
       { label: "Training", icon: GraduationCap, href: "/training" },
     ],
   },
