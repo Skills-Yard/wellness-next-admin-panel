@@ -10,13 +10,6 @@ import { SkeletonTableRows } from '../ui/skeleton';
 import { StatusToggle } from '../ui/status-toggle';
 import { useConfirm } from '../ui/confirm-dialog';
 import { toast } from '../ui/toast';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '../ui/dialog';
 import SuiteZoneAvailabilityModal from './SuiteZoneAvailabilityModal';
 import { ServiceCategory, ServiceSuite } from '../../types/catalogue';
 import Pagination from '../shared/Pagination';
@@ -67,26 +60,37 @@ function CategoryTabs({
           style={{ left: indicator.left, top: indicator.top, width: indicator.width, height: indicator.height }}
         />
       )}
-      {categories.map((cat) => (
-        <button
-          key={cat.id}
-          ref={(el) => {
-            if (el) tabRefs.current.set(cat.id, el);
-            else tabRefs.current.delete(cat.id);
-          }}
-          onClick={() => onSelect(cat)}
-          className={`relative z-10 shrink-0 px-4 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap transition-colors duration-300 ${
-            selectedId === cat.id
-              ? 'text-white'
-              : 'bg-[#FAF5F0] text-gray-600 hover:text-[#C68A4C] hover:bg-[#F2E5D9]'
-          }`}
-        >
-          {cat.name}
-        </button>
-      ))}
+      {categories.map((cat) => {
+        const inactive = cat.isActive === false;
+        return (
+          <button
+            key={cat.id}
+            ref={(el) => {
+              if (el) tabRefs.current.set(cat.id, el);
+              else tabRefs.current.delete(cat.id);
+            }}
+            onClick={() => onSelect(cat)}
+            title={inactive ? `${cat.name} (inactive)` : undefined}
+            className={`relative z-10 shrink-0 px-4 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap transition-colors duration-300 ${
+              selectedId === cat.id
+                ? 'text-white'
+                : 'bg-[#FAF5F0] text-gray-600 hover:text-[#C68A4C] hover:bg-[#F2E5D9]'
+            } ${inactive && selectedId !== cat.id ? 'opacity-50' : ''}`}
+          >
+            {cat.name}
+          </button>
+        );
+      })}
     </div>
   );
 }
+
+// Set right before opening a sub-category's detail view. The catalogue page swaps
+// <CategoriesView/> out for <ServiceDetailView/> entirely (see catalogue/page.tsx),
+// so this component unmounts on the way in and remounts on the way back. On that
+// remount we scroll straight to the Sub-Categories section instead of leaving the
+// page at the very top (Genders). Module scope survives the unmount.
+let returningFromSubCategory = false;
 
 export default function CategoriesView() {
   const {
@@ -108,10 +112,28 @@ export default function CategoriesView() {
     updateSubCategoryStatus,
     updateServiceGenderStatus,
     updateServiceSuiteStatus,
-    updateServiceItemStatus,
   } = useCatalogue();
   const confirm = useConfirm();
   const activeServiceItems = serviceItems.filter(service => service.isActive);
+
+  // Coming back from a sub-category's detail view, land on the Sub-Categories
+  // section (where the click came from) rather than the top of the page. Content
+  // settles over a few frames (skeleton → rows → images), so re-align a couple
+  // of times.
+  const subCatSectionRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (!returningFromSubCategory) return;
+    returningFromSubCategory = false;
+
+    const align = () => subCatSectionRef.current?.scrollIntoView({ block: 'start' });
+    align();
+    const raf = requestAnimationFrame(align);
+    const timers = [setTimeout(align, 120), setTimeout(align, 300)];
+    return () => {
+      cancelAnimationFrame(raf);
+      timers.forEach(clearTimeout);
+    };
+  }, []);
 
   // Manual catalog-cache flush. Ordinary edits here already invalidate the
   // Redis/edge cache on the backend — this covers the case where a cached
@@ -137,16 +159,9 @@ export default function CategoriesView() {
     }
   };
 
-  // Categories that are still active — inactive ones now live only in the recycle bin (matching
-  // Sub-Categories/Services below), so this feeds both the main table (Section 1) and the tab
-  // switcher (Sections 1B/2).
-  const activeCategories = categories.filter(c => c.isActive !== false);
-  // Same treatment for Genders (global, Section 0) — inactive ones drop out of the main table and
-  // surface only in the recycle bin.
-  const activeGenders = genders.filter(g => g.isActive !== false);
-
   // ---- Section 1 (Main Categories table) — client-side pagination over CatalogueContext's
-  // already-loaded full `categories` list, narrowed to active categories. This used to hit its own
+  // already-loaded full `categories` list. Inactive categories stay in the list (their row's
+  // toggle just shows red); flipping it back to green reactivates them. This used to hit its own
   // getCategoriesPagedServerAction on top of the context's full fetch (and again on every category
   // create/edit/delete/toggle, since it re-fetched whenever the context's `categories` array got a
   // new reference) — that was a second full round-trip for data the page already had in memory.
@@ -155,8 +170,8 @@ export default function CategoriesView() {
   // for the same result.
   const [catPage, setCatPage] = useState(1);
   const [catPageSize, setCatPageSize] = useState(10);
-  const catPagination = { total: activeCategories.length, totalPages: Math.max(1, Math.ceil(activeCategories.length / catPageSize)) };
-  const catRows = activeCategories.slice((catPage - 1) * catPageSize, catPage * catPageSize);
+  const catPagination = { total: categories.length, totalPages: Math.max(1, Math.ceil(categories.length / catPageSize)) };
+  const catRows = categories.slice((catPage - 1) * catPageSize, catPage * catPageSize);
 
   // Deleting the last row on the last page (or the list just getting shorter) can leave `catPage`
   // pointing past the new last page — snap back instead of showing an empty table.
@@ -176,70 +191,15 @@ export default function CategoriesView() {
     setSubPage(1);
   }, [selectedCategory?.id]);
 
-  const [isRecycleBinOpen, setIsRecycleBinOpen] = useState(false);
-  const [activatingItemKey, setActivatingItemKey] = useState<string | null>(null);
-
-  // Inactive categories themselves — shown as their own section in the recycle bin (they don't
-  // have a parent category to be grouped under the way inactive services/sub-categories/suites do).
-  const inactiveCategories = categories.filter(category => !category.isActive);
-  // Genders are global (no categoryId) — same reasoning, own section in the bin.
-  const inactiveGenders = genders.filter(gender => !gender.isActive);
-
-  const inactiveItemsByCategory = (() => {
-    const categoryNames = new Map(categories.map(category => [category.id, category.name]));
-    const categoryBySubCategory = new Map(
-      subCategories.map(subCategory => [subCategory.id, subCategory.categoryId])
-    );
-    const grouped = new Map<string, { id: string; name: string; type: string }[]>();
-
-    serviceItems
-      .filter(service => !service.isActive)
-      .forEach(service => {
-        const categoryId = categoryBySubCategory.get(service.subCategoryId) || 'uncategorized';
-        const services = grouped.get(categoryId) || [];
-        services.push({ id: service.id, name: service.name, type: 'Service' });
-        grouped.set(categoryId, services);
-      });
-
-    subCategories
-      .filter(subCategory => !subCategory.isActive)
-      .forEach(subCategory => {
-        const categoryId = subCategory.categoryId || 'uncategorized';
-        const items = grouped.get(categoryId) || [];
-        items.push({ id: subCategory.id, name: subCategory.name, type: 'Sub-category' });
-        grouped.set(categoryId, items);
-      });
-
-    suites
-      .filter(suite => !suite.isActive)
-      .forEach(suite => {
-        const categoryId = suite.categoryId || 'uncategorized';
-        const items = grouped.get(categoryId) || [];
-        items.push({ id: suite.id, name: suite.name, type: 'Suite' });
-        grouped.set(categoryId, items);
-      });
-
-    return [...grouped.entries()]
-      .map(([categoryId, services]) => ({
-        name: categoryNames.get(categoryId) || 'Uncategorized',
-        items: services.sort((a, b) => a.name.localeCompare(b.name)),
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  })();
-  const inactiveItemCount =
-    inactiveItemsByCategory.reduce((count, group) => count + group.items.length, 0) +
-    inactiveCategories.length +
-    inactiveGenders.length;
-
-  // If the selected category drops out of the active set (toggled inactive, or it was inactive
-  // on load) fall back to the first active one instead of leaving the tabs with nothing
-  // highlighted while Sections 1B/2 still show content for a now-hidden category.
+  // If the selected category is gone entirely (deleted), fall back to the first one so
+  // Sections 1B/2 aren't left pointing at nothing. Deactivating a category no longer
+  // switches away from it — it just stays in the list with a red toggle.
   useEffect(() => {
-    if (selectedCategory && !activeCategories.some(c => c.id === selectedCategory.id)) {
-      setSelectedCategory(activeCategories[0] || null);
+    if (selectedCategory && !categories.some(c => c.id === selectedCategory.id)) {
+      setSelectedCategory(categories[0] || null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCategory, activeCategories]);
+  }, [selectedCategory, categories]);
 
   // Row currently mid-flight on its status toggle (per section) — disables that one pill and
   // swaps it to a spinner instead of locking the whole table while a single PATCH is in flight.
@@ -261,9 +221,10 @@ export default function CategoriesView() {
   const [suiteForZoneModal, setSuiteForZoneModal] = useState<ServiceSuite | null>(null);
   const [zoneModalOpen, setZoneModalOpen] = useState(false);
 
-  // Filter subcategories by active category
+  // Sub-categories under the selected category — active and inactive both (inactive rows
+  // just carry a red status toggle).
   const currentSubCategories = subCategories.filter(
-    s => s.categoryId === selectedCategory?.id && s.isActive !== false
+    s => s.categoryId === selectedCategory?.id
   );
 
   // Sub-categories, suites and genders are all scoped to a category but not to each other
@@ -288,9 +249,9 @@ export default function CategoriesView() {
       .map(id => genders.find(g => g.id === id))
       .filter((g): g is typeof genders[number] => !!g);
 
-  // Suites for the active category (see ServiceSuite in catalog.prisma) — scoped the same way
-  // sub-categories are, and likewise narrowed to active-only (inactive suites live in the bin).
-  const currentSuites = suites.filter(s => s.categoryId === selectedCategory?.id && s.isActive !== false);
+  // Suites for the selected category (see ServiceSuite in catalog.prisma) — active and
+  // inactive both; an inactive suite stays in the list with a red status toggle.
+  const currentSuites = suites.filter(s => s.categoryId === selectedCategory?.id);
 
   // Genders are global (no categoryId) — "current" here means whichever genders are actually in
   // use by a service under one of the active category's sub-categories, not every gender that
@@ -488,150 +449,8 @@ export default function CategoriesView() {
     }
   };
 
-  const handleActivateRecycleBinItem = async (item: { id: string; type: string }) => {
-    const itemKey = `${item.type}-${item.id}`;
-    setActivatingItemKey(itemKey);
-    try {
-      const res = item.type === 'Service'
-        ? await updateServiceItemStatus(item.id, true)
-        : item.type === 'Category'
-        ? await updateCategoryStatus(item.id, true)
-        : item.type === 'Suite'
-        ? await updateServiceSuiteStatus(item.id, true)
-        : item.type === 'Gender'
-        ? await updateServiceGenderStatus(item.id, true)
-        : await updateSubCategoryStatus(item.id, true);
-      if (res.ok) toast.success(`${item.type} activated successfully`);
-      else toast.error(res.message || `Failed to activate ${item.type.toLowerCase()}`);
-    } finally {
-      setActivatingItemKey(null);
-    }
-  };
-
   return (
     <div className="space-y-8 md:space-y-10 max-w-7xl mx-auto pb-12 animate-in fade-in duration-300 w-full">
-
-      <button
-        type="button"
-        onClick={() => setIsRecycleBinOpen(true)}
-        className="fixed right-6 bottom-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-[#C68A4C] text-white shadow-lg shadow-[#C68A4C]/30 transition-transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-[#C68A4C]/40 focus:ring-offset-2 cursor-pointer"
-        aria-label={`Open recycle bin with ${inactiveItemCount} inactive catalogue items`}
-        title="Recycle Bin"
-      >
-        <Trash2 className="h-6 w-6" />
-        {inactiveItemCount > 0 && (
-          <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#25180F] px-1 text-[10px] font-bold text-white">
-            {inactiveItemCount}
-          </span>
-        )}
-      </button>
-
-      <Dialog open={isRecycleBinOpen} onOpenChange={setIsRecycleBinOpen}>
-        <DialogContent className="max-h-[85vh] max-w-2xl overflow-hidden flex flex-col">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Trash2 className="h-5 w-5 text-[#C68A4C]" />
-              Recycle Bin
-            </DialogTitle>
-            <DialogDescription>Inactive genders, categories, suites, sub-categories and services.</DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 overflow-y-auto pr-1">
-            {inactiveItemCount === 0 ? (
-              <div className="rounded-xl border border-dashed border-gray-200 px-5 py-10 text-center text-sm text-gray-500">
-                No inactive items.
-              </div>
-            ) : (
-              <>
-              {inactiveGenders.length > 0 && (
-                <section className="overflow-hidden rounded-xl border border-[#F2E5D9]">
-                  <div className="flex items-center justify-between bg-[#FAF5F0] px-4 py-3">
-                    <h3 className="text-sm font-semibold text-[#25180F]">Genders</h3>
-                    <span className="text-xs text-gray-500">
-                      {inactiveGenders.length} item{inactiveGenders.length === 1 ? '' : 's'}
-                    </span>
-                  </div>
-                  <div className="divide-y divide-gray-100">
-                    {inactiveGenders.map(gender => (
-                      <div key={`Gender-${gender.id}`} className="flex items-center justify-between gap-3 px-4 py-3">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-gray-900">{gender.name}</p>
-                          <p className="text-xs text-gray-400">Gender · Inactive</p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleActivateRecycleBinItem({ id: gender.id, type: 'Gender' })}
-                          disabled={activatingItemKey === `Gender-${gender.id}`}
-                          className="shrink-0 rounded-lg border border-[#C68A4C]/50 px-3 py-1.5 text-xs font-semibold text-[#9A612D] transition-colors hover:bg-[#FAF5F0] disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {activatingItemKey === `Gender-${gender.id}` ? 'Activating...' : 'Activate'}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              )}
-              {inactiveCategories.length > 0 && (
-                <section className="overflow-hidden rounded-xl border border-[#F2E5D9]">
-                  <div className="flex items-center justify-between bg-[#FAF5F0] px-4 py-3">
-                    <h3 className="text-sm font-semibold text-[#25180F]">Categories</h3>
-                    <span className="text-xs text-gray-500">
-                      {inactiveCategories.length} item{inactiveCategories.length === 1 ? '' : 's'}
-                    </span>
-                  </div>
-                  <div className="divide-y divide-gray-100">
-                    {inactiveCategories.map(category => (
-                      <div key={`Category-${category.id}`} className="flex items-center justify-between gap-3 px-4 py-3">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-gray-900">{category.name}</p>
-                          <p className="text-xs text-gray-400">Category · Inactive</p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleActivateRecycleBinItem({ id: category.id, type: 'Category' })}
-                          disabled={activatingItemKey === `Category-${category.id}`}
-                          className="shrink-0 rounded-lg border border-[#C68A4C]/50 px-3 py-1.5 text-xs font-semibold text-[#9A612D] transition-colors hover:bg-[#FAF5F0] disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {activatingItemKey === `Category-${category.id}` ? 'Activating...' : 'Activate'}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              )}
-              {inactiveItemsByCategory.map(group => (
-                <section key={group.name} className="overflow-hidden rounded-xl border border-[#F2E5D9]">
-                  <div className="flex items-center justify-between bg-[#FAF5F0] px-4 py-3">
-                    <h3 className="text-sm font-semibold text-[#25180F]">{group.name}</h3>
-                    <span className="text-xs text-gray-500">
-                      {group.items.length} item{group.items.length === 1 ? '' : 's'}
-                    </span>
-                  </div>
-                  <div className="divide-y divide-gray-100">
-                    {group.items.map(item => (
-                      <div key={`${item.type}-${item.id}`} className="flex items-center justify-between gap-3 px-4 py-3">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-gray-900">{item.name}</p>
-                          <p className="text-xs text-gray-400">{item.type} · Inactive</p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleActivateRecycleBinItem(item)}
-                          disabled={activatingItemKey === `${item.type}-${item.id}`}
-                          className="shrink-0 rounded-lg border border-[#C68A4C]/50 px-3 py-1.5 text-xs font-semibold text-[#9A612D] transition-colors hover:bg-[#FAF5F0] disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {activatingItemKey === `${item.type}-${item.id}` ? 'Activating...' : 'Activate'}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              ))}
-              </>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {/* SECTION 0: GENDERS (global — not scoped to a category, see ServiceGender in catalog.prisma) */}
       <div className="space-y-4 w-full">
@@ -669,7 +488,7 @@ export default function CategoriesView() {
                 </tbody>
               </table>
             </div>
-          ) : activeGenders.length === 0 ? (
+          ) : genders.length === 0 ? (
             <div className="py-16 flex flex-col items-center justify-center text-center p-6 space-y-3">
               <div className="w-12 h-12 rounded-full bg-[#FAF5F0] text-[#C68A4C] flex items-center justify-center">
                 <FolderPlus className="w-6 h-6" />
@@ -699,7 +518,7 @@ export default function CategoriesView() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 text-sm text-gray-700">
-                  {activeGenders.map((gender) => (
+                  {genders.map((gender) => (
                     <tr key={gender.id} className="hover:bg-[#FAF9F6]/80 transition-colors">
                       <td className="py-4 px-4 sm:px-6">
                         <div className="flex items-center gap-3 sm:gap-4">
@@ -948,7 +767,7 @@ export default function CategoriesView() {
 
         {/* Category switcher — tabs instead of a dropdown so every category is reachable in one
             glance (see CategoryTabs above); drives the same selectedCategory used by Section 2. */}
-        <CategoryTabs categories={activeCategories} selectedId={selectedCategory?.id} onSelect={setSelectedCategory} />
+        <CategoryTabs categories={categories} selectedId={selectedCategory?.id} onSelect={setSelectedCategory} />
 
         {/* Suites Table Card */}
         <Card className="w-full">
@@ -1066,7 +885,7 @@ export default function CategoriesView() {
       </div>
 
       {/* SECTION 2: SUB-CATEGORIES FOR SELECTED CATEGORY */}
-      <div className="space-y-4 pt-4 w-full">
+      <div ref={subCatSectionRef} className="scroll-mt-4 space-y-4 pt-4 w-full">
         {/* Section Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
@@ -1091,7 +910,7 @@ export default function CategoriesView() {
             dropdowns below fade/scale in via subCategorySuiteFilterOpen/subCategoryGenderFilterOpen
             instead of just popping open). */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <CategoryTabs categories={activeCategories} selectedId={selectedCategory?.id} onSelect={setSelectedCategory} />
+          <CategoryTabs categories={categories} selectedId={selectedCategory?.id} onSelect={setSelectedCategory} />
 
           {(currentSuites.length > 0 || currentGenders.length > 0) && (
             <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap self-start sm:self-auto">
@@ -1272,7 +1091,7 @@ export default function CategoriesView() {
                       <tr
                         key={sub.id}
                         className="hover:bg-[#FAF9F6]/80 transition-colors cursor-pointer"
-                        onClick={() => navigateToServiceDetail(sub)}
+                        onClick={() => { returningFromSubCategory = true; navigateToServiceDetail(sub); }}
                       >
                         {/* Sub-Category Title + Subtitle + Icon */}
                         <td className="py-4 px-4 sm:px-6">

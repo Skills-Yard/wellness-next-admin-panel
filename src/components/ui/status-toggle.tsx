@@ -3,10 +3,11 @@
 import React from 'react';
 import { Loader2 } from 'lucide-react';
 
-// Clickable stand-in for the plain <Badge variant="active|inactive"> used across every list table
-// — flips a row's isActive status directly from the list ("from the outside"), without opening
-// its edit modal. Callers own the actual PATCH + optimistic/refetch state; this just renders the
-// pill and a busy spinner while `busy` is true.
+// Inline on/off switch used across every list table — flips a row's isActive
+// status straight from the list ("from the outside", without opening the edit
+// modal). Green when on, red when off. Callers own the actual PATCH +
+// optimistic/refetch state; this just renders the switch and shows a spinner
+// while `busy` is true.
 export function StatusToggle({
   isActive,
   onToggle,
@@ -22,24 +23,30 @@ export function StatusToggle({
   activeLabel?: string;
   inactiveLabel?: string;
 }) {
+  const label = isActive ? activeLabel : inactiveLabel;
+
   return (
     <button
       type="button"
-      onClick={onToggle}
+      role="switch"
+      aria-checked={isActive}
+      aria-label={label}
+      title={disabled ? label : `${label} — click to turn ${isActive ? 'off' : 'on'}`}
       disabled={busy || disabled}
-      title={disabled ? undefined : isActive ? `Click to mark ${inactiveLabel.toLowerCase()}` : `Click to mark ${activeLabel.toLowerCase()}`}
-      className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
-        isActive
-          ? 'bg-[#E8F5E9] text-[#2E7D32] border-[#C8E6C9] hover:bg-[#D5EAD6]'
-          : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200'
-      } ${disabled ? '' : 'cursor-pointer'}`}
+      onClick={onToggle}
+      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border border-black/5 transition-colors disabled:cursor-not-allowed ${
+        busy || disabled ? 'opacity-60' : 'cursor-pointer'
+      } ${isActive ? 'bg-[#2E7D32]' : 'bg-red-500'}`}
     >
       {busy ? (
-        <Loader2 className="w-3 h-3 animate-spin" />
+        <Loader2 className="mx-auto h-3 w-3 animate-spin text-white" />
       ) : (
-        <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-[#2E7D32]' : 'bg-gray-400'}`} />
+        <span
+          className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${
+            isActive ? 'translate-x-4.5' : 'translate-x-0.5'
+          }`}
+        />
       )}
-      {isActive ? activeLabel : inactiveLabel}
     </button>
   );
 }
