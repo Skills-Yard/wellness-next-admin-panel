@@ -190,7 +190,7 @@ export default function CategoryModal() {
           onChange={(e) => handleFileChange(field, e)}
         />
         <div
-          className="h-40 bg-[#FAF5F0] rounded-2xl border border-[#F2E5D9] flex flex-col items-center justify-center text-center p-4 cursor-pointer hover:border-[#D4A373] transition-colors relative overflow-hidden group"
+          className="h-40 bg-[#FAF5F0] rounded-[15px] border border-[#F2E5D9] flex flex-col items-center justify-center text-center p-4 cursor-pointer hover:border-[#D4A373] transition-colors relative overflow-hidden group"
           onClick={() => inputRef.current?.click()}
         >
           {uploading ? (
@@ -199,13 +199,15 @@ export default function CategoryModal() {
               <span className="text-xs font-semibold">Uploading...</span>
             </div>
           ) : value ? (
-            <div className="w-full h-full relative flex items-center justify-center">
+            // Fill the whole box edge-to-edge (escapes the p-4); parent's overflow-hidden
+            // + rounded-[15px] clips the corners.
+            <div className="absolute inset-0">
               {field === 'homeBannerKey' && bannerType === 'VIDEO' ? (
-                <video src={value} className="max-h-28 object-contain" muted />
+                <video src={value} className="w-full h-full object-cover" muted />
               ) : (
-                <img src={value} alt={label} className="max-h-28 object-contain" />
+                <img src={value} alt={label} className="w-full h-full object-cover" />
               )}
-              <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity rounded-xl">
+              <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
                 <span className="text-xs text-white bg-black/60 px-3 py-1.5 rounded-md">Change</span>
               </div>
             </div>
@@ -225,34 +227,40 @@ export default function CategoryModal() {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-3xl w-full max-w-2xl p-8 shadow-2xl relative border border-gray-100 max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl relative border border-gray-100 max-h-[90vh] flex flex-col overflow-hidden">
 
-        {/* Close Button */}
-        <button
-          onClick={() => setCategoryModalOpen(false)}
-          className="absolute top-6 right-6 w-10 h-10 rounded-full bg-[#1C1512] text-white flex items-center justify-center hover:bg-black transition-transform active:scale-95 shadow-md"
-        >
-          <X className="w-5 h-5" />
-        </button>
-
-        {/* Modal Title */}
-        <div className="mb-8">
-          <div className="flex items-center gap-2">
-            <h2 className="text-2xl font-semibold text-gray-900 tracking-tight">
-              {modalTitle}
-            </h2>
-            {(isSubCategory || isSuite) && (
-              <span className="text-[#C68A4C]">
-                <Leaf className="w-5 h-5 fill-current" />
-              </span>
+        {/* Fixed header — title + close. The body scrolls beneath it, so the
+            scrollbar never runs alongside this row. */}
+        <div className="shrink-0 flex items-start justify-between gap-4 px-8 pt-8 pb-6">
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-2xl font-semibold text-gray-900 tracking-tight">
+                {modalTitle}
+              </h2>
+              {(isSubCategory || isSuite) && (
+                <span className="text-[#C68A4C]">
+                  <Leaf className="w-5 h-5 fill-current" />
+                </span>
+              )}
+            </div>
+            {isSuite && (
+              <p className="text-xs text-gray-400 mt-1">
+                Under {selectedCategory?.name || 'the selected category'}
+              </p>
             )}
           </div>
-          {isSuite && (
-            <p className="text-xs text-gray-400 mt-1">
-              Under {selectedCategory?.name || 'the selected category'}
-            </p>
-          )}
+
+          <button
+            onClick={() => setCategoryModalOpen(false)}
+            className="shrink-0 w-8 h-8 rounded-[5px] bg-[#1C1512] text-white flex items-center justify-center hover:bg-black transition-transform active:scale-95 shadow-md"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
+
+        {/* Scrollable body — outer overflow-hidden keeps the scrollbar clipped
+            inside the card's rounded corners. */}
+        <div className="min-h-0 overflow-y-auto modal-scroll px-8 pb-8">
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Gender Type — fixed MALE/FEMALE classification, immutable after creation */}
@@ -419,6 +427,7 @@ export default function CategoryModal() {
             </button>
           </div>
         </form>
+        </div>
       </div>
     </div>
   );
