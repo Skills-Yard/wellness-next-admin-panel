@@ -4,7 +4,7 @@ import React, { useState, useRef } from 'react';
 import { X, Upload, Loader2 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { uploadFileToR2 } from '../../lib/uploadToR2';
-import { toast } from 'react-toastify';
+import { toast } from '../ui/toast';
 
 interface ImageCardModalProps {
   isOpen: boolean;

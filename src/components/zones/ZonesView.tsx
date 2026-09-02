@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Edit3, Trash2, ChevronRight, MapPinned, Search } from 'lucide-react';
-import { toast } from 'react-toastify';
+import { toast } from '../ui/toast';
 import { useCatalogue } from '../../contexts/CatalogueContext';
 import { OperationalZone } from '../../types/catalogue';
 import { getZonesPagedServerAction } from '../../lib/server-actions/zone';

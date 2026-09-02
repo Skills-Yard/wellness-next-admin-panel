@@ -47,7 +47,15 @@ export default function RootLayout({
             </CatalogueProvider>
           </AuthProvider>
         </ConfirmProvider>
-        <ToastContainer position="top-center" autoClose={3000} hideProgressBar={false} />
+        <ToastContainer
+          position="top-center"
+          autoClose={2000}
+          pauseOnHover
+          closeOnClick={false}
+          hideProgressBar
+          newestOnTop
+          theme="light"
+        />
       </body>
     </html>
   );

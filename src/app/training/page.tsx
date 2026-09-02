@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { toast } from 'react-toastify';
+import { toast } from '../../components/ui/toast';
 import CourseListTable from '../../components/training/list/CourseListTable';
 import {
   getTrainingCoursesServerAction,

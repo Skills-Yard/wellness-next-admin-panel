@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { toast } from 'react-toastify';
+import { toast } from '../../components/ui/toast';
 import { Mail, Shield, KeyRound, LogOut, Loader2 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { updateAdminServerAction } from '../../lib/server-actions/admin';

@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Hls from 'hls.js';
 import { X, Upload, Loader2 } from 'lucide-react';
-import { toast } from 'react-toastify';
+import { toast } from '../ui/toast';
 import { useCampaign } from '../../contexts/CampaignContext';
 import { useCatalogue } from '../../contexts/CatalogueContext';
 import { uploadFileToR2 } from '../../lib/uploadToR2';

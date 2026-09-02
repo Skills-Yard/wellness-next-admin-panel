@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X, Upload, ChevronRight, Leaf, Loader2 } from 'lucide-react';
 import { useCatalogue } from '../../contexts/CatalogueContext';
 import { uploadFileToR2 } from '../../lib/uploadToR2';
-import { toast } from 'react-toastify';
+import { toast } from '../ui/toast';
 import { ServiceGenderCode } from '../../types/catalogue';
 
 // Matches the backend's slug regex for categories: lowercase alphanumeric, hyphen-separated.

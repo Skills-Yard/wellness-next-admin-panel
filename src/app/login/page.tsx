@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '../../contexts/AuthContext';
 import { Checkbox } from '../../components/ui/checkbox';
 import { Eye, EyeOff, Loader2, AlertCircle } from 'lucide-react';
-import { toast } from 'react-toastify';
+import { toast } from '../../components/ui/toast';
 
 // Standard 4-color Google "G" mark — no icon library in this project ships brand icons.
 function GoogleIcon({ className }: { className?: string }) {

@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Plus, Edit3, Pencil, Trash2, Copy, Upload, ChevronDown, Loader2 } from 'lucide-react';
 import { useCatalogue } from '../../contexts/CatalogueContext';
 import { uploadFileToR2 } from '../../lib/uploadToR2';
-import { toast } from 'react-toastify';
+import { toast } from '../ui/toast';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
 import { Skeleton, SkeletonText, SkeletonCircle } from '../ui/skeleton';

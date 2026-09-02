@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { X, Upload, Loader2, Search, Check } from 'lucide-react';
-import { toast } from 'react-toastify';
+import { toast } from '../ui/toast';
 import { TrainingCourse } from '../../types/training';
 import { TrainingCoursePayload } from '../../lib/server-actions/training';
 import { uploadFileToR2 } from '../../lib/uploadToR2';

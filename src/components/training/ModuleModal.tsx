@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { X, Loader2 } from 'lucide-react';
-import { toast } from 'react-toastify';
+import { toast } from '../ui/toast';
 import { TrainingModule } from '../../types/training';
 import { TrainingModulePayload } from '../../lib/server-actions/training';
 

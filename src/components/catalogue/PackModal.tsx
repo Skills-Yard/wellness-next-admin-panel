@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { X, Loader2 } from 'lucide-react';
-import { toast } from 'react-toastify';
+import { toast } from '../ui/toast';
 import { ServiceDuration, ServicePackage } from '../../types/catalogue';
 import { useCatalogue } from '../../contexts/CatalogueContext';
 import { saveZonePackageConfigServerAction, deleteZonePackageConfigServerAction } from '../../lib/server-actions/zone';

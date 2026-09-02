@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { toast } from 'react-toastify';
+import { toast } from '../../../components/ui/toast';
 import {
   ChevronDown, Plus, Edit3, Trash2, GraduationCap, Clock, Target, PlayCircle, FileText, Loader2,
 } from 'lucide-react';

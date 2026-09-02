@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { toast } from 'react-toastify';
+import { toast } from '../../components/ui/toast';
 import { useAuth } from '../../contexts/AuthContext';
 import { useConfirm } from '../../components/ui/confirm-dialog';
 import AdminListMetrics from '../../components/admins/list/AdminListMetrics';

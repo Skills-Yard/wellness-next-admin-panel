@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { X, ExternalLink, Plus, Trash2 } from 'lucide-react';
-import { toast } from 'react-toastify';
+import { toast } from '../ui/toast';
 import { useCatalogue } from '../../contexts/CatalogueContext';
 import { Coordinate, OperationalZone } from '../../types/catalogue';
 import GoogleMapPolygonPicker from './GoogleMapPolygonPicker';

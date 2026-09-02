@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { X, Check, Trash2, Loader2 } from 'lucide-react';
-import { toast } from 'react-toastify';
+import { toast } from '../ui/toast';
 import { useCatalogue } from '../../contexts/CatalogueContext';
 import { useConfirm } from '../ui/confirm-dialog';
 import { OperationalZone, ServiceItem } from '../../types/catalogue';

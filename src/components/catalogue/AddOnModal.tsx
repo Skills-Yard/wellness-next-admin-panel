@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { X, Upload, Loader2 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { uploadFileToR2 } from '../../lib/uploadToR2';
-import { toast } from 'react-toastify';
+import { toast } from '../ui/toast';
 import { ServiceAddOn } from '../../types/catalogue';
 
 interface AddOnModalProps {

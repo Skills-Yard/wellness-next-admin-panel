@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { Plus, ChevronDown, Trash2, X } from 'lucide-react';
-import { toast } from 'react-toastify';
+import { toast } from '../ui/toast';
 import { useCatalogue } from '../../contexts/CatalogueContext';
 import { Button } from '../ui/button';
 import { Skeleton } from '../ui/skeleton';

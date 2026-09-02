@@ -3,7 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Copy, Calendar, Tag, CreditCard } from 'lucide-react';
-import { toast } from 'react-toastify';
+import { toast } from '../../ui/toast';
 import { Booking } from '../../../types/booking';
 import { Card } from '../../ui/card';
 import { Badge } from '../../ui/badge';

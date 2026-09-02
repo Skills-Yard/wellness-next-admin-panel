@@ -9,7 +9,7 @@ import { Card } from '../ui/card';
 import { SkeletonTableRows } from '../ui/skeleton';
 import { StatusToggle } from '../ui/status-toggle';
 import { useConfirm } from '../ui/confirm-dialog';
-import { toast } from 'react-toastify';
+import { toast } from '../ui/toast';
 import { PromotionalCampaign } from '../../types/catalogue';
 
 const TARGET_LABEL: Record<PromotionalCampaign['targetType'], string> = {

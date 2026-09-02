@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { X, Check, Plus } from 'lucide-react';
-import { toast } from 'react-toastify';
+import { toast } from '../ui/toast';
 import { useCatalogue } from '../../contexts/CatalogueContext';
 import { useConfirm } from '../ui/confirm-dialog';
 import { getServiceDurationsServerAction } from '../../lib/server-actions/duration';
