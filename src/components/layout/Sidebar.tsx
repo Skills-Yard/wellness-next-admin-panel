@@ -2,13 +2,15 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import {
   Grid,
   FolderKanban,
   Calendar,
   Users,
+  User,
   UserCheck,
+  Building2,
   Settings,
   LogOut,
   Sparkles,
@@ -50,7 +52,10 @@ const menuItems: MenuItem[] = [
     label: "Partner",
     icon: UserCheck,
     children: [
-      { label: "Partner", icon: UserCheck, href: "/partners" },
+      { label: "All", icon: UserCheck, href: "/partners" },
+      { label: "Individual", icon: User, href: "/partners?type=INDIVIDUAL" },
+      { label: "Business", icon: Building2, href: "/partners?type=BUSINESS" },
+      { label: "Team memberships", icon: Users, href: "/partners/memberships" },
       { label: "Training", icon: GraduationCap, href: "/training" },
     ],
   },
@@ -65,6 +70,7 @@ export default function Sidebar({
   onToggleCollapse,
 }: SidebarProps) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { user, logout } = useAuth();
 
   // Which group (by label) the user has manually expanded/collapsed this session — null means
@@ -72,7 +78,17 @@ export default function Sidebar({
   // back to open (see isOpen below) instead of hiding the very link you're standing on.
   const [openGroup, setOpenGroup] = useState<string | null>(null);
 
-  const isChildActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
+  // Several entries can point at the same path but a different query (/partners,
+  // /partners?type=INDIVIDUAL, /partners?type=BUSINESS) — usePathname drops the query, so
+  // disambiguate those by the ?type= param. Non-/partners entries keep the plain path match.
+  const isChildActive = (href: string) => {
+    const [path, query] = href.split("?");
+    const onPath = pathname === path || pathname.startsWith(`${path}/`);
+    if (!onPath) return false;
+    if (path !== "/partners") return true;
+    const hrefType = query ? new URLSearchParams(query).get("type") : null;
+    return searchParams.get("type") === hrefType;
+  };
 
   const displayName =
     user?.name || (user?.email ? user.email.split("@")[0] : "Admin");

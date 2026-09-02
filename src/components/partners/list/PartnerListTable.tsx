@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { Search, Calendar as CalendarIcon, Download, Plus, UserCheck } from 'lucide-react';
-import { Partner, PartnerStatus } from '../../../types/partner';
+import { Partner, PartnerStatus, PartnerType } from '../../../types/partner';
 import { getPartnersPagedServerAction } from '../../../lib/server-actions/partner';
 import AddPartnerModal from './AddPartnerModal';
 import PartnerListMetrics from './PartnerListMetrics';
@@ -17,6 +17,9 @@ interface PartnerListTableProps {
   // page/filter the table below is currently showing — backend-computed, so it no longer takes
   // the full partners list to derive these.
   statusCounts: Record<string, number>;
+  // Driven by the ?type= query param (set from the sidebar's Partner > Individual / Business
+  // entries). undefined = the plain "Partner" entry, i.e. no type filter.
+  typeFilter?: PartnerType;
   // Tells the parent page a partner was added so it can refresh statusCounts — replaces a full
   // onRefresh() re-fetch after Add.
   onPartnerCreated: () => void;
@@ -49,6 +52,7 @@ const PARTNER_STATUS_KEYS: PartnerStatus[] = [
 
 export default function PartnerListTable({
   statusCounts,
+  typeFilter,
   onPartnerCreated,
   onApprove,
   onSuspend,
@@ -96,6 +100,7 @@ export default function PartnerListTable({
         limit: pageSize,
         q: searchTerm || undefined,
         status: selectedStatus === 'ALL' ? undefined : selectedStatus,
+        type: typeFilter,
       });
       setRows(res.data ?? []);
       setPagination({
@@ -105,7 +110,7 @@ export default function PartnerListTable({
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, searchTerm, selectedStatus]);
+  }, [page, pageSize, searchTerm, selectedStatus, typeFilter]);
 
   useEffect(() => {
     fetchPage();
@@ -126,7 +131,9 @@ export default function PartnerListTable({
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Partners</h1>
+          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
+            {typeFilter === 'INDIVIDUAL' ? 'Individual Partners' : typeFilter === 'BUSINESS' ? 'Business Partners' : 'Partners'}
+          </h1>
           <p className="text-xs text-gray-500 mt-1">Manage platform partners from backend database</p>
         </div>
         <div className="relative flex-1 sm:w-80">
