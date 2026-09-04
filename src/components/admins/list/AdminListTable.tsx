@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import { Search, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
 import { Admin, AdminRole } from '../../../types/admin';
+import { useNow } from '../../../hooks/useNow';
 import AdminListRow from './AdminListRow';
 import { Card } from '../../ui/card';
 import { Button } from '../../ui/button';
@@ -30,6 +31,9 @@ export default function AdminListTable({ admins, currentAdminId, deletingId, onD
   const [selectedStatus, setSelectedStatus] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  // One shared tick for the whole table so every row's "Last Login ago" / "Joined ago"
+  // stays live without a page refresh, instead of each row polling separately.
+  const now = useNow(30_000);
 
   const filteredAdmins = useMemo(() => {
     return admins.filter((a) => {
@@ -139,6 +143,7 @@ export default function AdminListTable({ admins, currentAdminId, deletingId, onD
                   isSelf={admin.id === currentAdminId}
                   deleting={deletingId === admin.id}
                   onDelete={onDelete}
+                  now={now}
                 />
               ))
             )}

@@ -24,6 +24,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
+import { cdnUrl } from "../../lib/cdn";
 import { Avatar } from "../ui/avatar";
 
 interface SidebarProps {
@@ -256,7 +257,7 @@ export default function Sidebar({
         >
           <Avatar
             fallback={fallbackInitials}
-            src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&q=80"
+            src={cdnUrl(user?.profilePhotoKey)}
             alt={displayName}
             className="w-9 h-9 border-[#D4A373]/40 flex-shrink-0"
           />

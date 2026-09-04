@@ -7,6 +7,7 @@ import { Search, Bell, ChevronDown, Menu, LogOut, User as UserIcon, Shield, Sett
 import { useCatalogue } from '../../contexts/CatalogueContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBreadcrumb } from '../../contexts/BreadcrumbContext';
+import { cdnUrl } from '../../lib/cdn';
 import { Avatar } from '../ui/avatar';
 import {
   DropdownMenu,
@@ -179,7 +180,7 @@ export default function Header({ onOpenMobileMenu }: HeaderProps) {
             <div className="flex items-center gap-2 sm:gap-3 pl-2 border-l border-gray-200 hover:opacity-90 transition-opacity">
               <Avatar
                 fallback={fallbackInitials}
-                src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&q=80"
+                src={cdnUrl(user?.profilePhotoKey)}
                 alt={displayName}
                 className="w-8 h-8 sm:w-9 sm:h-9"
               />

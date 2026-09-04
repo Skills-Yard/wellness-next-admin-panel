@@ -11,6 +11,20 @@ export interface UpdateAdminPayload {
   email?: string;
   password?: string;
   role?: string;
+  // R2 bucket key from getAdminProfilePhotoUploadUrlServerAction, submitted back
+  // once the file has been PUT to R2. The backend re-verifies the object before
+  // persisting it (see AdminService.update -> verifyUploadedObject).
+  profilePhotoKey?: string;
+}
+
+// Self-service payload for PATCH /admin/me — deliberately omits `role` (an admin
+// must not be able to change their own role from the profile page).
+export type UpdateMyAdminPayload = Omit<UpdateAdminPayload, 'role'>;
+
+export interface AdminUploadUrlResponse {
+  uploadUrl: string;
+  r2Key: string;
+  cdnUrl: string;
 }
 
 // The backend wraps responses as { success, data, meta } like every other endpoint here, but
@@ -32,6 +46,20 @@ export async function getAdminsServerAction(): Promise<Admin[]> {
   return Array.isArray(data) ? data : [];
 }
 
+// The logged-in admin's own record (id from the access token, server-side).
+// Returns the full row incl. lastLoginAt / isActive / profilePhotoKey — the
+// login response carries none of that, so this is how the session gets hydrated.
+export async function getMyAdminServerAction(): Promise<ActionResult<Admin>> {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await axiosInstance.get('/admin/me', { headers });
+    return { ok: true, data: unwrap(response.data) };
+  } catch (error: any) {
+    console.error('[getMyAdminServerAction]', error?.response?.data || error.message);
+    return { ok: false, message: parseServerError(error, 'Failed to load profile') };
+  }
+}
+
 export async function updateAdminServerAction(
   id: string,
   payload: UpdateAdminPayload
@@ -43,6 +71,49 @@ export async function updateAdminServerAction(
   } catch (error: any) {
     console.error('[updateAdminServerAction]', error?.response?.data || error.message);
     return { ok: false, message: parseServerError(error, 'Failed to update profile') };
+  }
+}
+
+// Self-service profile update for the logged-in admin. Hits PATCH /admin/me
+// (scope: ADMIN, no `*` permission needed) instead of PATCH /admin/{id}, so it
+// works for every admin role — and the id doesn't have to be known/trusted
+// client-side. Used by the profile page for name/email/password/photo edits.
+export async function updateMyAdminServerAction(
+  payload: UpdateMyAdminPayload
+): Promise<ActionResult<Admin>> {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await axiosInstance.patch('/admin/me', payload, { headers });
+    return { ok: true, data: unwrap(response.data) };
+  } catch (error: any) {
+    console.error('[updateMyAdminServerAction]', error?.response?.data || error.message);
+    return { ok: false, message: parseServerError(error, 'Failed to update profile') };
+  }
+}
+
+// Step 1 of the avatar upload: ask the backend for a short-lived presigned R2
+// PUT URL scoped to this admin's own namespace. Step 2 (PUT the bytes) + step 3
+// (submit r2Key back via updateMyAdminServerAction) live in ../uploadAdminAvatar.
+export async function getAdminProfilePhotoUploadUrlServerAction(payload: {
+  fileName: string;
+  contentType: string;
+  fileSize?: number;
+}): Promise<ActionResult<AdminUploadUrlResponse>> {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await axiosInstance.post(
+      '/admin/me/profile-photo/upload-url',
+      payload,
+      { headers }
+    );
+    const body = response.data?.data ?? response.data;
+    return { ok: true, data: body };
+  } catch (error: any) {
+    console.error(
+      '[getAdminProfilePhotoUploadUrlServerAction]',
+      error?.response?.data || error.message
+    );
+    return { ok: false, message: parseServerError(error, 'Failed to get an upload URL') };
   }
 }
 

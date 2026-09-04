@@ -14,11 +14,15 @@ interface AdminListRowProps {
   isSelf: boolean;
   deleting: boolean;
   onDelete: (admin: Admin) => void;
+  // Current time from the table's useNow() tick, so "Last Login" / "Joined"
+  // keep counting up live instead of freezing until something else re-renders
+  // the row. Defaults to Date.now() so the row still works if a caller omits it.
+  now?: number;
 }
 
-function timeAgo(dateStr: string | null | undefined): string {
+function timeAgo(dateStr: string | null | undefined, now: number = Date.now()): string {
   if (!dateStr) return '';
-  const diff = Date.now() - new Date(dateStr).getTime();
+  const diff = now - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
   const hours = Math.floor(mins / 60);
   const days = Math.floor(hours / 24);
@@ -31,7 +35,7 @@ function timeAgo(dateStr: string | null | undefined): string {
 
 const roleLabel = (role: string) => role.replace(/_/g, ' ').toLowerCase();
 
-export default function AdminListRow({ admin, isSelf, deleting, onDelete }: AdminListRowProps) {
+export default function AdminListRow({ admin, isSelf, deleting, onDelete, now }: AdminListRowProps) {
   const joinedDate = admin.createdAt
     ? new Date(admin.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
     : '—';
@@ -70,12 +74,12 @@ export default function AdminListRow({ admin, isSelf, deleting, onDelete }: Admi
 
       <td className="py-3.5 px-4">
         <p className="font-medium text-gray-900">{lastLoginDate}</p>
-        <p className="text-[11px] text-gray-400">{timeAgo(admin.lastLoginAt)}</p>
+        <p className="text-[11px] text-gray-400">{timeAgo(admin.lastLoginAt, now)}</p>
       </td>
 
       <td className="py-3.5 px-4">
         <p className="font-medium text-gray-900">{joinedDate}</p>
-        <p className="text-[11px] text-gray-400">{timeAgo(admin.createdAt)}</p>
+        <p className="text-[11px] text-gray-400">{timeAgo(admin.createdAt, now)}</p>
       </td>
 
       <td className="py-3.5 px-4 text-right">

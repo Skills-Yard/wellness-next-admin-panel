@@ -9,6 +9,9 @@ export interface Admin {
   name: string;
   email: string;
   role: AdminRole;
+  // R2 bucket key (not a URL) for the admin's profile photo — render via
+  // cdnUrl() from ../lib/cdn. Set through PATCH /admin/me.
+  profilePhotoKey?: string | null;
   isActive: boolean;
   lastLoginAt?: string | null;
   createdAt: string;

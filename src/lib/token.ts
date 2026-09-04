@@ -6,6 +6,7 @@
 
 interface DecodedTokenPayload {
   exp?: number;
+  sub?: string;
   [key: string]: unknown;
 }
 
@@ -44,6 +45,18 @@ function decodeTokenPayload(token: string): DecodedTokenPayload | null {
 export function getTokenExpiry(token: string): number | null {
   const payload = decodeTokenPayload(token);
   return typeof payload?.exp === 'number' ? payload.exp * 1000 : null;
+}
+
+/**
+ * Returns the `sub` claim (the admin id, for admin access tokens issued by the
+ * backend), or null if the token can't be decoded or has no `sub`. The admin
+ * login response only returns tokens — no admin object — so this is how the
+ * client learns its own id without an extra round-trip.
+ */
+export function getTokenSubject(token: string | undefined | null): string | null {
+  if (!token) return null;
+  const payload = decodeTokenPayload(token);
+  return typeof payload?.sub === 'string' && payload.sub ? payload.sub : null;
 }
 
 /**

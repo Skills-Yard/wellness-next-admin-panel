@@ -1,14 +1,23 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import axiosInstance from '../lib/axios';
-import { isTokenExpired } from '../lib/token';
+import { isTokenExpired, getTokenSubject } from '../lib/token';
+import { getMyAdminServerAction } from '../lib/server-actions/admin';
 
 export interface User {
   id?: string;
   email: string;
   name?: string;
   role?: string;
+  // R2 bucket key for the admin's profile photo (Admin.profilePhotoKey on the
+  // backend). Render via cdnUrl() from ../lib/cdn — it's a key, not a URL.
+  profilePhotoKey?: string;
+  // Hydrated from GET /admin/me (the login response carries neither). `lastLoginAt`
+  // is the timestamp of the *current* login — the backend stamps it on every
+  // successful /admin/login (see auth.service.ts).
+  lastLoginAt?: string | null;
+  isActive?: boolean;
   accessToken?: string;
 }
 
@@ -33,6 +42,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
+  // Best-effort hydrate of the session from GET /admin/me — the login response
+  // is tokens-only, so id / role / profilePhotoKey / lastLoginAt / isActive only
+  // become known here. Called once on startup and right after login. A dead
+  // token surfaces as a 401 which the axios interceptor already turns into a
+  // redirect to /login, so failures here are swallowed.
+  const refreshMe = useCallback(async () => {
+    try {
+      const res = await getMyAdminServerAction();
+      if (!res.ok || !res.data) return;
+      const d = res.data;
+      setUser((prev) => {
+        if (!prev) return prev;
+        const next: User = {
+          ...prev,
+          id: d.id ?? prev.id,
+          name: d.name ?? prev.name,
+          email: d.email ?? prev.email,
+          role: d.role ?? prev.role,
+          profilePhotoKey: d.profilePhotoKey ?? undefined,
+          lastLoginAt: d.lastLoginAt ?? null,
+          isActive: d.isActive,
+        };
+        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(next));
+        return next;
+      });
+    } catch {
+      /* swallowed — see comment above */
+    }
+  }, []);
+
   useEffect(() => {
     try {
       const storedUser = localStorage.getItem(AUTH_STORAGE_KEY);
@@ -44,8 +83,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // fail, check its `exp` claim right away so an expired session is treated as logged out
         // from the very first render and sent back to a clean login instead.
         if (parsed?.accessToken && !isTokenExpired(parsed.accessToken)) {
+          // Older sessions were persisted before the id was captured (admin
+          // login returns only tokens); backfill it from the token's `sub`
+          // claim so PATCH /admin/:id and the profile page have it.
+          if (!parsed.id) {
+            const subject = getTokenSubject(parsed.accessToken);
+            if (subject) parsed.id = subject;
+          }
           setUser(parsed);
           document.cookie = `wellness_admin_token=${parsed.accessToken}; path=/; max-age=604800; SameSite=Lax`;
+          // Refresh the rest of the profile (lastLoginAt / isActive / photo) from the API.
+          void refreshMe();
         } else {
           localStorage.removeItem(AUTH_STORAGE_KEY);
           localStorage.removeItem(TOKEN_STORAGE_KEY);
@@ -58,7 +106,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [refreshMe]);
 
   const login = async (email: string, password: string): Promise<{ success: boolean; message?: string }> => {
     try {
@@ -81,10 +129,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       const loggedUser: User = {
-        id: body?.admin?.id ?? body?.user?.id,
+        // The admin login response carries only tokens — no admin object — so
+        // fall back to the access token's `sub` claim for the id.
+        id: body?.admin?.id ?? body?.user?.id ?? getTokenSubject(token) ?? undefined,
         email: body?.admin?.email ?? body?.user?.email ?? email,
         name: body?.admin?.name ?? body?.user?.name ?? email.split('@')[0],
         role: body?.admin?.role ?? body?.user?.role ?? 'Administrator',
+        profilePhotoKey: body?.admin?.profilePhotoKey ?? body?.user?.profilePhotoKey,
         accessToken: token,
       };
 
@@ -92,6 +143,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(loggedUser));
       localStorage.setItem(TOKEN_STORAGE_KEY, token);
       document.cookie = `wellness_admin_token=${token}; path=/; max-age=604800; SameSite=Lax`;
+
+      // Fill in id / role / lastLoginAt / isActive / photo from the API — the
+      // login body has none of it. Fire-and-forget so sign-in isn't blocked.
+      void refreshMe();
 
       return { success: true, message: 'Authenticated successfully.' };
     } catch (error: any) {
