@@ -15,6 +15,7 @@ import {
   LogOut,
   Sparkles,
   Megaphone,
+  Bell,
   MapPinned,
   GraduationCap,
   ShieldCheck,
@@ -46,6 +47,7 @@ const menuItems: MenuItem[] = [
   { label: "Dashboard", icon: Grid, href: "/" },
   { label: "Catalogue", icon: FolderKanban, href: "/catalogue" },
   { label: "Campaigns", icon: Megaphone, href: "/campaigns" },
+  { label: "Notifications", icon: Bell, href: "/notifications" },
   { label: "Zones", icon: MapPinned, href: "/zones" },
   { label: "Bookings", icon: Calendar, href: "/bookings" },
   {
